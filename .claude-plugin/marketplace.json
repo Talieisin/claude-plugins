@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "talieisin",
+  "version": "0.1.0",
+  "description": "Talieisin's shared Claude Code skills for cloud sessions",
+  "owner": {
+    "name": "Talieisin"
+  },
+  "plugins": [
+    {
+      "name": "cloud",
+      "description": "Lead, worker, reader and retro skills for running batches of GitHub issues in Claude Code cloud sessions, with the shared GitHub rule",
+      "source": "./plugins/cloud",
+      "version": "0.16.0"
+    }
+  ]
+}
