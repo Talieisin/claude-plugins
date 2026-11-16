@@ -23,7 +23,7 @@ These skills come from the `cloud` plugin. Always use them by their plugin names
 
 A session you create gets the plugin only if its environment's setup script installs it (register L15). Before you start any session, run `claude plugin list`. If it shows `cloud@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it does not, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
-A child names the versions of its skill and of the rule in its first comment and its first report. A report that names none comes from a child without the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
+A child you create names the versions of its skill and of the rule in its first comment, and again when it reports its pull request or its findings. If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
 
 ## 1. Plan the batch
 
@@ -54,7 +54,7 @@ At the end of the batch, propose changes to the facts as one pull request titled
 
 `create_session` with: this repository; your own environment; an explicit model; effort `high`; permission mode `auto`; title `worker-issue-<n>` (or `worker-issues-<n>-<m>` for a lane of several); a tag for the batch. Prompt:
 
-> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-worker` skill and follow it exactly. If you do not hold that skill, say so in a comment on the issue and stop.
+> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-worker` skill and follow it exactly. If you do not hold that skill, say so in a comment on the issue (`gh api repos/<owner>/<repo>/issues/<n>/comments -f body=...`; `gh issue comment` fails here) and stop.
 
 For a lane of several issues, name them all ("issues <n> and <m>, as one lane and one pull request") and say in which order to do them.
 
@@ -77,7 +77,7 @@ Add anything issue-specific in a second paragraph. Put corrections in the starti
 
 When a worker reports its pull request ready **and** any correction you sent has landed, start a reader. Reader settings: title `reader-pr-<n>`, same settings, prompt:
 
-> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-reader` skill and follow it exactly. If you do not hold that skill, say so in a comment on the pull request and stop.
+> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-reader` skill and follow it exactly. If you do not hold that skill, say so in a comment on the pull request (`gh api repos/<owner>/<repo>/issues/<n>/comments -f body=...`; `gh pr comment` fails here) and stop.
 
 For a gated lane, add: "This lane was plan-gated: say whether the diff departs from the approved `Plan` comment."
 

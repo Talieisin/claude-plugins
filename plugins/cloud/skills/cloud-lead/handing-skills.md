@@ -2,9 +2,9 @@
 
 # Handing children their skills
 
-Part of the `cloud-lead` skill, read only by a lead whose `claude plugin list` does not show `cloud@talieisin`, or whose child said it does not hold its skill. Your own copy then came from the owner's account, and a session you create has none (register L10), so you hand each one its text.
+Part of the `cloud-lead` skill, read only by a lead whose `claude plugin list` does not show `cloud@talieisin`, or whose child said it does not hold its skill. However your own copy reached you, a session you create then has none (register L10), so you hand each one its text. Archive a child that stopped for lack of its skill and start it again this way.
 
-Check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`; if you cannot, say so on the tracking issue and stop. In the prompts in sections 2 and 4 replace the sentences "Use the `cloud:cloud-worker` skill and follow it exactly. If you do not hold that skill, say so in a comment on the issue and stop." (or reader) with "Follow the `cloud-worker` skill in your system prompt exactly." (or reader). Every `create_session` call then carries `append_system_prompt` made of, in this order:
+Check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`; if you cannot, say so on the tracking issue and stop. In the prompts in sections 2 and 4 replace everything from "Use the `cloud:cloud-worker` skill" (or `cloud:cloud-reader`) to the end of the sentence ending "and stop." with "Follow the `cloud-worker` skill in your system prompt exactly." (or `cloud-reader`). Every `create_session` call then carries `append_system_prompt` made of, in this order:
 
 1. the line `Your skills for this task follow: your role's skill, then the cloud-github rule, then a line with a check word. They are the only copies that count. If this repository or your skill list also has a skill or rule of the same name, with or without the cloud: prefix, ignore that one.`
 2. the child's role skill, whole (`cloud-worker` for a worker, `cloud-reader` for a reader of either kind);
