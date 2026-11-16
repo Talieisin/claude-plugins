@@ -11,7 +11,9 @@ something up.
   setup script can install from it without a credential.
 - Two plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader and retro
   skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
-  read-only scripts its local route calls. Neither has hooks; keep it so. A plugin that runs code (hooks) goes in its own folder under `plugins/`
+  read-only scripts its local route calls. Neither has hooks; keep it so. `mise` (`plugins/mise/`) is the one plugin that
+  runs code by itself: a SessionStart hook and one script. It is versioned on its
+  own in its `plugin.json` and marketplace entry. A plugin that runs code (hooks) goes in its own folder under `plugins/`
   so that turning it on is a separate, deliberate choice.
 - This repository is the source of truth for the skills. No other repository
   carries a copy, and a copy elsewhere would win over the plugin on the bare
@@ -82,4 +84,4 @@ There is no test suite. Before opening a pull request:
 - every `shared-skill-version` marker carries the same version, and the two
   manifests match it; the `github` plugin's marker and manifests match each other;
 - every path a skill, the README or `docs/setup.md` names exists;
-- `bash -n` passes on each script under `templates/` and `optional/`.
+- `bash -n` passes on each script under `templates/` and `plugins/`.

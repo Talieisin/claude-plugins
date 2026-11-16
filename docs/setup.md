@@ -142,8 +142,11 @@ That works, and costs the lead a good deal of context, so prefer step 1.
 ### Pinned tool versions
 
 Only if the repository must run on exact tool versions. See
-[`optional/mise/`](../optional/mise/README.md), which also says what to do if
-you use a version manager other than mise.
+the optional [`mise` plugin](../plugins/mise/README.md), which installs a
+repository's pinned tools when a session starts. Nothing is copied into the
+repository. It is the one plugin here that runs code by itself, so read its
+script first. Its page also says what to do if you use a version manager other
+than mise.
 
 ### Starting a lead from a label, with nobody at a keyboard
 

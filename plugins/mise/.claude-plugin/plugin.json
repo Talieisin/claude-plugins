@@ -1,0 +1,8 @@
+{
+  "name": "mise",
+  "version": "0.1.0",
+  "description": "Installs the tools a repository pins with mise when a session starts, and puts them on PATH. Runs a SessionStart hook: one script, which only installs what the repository's own mise.toml names.",
+  "author": {
+    "name": "Talieisin"
+  }
+}
