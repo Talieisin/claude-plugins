@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "talieisin",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Talieisin's shared Claude Code plugins",
   "owner": {
     "name": "Talieisin"
@@ -17,6 +17,12 @@
       "name": "github",
       "description": "The pull-request skill: take a GitHub pull request from open to merged, from your own machine or from a Claude Code cloud session. No hooks; the local route calls read-only scripts shipped with the skill.",
       "source": "./plugins/github",
+      "version": "0.1.0"
+    },
+    {
+      "name": "mise",
+      "description": "Installs the tools a repository pins with mise when a session starts, and puts them on PATH. Runs a SessionStart hook: one script, which only installs what the repository's own mise.toml names.",
+      "source": "./plugins/mise",
       "version": "0.1.0"
     }
   ]

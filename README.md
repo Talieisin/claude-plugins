@@ -16,7 +16,7 @@ GitHub issues to merged pull requests:
   the issue and reports what is wrong;
 - a **retro** judges past batches and proposes changes to the skills.
 
-Neither plugin has hooks: nothing runs by itself. The `github` plugin ships three
+Neither of those two has hooks: nothing runs by itself. (A third, optional plugin, `mise`, does have one; see below.) The `github` plugin ships three
 read-only scripts that its skill calls on your own machine.
 
 | Skill | Used by |
@@ -55,7 +55,7 @@ The full walk-through, with what is optional and how to keep it working, is in
 | `plugins/github/` | The `github` plugin: the pull-request skill, its two routes and its scripts |
 | `docs/setup.md` | How to set a repository and an environment up |
 | `templates/` | Files to copy: `AGENTS.md` (your authorisation and the repository's facts), labels, setup script, tracking issue, the optional start-from-a-label workflow |
-| `optional/mise/` | Pinned tool versions in a cloud session, for those who want them |
+| `plugins/mise/` | Optional `mise` plugin: installs a repository's pinned tools when a session starts. The only plugin here with a hook |
 | `AGENTS.md` | For anyone, human or agent, changing this repository |
 
 ## Status
