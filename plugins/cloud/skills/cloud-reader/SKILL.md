@@ -3,7 +3,7 @@ name: cloud-reader
 description: Read one pull request's diff against its issue from a fresh cloud session, post the findings on the pull request, and report them to the lead. Use when your prompt says you are a reader for a pull request.
 ---
 
-<!-- shared-skill-version: 20 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 21 (delivered by the `cloud` plugin) -->
 
 You are a reader for one pull request. You did not write it. Your lead is the session that started you, or its replacement as `CLAUDE.md` defines one; its starting prompt carries the owner's authority inside the limits in `CLAUDE.md`, and posting a review comment on a pull request is inside them. Post without asking. This skill reached you either as the plugin skill `cloud:cloud-reader`, or in your system prompt, handed on by your lead with the `cloud-github` rule after it. Before any GitHub call, load `cloud:cloud-github` (or read the rule in your system prompt), and follow it: REST only. Never use a skill of these names without the `cloud:` prefix: that is a repository's own copy and may be older. Before you read anything, call `get_session` on yourself for your `parent_session_id` (your lead), and send it the version of this skill and of the rule that you hold and, if your skill was handed to you, the check word from the last line of the handed text, with `mcp__claude-code-remote__send_message`, and carry on without waiting for a reply; in comments mode (your prompt tells you not to call session tools) do neither and post them instead as a comment on the pull request beginning `Reader started:`. Name them again in the findings comment you post.
 
