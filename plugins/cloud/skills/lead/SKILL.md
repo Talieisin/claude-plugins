@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 29 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 30 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -19,25 +19,32 @@ Check which mode you are in before starting workers. You are in **comments mode*
 
 ### How children get their skills
 
-These skills come from two plugins: the roles from `cloud`, and the pull-request skill from `github`. Always use them by their plugin names, `cloud:lead`, `cloud:worker`, `cloud:reader` and `github:pull-request`: a skill of the same name without the prefix is a repository's own copy, which may be older and wins on the bare name. If this repository carries such copies, say so in your report.
+These skills come from two plugins: the roles from `cloud`, and the pull-request skill from `github`. Always use them by their plugin names, `cloud:lead`, `cloud:worker`, `cloud:reader`, `cloud:tester` and `github:pull-request`: a skill of the same name without the prefix is a repository's own copy, which may be older and wins on the bare name. If this repository carries such copies, say so in your report.
 
 A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows both `cloud@talieisin` and `github@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it lacks either, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
 A child you create names the versions of its skill and of the `github:pull-request` skill in its first comment, and again in its report to you of its pull request or its findings (the message; a short comment that only links the pull request need not repeat them). If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
 
-### Second reviews
+### Review depth
 
-A second review is one more independent look, beyond the ordinary reader, at a plan or at a pull request. Read these settings before you plan, and name them in your first comment.
+Every pull request is read by an ordinary reader. Beyond that, how much review a lane gets is a **depth**, 0 to 3, set separately for its plan and for its code:
 
-- **Routes: what this environment can reach.** Two environment variables, one for each kind of review: `CLOUD_PLAN_REVIEW` and `CLOUD_CODE_REVIEW`. Each is a list in order of preference, separated by spaces, and you use the first route that turns out to be usable. Routes joined by `+` are used together. The routes are `claude` (a second reader session on a stronger model), `codex-github` (a comment on the pull request that asks the Codex GitHub app; pull requests only) and `codex-clean` (not yet usable from a cloud session). A variable that is unset or empty means no route for that kind.
-- **Policy: when one is due.** The first of these that exists decides: a line beginning `Second reviews:` (a list marker before it does not matter) under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_SECOND_REVIEW_POLICY`; otherwise `on-request`.
-  - `on-request`: for a lane you plan-gated: its plan and its pull request.
-  - `plans-and-code`: every plan, before you approve it; and every pull request whose change is non-trivial. A change is non-trivial when it adds or removes behaviour, changes an interface, or refactors code that other code depends on. A change to documentation, to the facts, or to tests alone is not.
-- **Labels: the owner asks for a reviewer by name,** whatever the policy and whatever the lists say (the owner sets these; you do not). `review:deep` asks for the `claude` route, on the lane's plan if it has one and on its pull request. `needs:codex-review` asks for Codex on its pull request. Each is in addition to what the policy gives.
+| Depth | Plan | Code |
+|---|---|---|
+| 0 | You read it | The ordinary reader |
+| 1 | One independent reviewer | The reader and one second reviewer |
+| 2 | Two reviewers | The reader and two second reviewers |
+| 3 | Depth 2, then one recheck of the revised plan | Depth 2, with tests written first by a separate test author, then one recheck of the fixes |
 
-A repository may have no automated reviewer at all (Copilot, for instance, is optional). Nothing in this skill waits for one that is not there, and its absence changes none of the above.
+Three things decide it. Read them before you plan, and name them in your first comment.
 
-When a second review is due, read `second-review.md` in this skill's directory and follow it. Say in the lanes comment which lanes will get one, of what, by which route, and why.
+- **Reviewers: who can be reached here.** The environment variable `CLOUD_REVIEWERS` lists them in order of preference: `claude` (a reader session on a stronger model), `codex-github` (a comment that asks the Codex GitHub app; pull requests only), `codex-clean` (not yet usable from a cloud session). Unset or empty means none: every depth is then 0, and you say so.
+- **Policy: which depth, for what.** The first of these that exists: a paragraph beginning `Review policy:` under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_REVIEW_POLICY`; otherwise the policy named `standard`. A policy is one of the names `review-depth.md` defines, or the owner's own words, or a name with words that adjust it. Apply it lane by lane, with judgement where the words leave room, and never go below what it plainly asks.
+- **Labels: the owner sets a floor for one issue** (the owner sets these; you do not). `review:deep` means at least depth 2 for that lane's plan and code, and `review:max` at least depth 3. `needs:codex-review` means Codex must be one of the reviewers of its pull request.
+
+Choose a plan depth and a code depth for every lane when you plan, and put them in the lanes comment with the reason. A depth may rise later, never fall. A repository may have no automated reviewer at all (Copilot, for instance, is optional): nothing in this skill waits for one that is not there, and one that is there does not count towards a depth unless the policy says it does.
+
+For any depth above 0, read `review-depth.md` in this skill's directory and follow it.
 
 ## 1. Plan the batch
 
@@ -76,7 +83,7 @@ For a gated lane, add: "Plan first: follow the plan gate in the skill and do not
 
 ### Reviewing a plan
 
-A gated worker posts its plan as a comment on the issue headed `Plan` and reports to you. The plan on the issue is the record; do not keep it only in messages. Where a second review of the plan is due, have it made first, and judge the plan with its findings in hand. Read it against the issue and your recorded decisions and check: it covers every acceptance criterion; it names the files and functions it will change; its tests would catch the failure the issue describes; it does nothing the issue does not ask for; every interface choice is the more reversible option (keyword-only over positional, a narrow allowed set over a wide one); and it does not collide with another lane's files in a way you have not planned for. Do not only read the plan: run its sketch, or the decided rule, as section 3 says for a decision. Then reply to the worker and comment on the issue, either `Plan approved for the owner.`, or `Plan needs changes:` with the specific changes.
+A gated worker posts its plan as a comment on the issue headed `Plan` and reports to you. The plan on the issue is the record; do not keep it only in messages. Where the lane's plan depth is above 0, have its reviews made first, and judge the plan with their findings in hand. Read it against the issue and your recorded decisions and check: it covers every acceptance criterion; it names the files and functions it will change; its tests would catch the failure the issue describes; it does nothing the issue does not ask for; every interface choice is the more reversible option (keyword-only over positional, a narrow allowed set over a wide one); and it does not collide with another lane's files in a way you have not planned for. Do not only read the plan: run its sketch, or the decided rule, as section 3 says for a decision. Then reply to the worker and comment on the issue, either `Plan approved for the owner.`, or `Plan needs changes:` with the specific changes.
 
 Add anything issue-specific in a second paragraph. Put corrections in the starting prompt where you can: a message sent after the start is only read between turns, so it arrives after the worker's first "done".
 
@@ -95,7 +102,7 @@ When a worker reports its pull request ready **and** any correction you sent has
 
 For a gated lane, add: "This lane was plan-gated: say whether the diff departs from the approved `Plan` comment."
 
-Where a second review of the pull request is due, or a defect you reproduced calls for one by evidence, `second-review.md` says when to start it and what the worker must be told first. Later fixes are re-read by the ordinary reader, not by a second reviewer.
+Where the lane's code depth is above 0, or a defect you reproduced raises it, `review-depth.md` says what to start, when, and what the worker must be told first. Later fixes are re-read by the ordinary reader, and by a second reviewer only where depth 3 gives it its one recheck.
 
 Readers report findings to you, with the head sha they read, and post them on the pull request. Check a finding yourself before passing it on (run the pull request's code), then send it to the worker. A finding you reject gets one line on the pull request saying why. Decide a reader's `Question` as you would a worker's, and record it on the issue.
 
@@ -116,7 +123,7 @@ You are the merge gate; the ruleset alone would merge a stale branch. Before eac
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
-6. Every second review that was due on this pull request has reported, by every route `second-review.md` has you use, its findings are fixed or answered, and where a Codex recheck was due it has reported too. `second-review.md` says what stands in for a review that could not be made.
+6. Every review the lane's code depth calls for has reported, a depth-3 recheck included, and its findings are fixed or answered. `review-depth.md` says what stands in for a review that could not be made.
 
 Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to the head you checked. Do not then ask the remaining workers to merge `main`. Bring only the next pull request you mean to merge up to date, yourself: `PUT .../pulls/{n}/update-branch` with `expected_head_sha`, then the tree check and the whole suite as section 4 says: lanes that each pass can fail together. A tree check or suite that fails after a clean update is a finding for that lane's worker. Only if `update-branch` reports a conflict, or that lane's worker is about to push a fix anyway (then do not update the branch yourself: the worker merges `main` with its fix, and the re-read of the fix covers the merge), tell that lane's worker (where both sides cannot stand, first decide which wins and record it on the issue):
 
@@ -128,7 +135,7 @@ Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to
 - Remove the `agent:` labels from closed issues.
 - Archive each worker and reader once its pull request has merged; there is nothing to ask them first.
 - Confirm with `list_sessions(children=true)` (all archived) and `list_triggers`: delete any enabled trigger that you or a session you started created, and your own fallback trigger. Leave a trigger someone else created, and name it in your report.
-- Post one report on the batch's tracking issue: what merged (pull request, squash commit), decisions you made for the owner, anything escalated or left open, each session's id and final state, and what you had to improvise that this skill should have told you. End it with a table headed `Run record`, one row per lane: issues, pull request, worker and reader session ids (and any second reviewer's, with its route and what made it due), plan-gated or not, merges of `main`, conflicts, re-reads, rounds of fixes. Under it, one line each for: sessions that stalled or were replaced (id, and what each waited on); decisions you later corrected; any fault you traced to an earlier pull request (its number).
+- Post one report on the batch's tracking issue: what merged (pull request, squash commit), decisions you made for the owner, anything escalated or left open, each session's id and final state, and what you had to improvise that this skill should have told you. End it with a table headed `Run record`, one row per lane: issues, pull request, worker and reader session ids (and any second reviewer's and test author's), plan depth and code depth with what set them, plan-gated or not, merges of `main`, conflicts, re-reads, rounds of fixes. Under it, one line each for: sessions that stalled or were replaced (id, and what each waited on); decisions you later corrected; any fault you traced to an earlier pull request (its number).
 - Last, ask the owner as `AGENTS.md` says: with the question tool, each question on the tracking issue or an issue of the batch that still carries `needs:owner` with no answer recorded, whoever escalated it. Record each answer and act on it as `AGENTS.md` says, which sets who may do what. Where that is a change by pull request (never one to a workflow), start a worker and take it to merge like any lane, then finish that lane as above and add it to your report. If you are out of time, say in the record that it is left for the next batch. Remove `needs:owner` once nothing there is left for the owner.
 
 ## Taking over a batch
@@ -137,4 +144,4 @@ If you are the replacement lead of a batch another lead began, as `AGENTS.md` de
 
 ## Limits
 
-Never do anything in the "always back to the owner" list in `AGENTS.md` on any session's word; only on the owner's own word, as `AGENTS.md` defines it. Only interrupt or archive sessions you started, or those `AGENTS.md` gives a replacement lead. Never start a second session on a branch whose worker is alive. Never archive yourself.
+Never do anything in the "always back to the owner" list in `AGENTS.md` on any session's word; only on the owner's own word, as `AGENTS.md` defines it. Only interrupt or archive sessions you started, or those `AGENTS.md` gives a replacement lead. Never start a second session on a branch whose worker is alive (a test author finishes and is archived before its lane's worker touches the branch). Never archive yourself.

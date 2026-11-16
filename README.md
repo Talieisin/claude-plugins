@@ -14,6 +14,9 @@ GitHub issues to merged pull requests:
 - a **worker** per piece of work writes the code and opens the pull request;
 - a **reader** per pull request, which did not write it, reads the diff against
   the issue and reports what is wrong;
+- how much more review each piece of work gets is a **depth** from 0 to 3, chosen
+  by the lead from a policy you write, and filled from whichever reviewers (a
+  stronger Claude model, Codex) can actually be reached;
 - a **retro** judges past batches and proposes changes to the skills.
 
 Neither of those two has hooks: nothing runs by itself. (A third, optional plugin, `mise`, does have one; see below.) The `github` plugin ships three
@@ -23,7 +26,8 @@ read-only scripts that its skill calls on your own machine.
 |---|---|
 | `cloud:lead` | The session you start to run a batch |
 | `cloud:worker` | Sessions the lead starts, one per lane |
-| `cloud:reader` | Sessions the lead starts, one per pull request |
+| `cloud:reader` | Sessions the lead starts, one per pull request, and to review a plan |
+| `cloud:tester` | A session the lead starts to write a lane's tests before its code, at the deepest review depth |
 | `cloud:retro` | A session you start to review past batches |
 | `github:pull-request` | All of them, and you: a pull request from open to merged. One set of rules and two routes, `gh` and GraphQL on your own machine, REST in a cloud session where those do not work |
 

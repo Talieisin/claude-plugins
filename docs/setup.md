@@ -79,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/Talieisin/claude-plugins/main/templ
 
 or download the file, read it, and run `bash labels.sh`. It creates `agent:ready`,
 `agent:claimed`, `agent:review`, `agent:question`, `needs:owner`,
-`plan:required`, `review:deep` and `needs:codex-review`.
+`plan:required`, `review:deep`, `review:max` and `needs:codex-review`.
 
 ### 4. Nothing of the same name in the repository
 
@@ -99,7 +99,7 @@ these, but they stop a mistake from merging.
 1. Open the issues you want done and label each `agent:ready`. Add
    `plan:required` to one you want planned and approved before any code is
    written, and `review:deep` to one that should get a second, deeper read by a
-   Claude reader (see "Second reviews" below).
+   Claude reader (see "Review depth" below).
 2. Open one more issue as the brief, from
    [`templates/tracking-issue.md`](../templates/tracking-issue.md). The lead
    reports there.
@@ -169,65 +169,86 @@ works by comments alone ("comments mode" in the lead skill) and reaches you only
 by label and push notification. This route has had far less use than a lead
 started by hand, and has not been run since the skills moved into this plugin.
 
-### Second reviews
+### Review depth
 
-Every pull request is read by a reader session. A second review is one more
-independent look, at a plan before it is approved or at a pull request before
-it merges. Nothing here is needed for a batch to work: with none of it set, no
-second review is asked for.
+Every pull request is read by a reader session. How much more review a piece
+of work gets is a depth, from 0 to 3, set separately for its plan and its code.
+Nothing here is needed for a batch to work: with none of it set, every depth is
+0 or 1 and a batch behaves as described in Part 1.
 
-**What the environment can reach.** In the cloud environment's **Environment
-variables**, set a list of routes for each kind of review:
+| Depth | Plan | Code |
+|---|---|---|
+| 0 | The lead reads it | The ordinary reader |
+| 1 | One independent reviewer | The reader and one second reviewer |
+| 2 | Two reviewers | The reader and two second reviewers |
+| 3 | Depth 2, then one recheck of the revised plan | Depth 2, with tests written first by a separate test author, then one recheck of the fixes |
+
+You say who can review and what your policy is. The lead works out the rest for
+each piece of work, from what is actually reachable in that session.
+
+**Who can review.** In the cloud environment's **Environment variables**, list
+the reviewers in your order of preference:
 
 ```
-CLOUD_PLAN_REVIEW=claude
-CLOUD_CODE_REVIEW=codex-github claude
+CLOUD_REVIEWERS=codex-github claude
 ```
 
-| Route | What it is | Reviews | Needs |
+| Reviewer | What it is | Reviews | Needs |
 |---|---|---|---|
-| `claude` | A second reader session on a stronger Claude model | Plans and pull requests | Nothing more |
+| `claude` | A reader session on a stronger Claude model | Plans and pull requests | Nothing more |
 | `codex-github` | A comment on the pull request that asks the Codex GitHub app for a review | Pull requests only | The Codex GitHub app installed on the repository, and a Codex subscription on the account the sessions run as |
 | `codex-clean` | Codex run inside the session | Not yet usable from a cloud session | - |
 
-Each list is in order of preference, and the lead uses the first route that
-turns out to be usable: a model the platform accepts, or a Codex app that
-answers the request. So `codex-github claude` means Codex where the repository
-has it and a Claude reader where it does not. To have two routes both review,
-join them with `+`: `codex-github+claude`. You do not have to know in advance
-what a repository has; an unusable route is skipped and noted.
+You do not have to know in advance what each repository has. A reviewer counts
+only if it answers: a model the platform accepts, or a Codex app that reacts to
+the request and finishes in time. One that does not is skipped and noted, and
+the depth is filled from the rest. If fewer can be reached than a depth asks
+for, the work gets what there is and the lead says so. Two reviewers are never
+taken from the same family.
 
-`CLOUD_REVIEW_MODEL` names the model the `claude` route uses. Unset, it is
+`CLOUD_REVIEW_MODEL` names the model the `claude` reviewer uses. Unset, it is
 `claude-fable-5-2`.
 
-**When one is due.** State it in the repository's `AGENTS.md`, as a line under
-"Defaults the owner has chosen":
+**Your policy.** Write it in the repository's `AGENTS.md`, as a paragraph under
+"Defaults the owner has chosen" that begins `Review policy:`. Name one of the
+built-in policies, write your own, or name one and adjust it in words:
 
 ```
-Second reviews: plans-and-code
+Review policy: thorough. Anything that touches billing is depth 2. At most
+three lanes at depth 2 or above in a batch.
 ```
 
-| Policy | A second review is made of |
+| Policy | What it gives |
 |---|---|
-| `on-request` (the default) | A lane the lead made plan first: its plan, and its pull request |
-| `plans-and-code` | Every plan; and every pull request whose change is non-trivial (it adds or removes behaviour, changes an interface, or refactors code other code depends on) |
+| `minimal` | Depth 0 for everything |
+| `standard` (used when nothing is set) | A lane the lead made plan first: plan depth 1, code depth 1. Everything else: 0 |
+| `thorough` | Every plan: depth 1. Every non-trivial change: code depth 1. A change to an interface other code relies on, to how data is stored, or to sign-in, permissions or secrets: depth 2 for both |
+
+A change is non-trivial when it adds or removes behaviour, changes an
+interface, or refactors code other code depends on. No built-in policy gives
+depth 3: ask for it in your own words, or with a label.
 
 To give all your repositories the same policy without repeating it, set
-`CLOUD_SECOND_REVIEW_POLICY` in the environment as well. A repository's
-`AGENTS.md` line overrides it.
+`CLOUD_REVIEW_POLICY` in the environment as well. A repository's `AGENTS.md`
+overrides it.
 
-**Asking for a reviewer by name, on one issue.** Whatever the policy, label an
-issue `review:deep` to give it the Claude reader, or `needs:codex-review` to
-give its pull request a Codex review, in addition to anything the policy gives.
-If the reviewer you asked for cannot be reached, the lead tells you and holds
-that one pull request.
+**A floor for one issue.** Label an issue `review:deep` for at least depth 2,
+or `review:max` for at least depth 3. `needs:codex-review` asks for Codex by
+name on that issue's pull request; if Codex cannot be reached, the lead tells
+you and holds that one pull request until you answer.
 
-A second review costs a session, or a Codex review, each time. `plans-and-code`
-will roughly double the reading done on a batch of real changes.
+**Depth changes during a batch.** The lead picks a depth for each piece of work
+when it plans, and says why. It raises a depth if a reader finds a real defect
+in work that had no second reviewer. It never lowers one.
+
+**What depth costs.** Each second reviewer is a session or a Codex review.
+Depth 3 adds a test author session, a hand-off before the worker starts, and a
+recheck. Use it for the few changes that warrant it.
 
 **Automatic reviewers are optional too.** If the repository has one (Copilot,
 say), the lead waits for its review of the first head and treats its threads
-like any other. If it has none, nothing waits.
+like any other. If it has none, nothing waits. It does not count towards a
+depth unless your policy says it does.
 
 ### A retro
 
