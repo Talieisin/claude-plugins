@@ -1,0 +1,9 @@
+{
+  "name": "humantray",
+  "version": "0.1.0",
+  "description": "A tray of things a session needs from a person: FYIs, choices, questions, to-dos and approvals. Items are kept per repository under .git/humantray/, shown in a pane and a band above the prompt where the session draws, and each answer is delivered to the session that asked, as one line.",
+  "author": {
+    "name": "Talieisin"
+  },
+  "types": "./types/index.d.ts"
+}
