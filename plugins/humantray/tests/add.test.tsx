@@ -350,6 +350,24 @@ describe('the lock', () => {
     expect(w.files.get(`${LOCK}/owner`)).toBe('thief\n')
   })
 
+  test('a caller that finds another breaker at work waits between tries, then goes through', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    w.holdLock('dead', w.clock.now() - 4000)
+    w.dirs.set(`${LOCK}.break`, w.clock.now())
+    const before = w.argv.length
+    const pending = $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
+    await w.clock.advance(1_000)
+    const tries = w.argv.slice(before).filter(argv => argv[0] === 'mkdir' && argv[1] === `${LOCK}.break`).length
+    expect(tries).toBeGreaterThan(0)
+    expect(tries).toBeLessThanOrEqual(25)
+    w.dirs.delete(`${LOCK}.break`) // the other breaker finishes
+    await w.clock.advance(500)
+    const ran = await pending
+    expect(ran.deny).toBeUndefined()
+    expect(w.store().items).toHaveLength(1)
+  })
+
   test('a failed move mid-write: a clean error, no lock left, the old file byte-identical', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)

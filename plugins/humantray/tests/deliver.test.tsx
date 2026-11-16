@@ -119,7 +119,7 @@ describe('claim, send, settle', () => {
     }
     await $.session.start(START_EVENT)
     await w.drain()
-    expect(seen).toEqual([{ delivered: false, delivering_at: START, delivering_by: expect.stringMatching(/^[0-9a-f]{16}$/) }])
+    expect(seen).toEqual([{ delivered: false, delivering_at: START, delivering_by: expect.stringMatching(/^[0-9a-f]{16}\/\d+$/) }])
     const item = w.store().items[0]
     expect(item?.delivered).toBe(true)
     expect(item?.delivered_at).toBe(START)
@@ -366,6 +366,27 @@ describe('/clear, /resume and /branch', () => {
     expect(w.submits).toEqual([`humantray HT-${id.slice(-5)} (Before): Approve`])
   })
 
+  test('a /clear whose pass fails keeps its hand-over for the next pass', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    await $.tool.call({ tool: ADD, type: 'approve', header: 'Before', question: 'Before the clear?' })
+    w.holdLock('busy')
+    w.sessionId = 'session-new'
+    const clearing = $.classic.SessionStart({ source: 'clear' })
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1_000)
+      w.holdLock('busy')
+    }
+    await clearing
+    expect(w.store().sessions['session-a']?.successor).toBeUndefined()
+    w.dropLock()
+    await $.turn.complete(TURN)
+    await w.drain()
+    expect(w.store().sessions['session-a']?.successor).toBe('session-new')
+    const listed = await $.tool.call({ tool: LIST })
+    expect(answerOf<{ items: Array<{ header: string }> }>(listed).items.map(i => i.header)).toEqual(['Before'])
+  })
+
   test('a /branch (fork) hands over too', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
@@ -514,6 +535,40 @@ describe('guards on delivery', () => {
     await w.drain()
     await $.turn.complete(TURN)
     await w.clock.advance(1_000)
+    await w.drain()
+    expect(w.submits).toHaveLength(2)
+    expect(w.store().items[0]?.delivered).toBe(true)
+  })
+
+  test('a late settle of a dropped send leaves the retry\'s claim alone: one more send, no duplicate', async ($, on) => {
+    const w = world(on)
+    w.seed(seedWith([answered()]))
+    let sent = 0
+    w.answerSubmit = async e => {
+      sent += 1
+      if (sent === 1) {
+        await w.clock.sleep(1_000)
+        return { drop: 'removed from the queue' }
+      }
+      if (sent === 2) await w.clock.sleep(5_000)
+      return { text: e.text }
+    }
+    await $.session.start(START_EVENT)
+    // Submit 1 is dropped; its settle reaches the lock only after a pass has
+    // applied the drop, claimed the item again and sent submit 2.
+    let open = () => undefined as void
+    w.lockGate = new Promise<void>(resolve => {
+      open = resolve
+    })
+    await w.clock.advance(1_000)
+    await $.turn.complete(TURN)
+    expect(w.submits).toHaveLength(2)
+    open()
+    await w.clock.settle()
+    await $.turn.complete(TURN)
+    await w.clock.advance(5_000)
+    await w.drain()
+    await $.turn.complete(TURN)
     await w.drain()
     expect(w.submits).toHaveLength(2)
     expect(w.store().items[0]?.delivered).toBe(true)

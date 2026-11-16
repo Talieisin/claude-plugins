@@ -122,8 +122,11 @@ async function statOf($: EngineInterface, path: string) {
   }
 }
 
-/** Breaks the lock judged stale at `judged`, if it is still that lock. */
-async function breakStale($: EngineInterface, where: Where, judged: number) {
+/**
+ * Breaks the lock judged stale at `judged`, if it is still that lock. Says
+ * whether it could act as the breaker: false when another breaker is at work.
+ */
+async function breakStale($: EngineInterface, where: Where, judged: number): Promise<boolean> {
   const breaker = `${where.lock}.break`
   const got = await run($, ['mkdir', breaker])
   if (got.exitCode !== 0) {
@@ -131,21 +134,22 @@ async function breakStale($: EngineInterface, where: Where, judged: number) {
     if (held !== undefined && (await $.clock.now()) - held.mtimeMs > BREAK_STALE_MS) {
       await run($, ['rm', '-rf', breaker])
     }
-    return
+    return false
   }
   try {
     const again = await statOf($, where.lock)
-    if (again === undefined || again.mtimeMs !== judged) return
+    if (again === undefined || again.mtimeMs !== judged) return true
     const token = await ownerOf($, where.lock)
     const aside = `${where.lock}.stale-${randomToken()}`
     const moved = await run($, ['mv', where.lock, aside])
-    if (moved.exitCode !== 0) return
+    if (moved.exitCode !== 0) return true
     if ((await ownerOf($, aside)) !== token) {
       // A new holder took the path between the look and the rename: give it back.
       await run($, ['mv', aside, where.lock])
-      return
+      return true
     }
     await run($, ['rm', '-rf', aside])
+    return true
   } finally {
     await run($, ['rm', '-rf', breaker])
   }
@@ -181,10 +185,7 @@ async function acquire($: EngineInterface, where: Where, token: string): Promise
       }
       continue
     }
-    if (now - stat.mtimeMs > LOCK_STALE_MS) {
-      await breakStale($, where, stat.mtimeMs)
-      continue
-    }
+    if (now - stat.mtimeMs > LOCK_STALE_MS && (await breakStale($, where, stat.mtimeMs))) continue
     await sleep($, LOCK_RETRY_MS)
   }
 }

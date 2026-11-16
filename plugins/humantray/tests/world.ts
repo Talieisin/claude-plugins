@@ -37,6 +37,8 @@ export type World = {
   failMkdir: boolean
   /** Every toast fails, as a surface that went away might. */
   failToast: boolean
+  /** The next attempt to take the store lock waits for this, once. */
+  lockGate: Promise<void> | undefined
   /** Every rename of the lock directory that succeeded. */
   lockRenames: number
   /** Every temporary file moved into place as the store: one per committed write. */
@@ -87,6 +89,7 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
     failMoves: 0,
     failMkdir: false,
     failToast: false,
+    lockGate: undefined,
     lockRenames: 0,
     commits: 0,
     afterStat: () => undefined,
@@ -161,6 +164,11 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
         return ok()
       }
       const path = rest[0] ?? ''
+      if (path === LOCK && w.lockGate !== undefined) {
+        const gate = w.lockGate
+        w.lockGate = undefined
+        await gate
+      }
       if (w.dirs.has(path)) return no('File exists')
       w.dirs.set(path, await clock.now())
       return ok()

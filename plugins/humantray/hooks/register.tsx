@@ -49,8 +49,17 @@ const token = (): string => {
 
 /** This module instance: a claim it makes names it, so a reload's claims are known dead. */
 const INSTANCE = token()
+/** Numbers this instance's claims, so a settle acts only on the claim of its own send. */
+let claims = 0
 /** The session id this process last saw: the one a /clear or a /branch continues. */
 let lastSeen: string | undefined
+/**
+ * The session a /clear or a /branch in this process continues, until a pass
+ * or an add has written the hand-over: a pass that fails does not lose it.
+ */
+let pendingHandover: string | undefined
+
+const isOwnClaim = (claim: string | undefined): boolean => claim !== undefined && claim.startsWith(`${INSTANCE}/`)
 
 const ADD_SCHEMA = {
   type: 'object',
@@ -123,15 +132,18 @@ async function showTray($: EngineInterface, file: StoreFile | null, me: string) 
   })
 }
 
-/** The ids whose submit this module instance is waiting on. */
-const inFlight = new Set<string>()
-/** How each finished submit went, until that is written to the store. */
-const unsettled = new Map<string, boolean>()
+/** For each item whose submit this instance is waiting on, the claim of that send. */
+const inFlight = new Map<string, string>()
+/** How each finished submit went, by item, with its send's claim, until written. */
+const unsettled = new Map<string, { claim: string; entered: boolean }>()
 
-/** Applies a finished submit to the item, if the claim is still this instance's. */
-function applySettle(file: StoreFile, id: string, entered: boolean, now: number): boolean {
+/**
+ * Applies a finished submit to the item, only while the item still carries
+ * that send's claim: a late settle never touches a newer claim.
+ */
+function applySettle(file: StoreFile, id: string, claim: string, entered: boolean, now: number): boolean {
   const item = file.items.find(one => one.id === id)
-  if (item === undefined || item.delivering_by !== INSTANCE) return false
+  if (item === undefined || item.delivering_by !== claim) return false
   if (entered) {
     item.delivered = true
     item.delivered_at = now
@@ -141,30 +153,35 @@ function applySettle(file: StoreFile, id: string, entered: boolean, now: number)
   return true
 }
 
+/** Forgets a finished submit's outcome, if it is still that send's. */
+function forget(id: string, claim: string) {
+  if (unsettled.get(id)?.claim === claim) unsettled.delete(id)
+}
+
 /**
  * Writes how a submit went: delivered when it entered, released otherwise.
  * If the store cannot be written now, the outcome stays in `unsettled` and the
  * next pass writes it.
  */
-async function settle($: EngineInterface, id: string, where: Where) {
+async function settle($: EngineInterface, id: string, claim: string, where: Where) {
   for (let attempt = 0; attempt < 3; attempt++) {
-    const entered = unsettled.get(id)
-    if (entered === undefined) return
+    const outcome = unsettled.get(id)
+    if (outcome === undefined || outcome.claim !== claim) return
     const now = await $.clock.now()
     const done = await mutate<boolean>($, file => {
-      const changed = applySettle(file, id, entered, now)
+      const changed = applySettle(file, id, claim, outcome.entered, now)
       return { result: changed, write: changed }
     }, { where })
     if (done.error === undefined) {
-      unsettled.delete(id)
+      forget(id, claim)
       return
     }
   }
 }
 
 /** Submits one answer's line. No hook awaits this: it settles on its own. */
-function send($: EngineInterface, item: Item, where: Where) {
-  inFlight.add(item.id)
+function send($: EngineInterface, item: Item, claim: string, where: Where) {
+  inFlight.set(item.id, claim)
   void $.prompt
     .submit({ text: deliveryLine(item) })
     .then(
@@ -172,31 +189,31 @@ function send($: EngineInterface, item: Item, where: Where) {
       () => false,
     )
     .then(entered => {
-      inFlight.delete(item.id)
-      unsettled.set(item.id, entered)
-      return settle($, item.id, where)
+      if (inFlight.get(item.id) === claim) inFlight.delete(item.id)
+      unsettled.set(item.id, { claim, entered })
+      return settle($, item.id, claim, where)
     })
     .catch(() => undefined)
 }
 
 /**
- * Notes this session in the store, writes any outcome a settle could not,
- * refreshes what the pane and band draw, and, when `deliver`, claims this
- * session's undelivered answers and sends them. Only the claim waits on the
- * lock; the sends are not awaited. `handoverFrom` is the session this one
- * continues after a /clear or a /branch.
+ * Notes this session in the store (with any pending hand-over), writes any
+ * outcome a settle could not, refreshes what the pane and band draw, and,
+ * when `deliver`, claims this session's undelivered answers and sends them.
+ * Only the claim waits on the lock; the sends are not awaited.
  */
-async function sync($: EngineInterface, deliver: boolean, handoverFrom?: string) {
+async function sync($: EngineInterface, deliver: boolean) {
   const me = await $.session.id()
   const now = await $.clock.now()
-  const applied: string[] = []
-  const done = await mutate<Item[]>($, file => {
+  const handoverFrom = pendingHandover
+  const applied: Array<[string, string]> = []
+  const done = await mutate<Array<{ item: Item; claim: string }>>($, file => {
     noteSession(file, me, now, handoverFrom)
-    for (const [id, entered] of unsettled) {
-      applySettle(file, id, entered, now)
-      applied.push(id)
+    for (const [id, outcome] of unsettled) {
+      applySettle(file, id, outcome.claim, outcome.entered, now)
+      applied.push([id, outcome.claim])
     }
-    const claims: Item[] = []
+    const sends: Array<{ item: Item; claim: string }> = []
     if (deliver) {
       for (const item of file.items) {
         if (item.status === 'open' || item.delivered) continue
@@ -206,29 +223,32 @@ async function sync($: EngineInterface, deliver: boolean, handoverFrom?: string)
           continue
         }
         if (item.delivering_at !== undefined) {
-          if (item.delivering_by === INSTANCE) {
-            // This instance's own claim: leave it while its submit is in
+          if (isOwnClaim(item.delivering_by)) {
+            // This instance's own claim: leave it while that send is in
             // flight; otherwise its settle was lost, so claim it again.
-            if (inFlight.has(item.id)) continue
+            if (inFlight.get(item.id) === item.delivering_by) continue
           } else if (now - item.delivering_at <= CLAIM_STALE_MS) {
             continue
           }
         }
+        claims += 1
+        const claim = `${INSTANCE}/${claims}`
         item.delivering_at = now
-        item.delivering_by = INSTANCE
-        claims.push({ ...item })
+        item.delivering_by = claim
+        sends.push({ item: { ...item }, claim })
       }
     }
-    return { result: claims, write: true }
+    return { result: sends, write: true }
   })
   if (done.error !== undefined) {
     if (/not in a git repository|could not be run/.test(done.error)) await showTray($, null, me).catch(() => undefined)
     return
   }
-  for (const id of applied) unsettled.delete(id)
+  for (const [id, claim] of applied) forget(id, claim)
+  if (pendingHandover === handoverFrom) pendingHandover = undefined
   lastSeen = me
-  const claims = [...done.ok.result].sort((a, b) => (a.response_at ?? 0) - (b.response_at ?? 0))
-  for (const item of claims) send($, item, done.ok.where)
+  const sends = [...done.ok.result].sort((a, b) => (a.item.response_at ?? 0) - (b.item.response_at ?? 0))
+  for (const { item, claim } of sends) send($, item, claim, done.ok.where)
   await showTray($, done.ok.file, me).catch(() => undefined)
 }
 
@@ -310,8 +330,8 @@ export const register: Register = on => {
   on('classic.SessionStart', async ($, e, next) => {
     const ran = await next(e)
     const source: unknown = e.source
-    const handoverFrom = source === 'clear' || source === 'fork' ? lastSeen : undefined
-    await sync($, true, handoverFrom).catch(() => undefined)
+    if ((source === 'clear' || source === 'fork') && lastSeen !== undefined) pendingHandover = lastSeen
+    await sync($, true).catch(() => undefined)
     return ran
   }).catch(($, e, next) => next(e))
 
@@ -338,8 +358,9 @@ export const register: Register = on => {
     const random = new Uint8Array(16)
     crypto.getRandomValues(random)
     const id = ulid(now, random)
+    const handoverFrom = pendingHandover
     const done = await mutate<AddOutcome>($, (file, where) => {
-      noteSession(file, me, now)
+      noteSession(file, me, now, handoverFrom)
       const added = addOrBump(file, checked.ok, {
         repo: normaliseRepo(where.remote, where.root),
         session_id: me,
@@ -350,6 +371,7 @@ export const register: Register = on => {
       return { result: added.ok, write: true }
     }, { limit: WRITE_LIMIT })
     if (done.error !== undefined) return fail(done.error)
+    if (pendingHandover === handoverFrom) pendingHandover = undefined
     lastSeen = me
     const { item, bumped } = done.ok.result
     // The item is written: what follows only shows it, and never turns the
