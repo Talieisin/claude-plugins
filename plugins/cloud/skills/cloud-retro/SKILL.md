@@ -3,7 +3,7 @@ name: cloud-retro
 description: Retro on cloud-lead runs in this repository. Measures each run from its tracking issue, pull requests and sessions, judges whether each rule in the cloud skills earned its place, checks the findings register against what the runs showed, and PROPOSES skill changes as a pull request it never merges. Use when asked for a retro on cloud runs, whether a cloud skill rule is working, or to compare runs. Not inside the run being judged, and not by a session that led a run under judgement.
 ---
 
-<!-- shared-skill-version: 16 (vendored identically into every repository that uses cloud sessions) -->
+<!-- shared-skill-version: 17 (vendored identically into every repository that uses cloud sessions) -->
 
 A retro judges the skills, not the sessions. Its output is evidence and proposals. It never edits a skill on `main`, never merges, and never changes a run's record.
 
@@ -19,7 +19,7 @@ A run is a tracking issue labelled `probe` whose comments include a lead's repor
 
 - the tracking issue: brief, lanes comment, report, any owner notes;
 - every issue and pull request in the batch: comments (`Decided for the owner:`, `Plan`, reader and worker reports), reviews, review threads, commits, merge commit, check runs;
-- the versions in force at the commit the lead's session started from: the `shared-skill-version` marker of each skill and the `shared-rule-version` marker of `.claude/rules/cloud-github.md`. Judge each against the wording at that commit;
+- the versions in force at the commit the lead's session started from: the `shared-skill-version` marker of each skill and the `shared-rule-version` marker of the `cloud-github` skill (or of `.claude/rules/cloud-github.md` where a repository still carries it). Judge each against the wording at that commit;
 - sessions, where you can read them: the lead's children and their final state. A routine-started lead is reached through the routine's run list;
 - anything opened after the run that traces back to it: follow-up issues, later fixes to the same lines, reverted commits.
 
@@ -51,7 +51,7 @@ Compare like with like: say how many issues each figure rests on, and do not com
 
 ## 4. Judge the rules
 
-For each numbered step or rule in `cloud-lead`, `cloud-worker`, `cloud-reader` and `.claude/rules/cloud-github.md`, at the version each run used:
+For each numbered step or rule in `cloud-lead`, `cloud-worker`, `cloud-reader` and the `cloud-github` rule, at the version each run used:
 
 - **Fired?** Did the situation it covers arise, and was the rule followed? A rule that never fired has no evidence either way; say so.
 - **Helped, cost, or neither?** Tie the judgement to a measured effect (a re-read avoided, a stall, a defect caught), not to the lead's opinion of it.
