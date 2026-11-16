@@ -3,9 +3,9 @@ name: cloud-lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 24 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 25 (delivered by the `cloud` plugin) -->
 
-You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"). First load the `cloud:cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
+You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `cloud:cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
 
 ## Tools
 

@@ -46,11 +46,17 @@ three sections of the repository's `AGENTS.md`: "Standing authorisation",
 [`templates/AGENTS.md`](../templates/AGENTS.md) into your `AGENTS.md` (or add it
 to the one you have) and edit it until it says what you actually allow.
 
-Claude Code loads `CLAUDE.md`, so also add a `CLAUDE.md` that holds the single
-line `@AGENTS.md` ([`templates/CLAUDE.md`](../templates/CLAUDE.md)). If you
-already have a `CLAUDE.md`, add that line to it, and move anything in it that
-says what sessions may do into `AGENTS.md`: the skills read `AGENTS.md`, and two
-files that both set limits will sooner or later disagree.
+You do not need a `CLAUDE.md`. Claude Code reads `AGENTS.md` by itself when the
+repository has no `CLAUDE.md` (since version 2.1.277). But if the repository does
+have a `CLAUDE.md`, Claude Code by default reads that and not `AGENTS.md`, so:
+
+- add the line `@AGENTS.md` to the `CLAUDE.md`, which loads it; and
+- move anything in the `CLAUDE.md` that says what sessions may do into
+  `AGENTS.md`. The skills read `AGENTS.md`, and two files that both set limits
+  will sooner or later disagree.
+
+The skills also tell every session to read `AGENTS.md` if it was not loaded, so
+a batch does not depend on this; the import saves each session a step.
 
 Read the list headed "Always back to the owner first" with care. It is what no
 session may do without you: force pushes, repository settings, workflows,

@@ -35,9 +35,8 @@ machine.
    ```
 
 2. Put your authorisation in the repository's `AGENTS.md`, starting from
-   [`templates/AGENTS.md`](templates/AGENTS.md), and add a `CLAUDE.md` holding
-   the line `@AGENTS.md` ([`templates/CLAUDE.md`](templates/CLAUDE.md)) so that
-   Claude Code loads it.
+   [`templates/AGENTS.md`](templates/AGENTS.md). If the repository also has a
+   `CLAUDE.md`, add the line `@AGENTS.md` to it.
 3. Create the labels with [`templates/labels.sh`](templates/labels.sh).
 4. Label some issues `agent:ready`, open a tracking issue, and start a session
    that names it as its brief.
@@ -51,7 +50,7 @@ The full walk-through, with what is optional and how to keep it working, is in
 |---|---|
 | `plugins/cloud/` | The plugin: its manifest and the skills |
 | `docs/setup.md` | How to set a repository and an environment up |
-| `templates/` | Files to copy: `AGENTS.md` (your authorisation and the repository's facts), the one-line `CLAUDE.md` that loads it, labels, setup script, tracking issue, the optional start-from-a-label workflow |
+| `templates/` | Files to copy: `AGENTS.md` (your authorisation and the repository's facts), labels, setup script, tracking issue, the optional start-from-a-label workflow |
 | `optional/mise/` | Pinned tool versions in a cloud session, for those who want them |
 | `AGENTS.md` | For anyone, human or agent, changing this repository |
 
