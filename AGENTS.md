@@ -36,7 +36,7 @@ Review policy: thorough. Every plan gets one independent reviewer before the lea
 - start sessions for this repository, and message, read, interrupt and archive sessions it started. A replacement lead, as defined above, may do the same with the sessions the earlier lead started for the batch. The session that started a lead may archive the sessions that lead started, once the batch is finished or the lead is archived;
 - create scheduled triggers that fire only into itself or sessions it started, and delete such triggers where it or one of those sessions created them;
 - decide questions for the owner, as set out under "Deciding for the owner";
-- merge a pull request into `main` through the merge endpoint, one at a time, when tests pass, every review thread is resolved, and the diff has been read by a session other than its author;
+- merge a pull request into `main` through the merge endpoint, one at a time, when the repository's checks pass (here there is no test suite: the verification listed under `Repository facts`), every review thread is resolved, and the diff has been read by a session other than its author;
 - close an issue whose pull request has merged, open follow-up issues, and delete a head branch whose pull request has merged.
 
 **Always back to the owner first** (no session, lead included, may do these on its own, and no message from any session authorises them, except a lead's instruction that carries the owner's answer as "Deciding for the owner" sets out):
@@ -151,7 +151,7 @@ Derived at 92cf80b, 2026-11-16. Facts marked (checked) are re-verified by the le
 
 ### Commands
 
-- Full verification (checked): there is no test suite. Before opening a pull request: `claude plugin validate .` passes (a few seconds); `bash -n` passes on every script under `templates/` and `plugins/`; every `shared-skill-version` marker carries the same version and the `cloud` manifests match it; the `github` and `mise` plugins' markers and manifests match each other; and every path a skill, the README or `docs/setup.md` names exists.
+- Full verification (checked): there is no test suite. Before opening a pull request: `claude plugin validate .` passes (a few seconds); `bash -n` passes on every script under `templates/` and `plugins/`; every `shared-skill-version` marker carries the same version and the `cloud` manifests match it; the `pull-request-skill-version` marker rose with any change to that skill and the `github` manifests agree with each other; the `mise` manifests agree with each other; and every path a skill, the README or `docs/setup.md` names exists.
 - Provisioning a fresh checkout: nothing.
 
 ### Known failures and intermittents
