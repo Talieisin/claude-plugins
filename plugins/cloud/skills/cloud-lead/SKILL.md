@@ -28,7 +28,7 @@ Every `create_session` call carries `append_system_prompt` made of, in this orde
 3. the `cloud-github` skill, whole;
 4. the last line `End of handed skills. Check word: <word>.`, with one word you choose for the batch and use nowhere else in any prompt.
 
-Read the files and copy their text character for character: never shorten or summarise it, and do not put the version numbers or the check word anywhere else in a prompt. Before it does anything else, each session you create tells you the two versions it holds and the check word, which shows the text arrived whole. If what it sends names none, or differs from yours, the text did not arrive: archive that session and start it again, and if the second fails the same way, escalate. This check is for sessions you create, not for ones you inherit as a replacement lead.
+Read the files and copy their text character for character: never shorten or summarise it, and do not put the version numbers or the check word anywhere else in a prompt. As its first step, before it starts on its task, each session you create tells you the two versions it holds and the check word, which shows the text arrived whole. If what it sends names none or differs from yours, or if nothing has come within five minutes of its start (look then: do not wait for it to go idle), the text did not arrive: archive that session and start it again, and if the second fails the same way, escalate. If `create_session` refuses `append_system_prompt`, you cannot hand children their skills: say so on the tracking issue, escalate, and start nothing. This check is for sessions you create, not for ones you inherit as a replacement lead.
 
 ## 1. Plan the batch
 
