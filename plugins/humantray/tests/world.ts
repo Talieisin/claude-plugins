@@ -351,3 +351,58 @@ export function answerOf<T = Record<string, unknown>>(ran: { result?: unknown; i
   if (typeof ran.result !== 'string') throw new Error(`a tool result must be a string, got ${typeof ran.result}`)
   return JSON.parse(ran.result) as T
 }
+
+/**
+ * A finished item, for seeding: answered, delivered, no claim. `n` makes its
+ * id (`01FIN` and n, 26 characters), so ids rise with n; give `response_at`
+ * from `shuffled` so that its order key does not.
+ */
+export function finished(n: number, fields: Partial<Item> = {}): Item {
+  const id = `01FIN${String(n).padStart(21, '0')}`
+  return stored({
+    id,
+    type: 'approve',
+    header: 'Done',
+    status: 'answered',
+    response: { selected: ['Approve'] },
+    response_at: START - HOUR,
+    delivered: true,
+    delivered_at: START - HOUR,
+    ...fields,
+  })
+}
+
+/**
+ * A fixed shuffle of 0..n-1 (a stride coprime to n), so that order keys made
+ * from it bear no relation to position or id.
+ */
+export function shuffled(n: number): number[] {
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
+  let stride = 37
+  while (gcd(stride, n) !== 1) stride += 1
+  // The offset keeps the first and last positions off the oldest key.
+  return Array.from({ length: n }, (_, i) => (i * stride + Math.floor(n / 3)) % n)
+}
+
+/**
+ * `n` finished items of `repo` and session, in id order, whose `response_at`
+ * is shuffled and whose `updated` falls as the id rises: an order by
+ * position, by id or by `updated` is never the order by `response_at`.
+ */
+export function finishedMany(n: number, fields: Partial<Item> = {}, from = 0): Item[] {
+  const keys = shuffled(n)
+  return Array.from({ length: n }, (_, i) =>
+    finished(from + i, {
+      response_at: START - 2 * HOUR + (keys[i] ?? 0) * 1_000,
+      updated: START - 3 * HOUR - i * 1_000,
+      created: START - 4 * HOUR,
+      ...fields,
+    }),
+  )
+}
+
+/** The ids of the `count` items `finishedMany(n, _, from)` made with the smallest `response_at`. */
+export function oldestOfMany(n: number, count: number, from = 0): string[] {
+  const keys = shuffled(n)
+  return keys.flatMap((key, i) => (key < count ? [finished(from + i).id] : []))
+}

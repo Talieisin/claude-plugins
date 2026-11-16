@@ -9,23 +9,32 @@
 // submitted without any hook waiting on it, and marked delivered only once
 // the submit resolves without a drop. A drop or a rejection releases the
 // claim for the next pass. Nothing about items enters the system prompt.
+//
+// The pane shows the open items, or History: this repository's answered
+// items, read only. Every change also prunes finished items (answered,
+// delivered or owing no line, unclaimed) past the last 200 per repository
+// (items.ts, `prune`); nothing still owed or in flight is ever pruned.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Draft, Item, StoreFile } from '../types'
+import type { Draft, HistoryEntry, Item, StoreFile } from '../types'
 import {
   type Action,
   type AddOutcome,
   CLAIM_STALE_MS,
   EMPTY_DRAFT,
   addOrBump,
+  applySettle,
   buildResponse,
   deliveryLine,
+  historyOf,
+  isLineDue,
   isMineToDeliver,
   normaliseRepo,
   noteSession,
   openItems,
+  prune,
   resolveOwner,
   shortOf,
   ulid,
@@ -38,7 +47,10 @@ const TITLE = 'Humantray'
 const ADD = 'mcp__humantray__humantray_add'
 const LIST = 'mcp__humantray__humantray_list'
 
-const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-2' })
+// tray-3: a tray now carries History. A tray cached by an earlier version
+// reads as null and is rebuilt from the file at the next pass.
+const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-3' })
+const view = atom({ plugin: 'humantray', key: 'view' } as const, 'open')
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 
 const token = (): string => {
@@ -107,6 +119,9 @@ const LIST_DESCRIPTION =
 // refused call is a deny, which the model reads as an error result.
 const fail = (message: string) => ({ deny: message })
 
+/** When an answer was given, as UTC to the minute. */
+const when = (at: number): string => new Date(at).toISOString().slice(0, 16).replace('T', ' ')
+
 async function hasSurface($: EngineInterface): Promise<boolean> {
   try {
     return (await $.session.surfaces()).length > 0
@@ -123,12 +138,22 @@ async function openPane($: EngineInterface) {
   if (await hasSurface($)) void $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
 }
 
-async function showTray($: EngineInterface, file: StoreFile | null, me: string) {
+/**
+ * Rebuilds what the pane and band draw from the file as read or written, or
+ * clears it (null) when there is no store. History holds only this
+ * repository's items, and its marks are as of `now`: a claim that goes stale
+ * while nothing writes still reads `delivering` until the next rebuild (any
+ * pass, add, answer or settle).
+ */
+async function showTray($: EngineInterface, seen: { file: StoreFile; where: Where } | null, me: string) {
+  const now = seen === null ? 0 : await $.clock.now()
   await update($, tray, () => {
-    if (file === null) return null
+    if (seen === null) return null
+    const { file, where } = seen
     const items = openItems(file)
     const mine = items.filter(item => resolveOwner(file.sessions, item.session_id) === me).map(item => item.id)
-    return { items, me, mine }
+    const history = historyOf(file, normaliseRepo(where.remote, where.root), me, now)
+    return { items, me, mine, history }
   })
 }
 
@@ -136,22 +161,6 @@ async function showTray($: EngineInterface, file: StoreFile | null, me: string) 
 const inFlight = new Map<string, string>()
 /** How each finished submit went, by item, with its send's claim, until written. */
 const unsettled = new Map<string, { claim: string; entered: boolean }>()
-
-/**
- * Applies a finished submit to the item, only while the item still carries
- * that send's claim: a late settle never touches a newer claim.
- */
-function applySettle(file: StoreFile, id: string, claim: string, entered: boolean, now: number): boolean {
-  const item = file.items.find(one => one.id === id)
-  if (item === undefined || item.delivering_by !== claim) return false
-  if (entered) {
-    item.delivered = true
-    item.delivered_at = now
-  }
-  delete item.delivering_at
-  delete item.delivering_by
-  return true
-}
 
 /** Forgets a finished submit's outcome, if it is still that send's. */
 function forget(id: string, claim: string) {
@@ -174,6 +183,11 @@ async function settle($: EngineInterface, id: string, claim: string, where: Wher
     }, { where })
     if (done.error === undefined) {
       forget(id, claim)
+      // Redraw, so History's mark leaves `delivering` without waiting for a pass.
+      if (done.ok.result) {
+        const me = await $.session.id()
+        await showTray($, done.ok, me).catch(() => undefined)
+      }
       return
     }
   }
@@ -238,6 +252,8 @@ async function sync($: EngineInterface, deliver: boolean) {
         sends.push({ item: { ...item }, claim })
       }
     }
+    // After the claims: an item claimed here is not finished, so it is kept.
+    prune(file)
     return { result: sends, write: true }
   })
   if (done.error !== undefined) {
@@ -249,7 +265,7 @@ async function sync($: EngineInterface, deliver: boolean) {
   lastSeen = me
   const sends = [...done.ok.result].sort((a, b) => (a.item.response_at ?? 0) - (b.item.response_at ?? 0))
   for (const { item, claim } of sends) send($, item, claim, done.ok.where)
-  await showTray($, done.ok.file, me).catch(() => undefined)
+  await showTray($, done.ok, me).catch(() => undefined)
 }
 
 async function setDraft($: EngineInterface, id: string, change: (draft: Draft) => Partial<Draft>) {
@@ -293,7 +309,7 @@ async function answer($: EngineInterface, id: string, action: Action) {
     return
   }
   const me = await $.session.id()
-  await showTray($, done.ok.file, me)
+  await showTray($, done.ok, me)
   if (outcome.kind === 'stale') {
     await toast($, `${shortOf(id)} was already answered`)
     return
@@ -368,6 +384,9 @@ export const register: Register = on => {
         id,
       })
       if (added.error !== undefined) return { error: `humantray: ${added.error}` }
+      // The added or bumped item is open, so never pruned. Pruning before the
+      // size check also leaves room under the add's limit.
+      prune(file)
       return { result: added.ok, write: true }
     }, { limit: WRITE_LIMIT })
     if (done.error !== undefined) return fail(done.error)
@@ -377,7 +396,7 @@ export const register: Register = on => {
     // The item is written: what follows only shows it, and never turns the
     // add into a failure.
     try {
-      await showTray($, done.ok.file, me)
+      await showTray($, done.ok, me)
       await toast($, `Humantray: ${bumped ? 'bumped' : 'added'} ${item.short} (${item.header})`)
       await openPane($)
     } catch {
@@ -393,21 +412,17 @@ export const register: Register = on => {
     const { file } = seen.ok
     const items = file.items
       .filter(item => resolveOwner(file.sessions, item.session_id) === me)
-      .filter(
-        item =>
-          item.status === 'open' ||
-          (!item.delivered && !(item.type === 'ack' && item.notify_on_done !== true)),
-      )
+      .filter(item => item.status === 'open' || (!item.delivered && isLineDue(item)))
       .sort((a, b) => b.updated - a.updated)
       .map(item => ({ id: item.id, short: item.short, type: item.type, header: item.header, status: item.status }))
-    await showTray($, file, me)
+    await showTray($, seen.ok, me)
     return { result: JSON.stringify({ items }) }
   }).catch(() => fail('humantray: humantray_list failed unexpectedly'))
 
   on('command.run', { command: 'humantray' }, async $ => {
     const seen = await peek($)
     const me = await $.session.id()
-    await showTray($, seen.error === undefined ? seen.ok.file : null, me)
+    await showTray($, seen.error === undefined ? seen.ok : null, me)
     await openPane($).catch(() => undefined)
     return {
       text: seen.error === undefined ? 'Humantray pane opened.' : seen.error,
@@ -429,7 +444,49 @@ export const register: Register = on => {
     if (shown === null) {
       return <Text dimColor>No humantray here: not in a git repository, or the store could not be read.</Text>
     }
-    if (shown.items.length === 0) return <Text dimColor>No open items.</Text>
+    const showing = await read($, view)
+    // One History entry: read only, with no control (an answered item is never reopened).
+    const historyCard = (entry: HistoryEntry) => (
+      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
+        <Text bold>
+          [{entry.header}] {entry.question}
+        </Text>
+        <Text dimColor>
+          {entry.short}
+          {entry.isMine ? '' : ' · another session'} · answered {when(entry.at)} UTC · bumps: {String(entry.bumps)}
+          {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
+        </Text>
+        <Text>{entry.answer}</Text>
+        {entry.notes !== undefined && <Text dimColor>Notes: {entry.notes}</Text>}
+      </Box>
+    )
+    const toggle = (
+      <Button
+        key="humantray:view"
+        label={showing === 'history' ? `Open items (${shown.items.length})` : `History (${shown.history.length})`}
+        onPress={() => update($, view, current => (current === 'history' ? 'open' : 'history'))}
+      />
+    )
+    if (showing === 'history') {
+      return (
+        <Box flexDirection="column" gap={1}>
+          {toggle}
+          {shown.history.length === 0 ? (
+            <Text dimColor>No answered items yet.</Text>
+          ) : (
+            shown.history.map(historyCard)
+          )}
+        </Box>
+      )
+    }
+    if (shown.items.length === 0) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          {toggle}
+          <Text dimColor>No open items.</Text>
+        </Box>
+      )
+    }
 
     const cards = []
     for (const item of shown.items) {
@@ -543,6 +600,7 @@ export const register: Register = on => {
     }
     return (
       <Box flexDirection="column" gap={1}>
+        {toggle}
         {cards}
       </Box>
     )

@@ -68,10 +68,40 @@ export type StoreFile = {
 }
 
 /**
- * What the pane and band draw from: the open items, newest first; this
- * session's id; and the ids of the items this session owns or inherited.
+ * How History marks an answered item: `none` when no line is due (an `ack`
+ * without `notify_on_done`); `delivering` while a fresh claim stands; `not
+ * delivered` when the line has not reached its session and nobody is sending it.
  */
-export type Tray = { items: Item[]; me: string; mine: string[] }
+export type DeliveryMark = 'none' | 'delivered' | 'delivering' | 'not delivered'
+
+/** One answered item as History draws it: no body, only what is shown. */
+export type HistoryEntry = {
+  id: string
+  short: string
+  type: ItemType
+  header: string
+  question: string
+  status: ItemStatus
+  /** The response on one line, without its notes. */
+  answer: string
+  notes?: string
+  bumps: number
+  /** The order key: when it was answered (or else last added or bumped). */
+  at: number
+  mark: DeliveryMark
+  /** This session's, or inherited from the session it continues. */
+  isMine: boolean
+}
+
+/**
+ * What the pane and band draw from: the open items, newest first; this
+ * session's id; the ids of the items this session owns or inherited; and
+ * this repository's answered items, newest first, for History.
+ */
+export type Tray = { items: Item[]; me: string; mine: string[]; history: HistoryEntry[] }
+
+/** Which list the pane shows. */
+export type TrayView = 'open' | 'history'
 
 /** A card's answer while it is being made. Losing it costs a retype only. */
 export type Draft = {
@@ -87,6 +117,7 @@ declare module 'claude-code' {
   interface PluginState {
     humantray: {
       tray: Shaped<Tray | null>
+      view: TrayView
       drafts: StateFamily<Draft>
     }
   }
