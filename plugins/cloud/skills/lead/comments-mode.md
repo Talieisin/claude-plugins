@@ -1,8 +1,8 @@
-<!-- shared-skill-version: 25 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 26 (delivered by the `cloud` plugin) -->
 
 # Comments mode
 
-Part of the `cloud-lead` skill, read only by a lead in comments mode: one with no `send_message` tool, or one started by a routine.
+Part of the `lead` skill, read only by a lead in comments mode: one with no `send_message` tool, or one started by a routine.
 
 - Add to every starting prompt: "No human is watching. Do not call any session tool (`get_session`, `send_message`, `send_later`, `create_trigger`, subscriptions): each waits for approval and stalls you. Your lead is <your session id>. Wherever the skill says to report to your lead, post a comment on the issue (workers) or pull request (readers) beginning `Worker report to lead:` or `Reader report to lead: head <sha>`, then end your turn."
 - You cannot message a child. To tell a worker something, post a comment beginning `Lead:` on its pull request (activity there wakes it) or, before it has one, on its issue. Find reports by reading issue and pull request comments. Wait with one background sleep of a minute or two at a time, not a foreground sleep and not a tight loop.

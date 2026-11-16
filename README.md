@@ -1,6 +1,8 @@
 # claude-plugins
 
-Claude Code plugins from Talieisin. One so far.
+Claude Code plugins from Talieisin. Two so far: `cloud`, for running batches of
+GitHub issues in cloud sessions, and `github`, the pull-request skill it relies
+on, which is also useful on its own.
 
 ## `cloud`: batches of GitHub issues, done by cloud sessions
 
@@ -14,24 +16,25 @@ GitHub issues to merged pull requests:
   the issue and reports what is wrong;
 - a **retro** judges past batches and proposes changes to the skills.
 
-It is text only: instructions for Claude, no hooks and no code that runs on your
-machine.
+Neither plugin has hooks: nothing runs by itself. The `github` plugin ships three
+read-only scripts that its skill calls on your own machine.
 
 | Skill | Used by |
 |---|---|
-| `cloud:cloud-lead` | The session you start to run a batch |
-| `cloud:cloud-worker` | Sessions the lead starts, one per lane |
-| `cloud:cloud-reader` | Sessions the lead starts, one per pull request |
-| `cloud:cloud-retro` | A session you start to review past batches |
-| `cloud:cloud-github` | All of them: how to use GitHub from a cloud session, where `gh pr` and GraphQL do not work |
+| `cloud:lead` | The session you start to run a batch |
+| `cloud:worker` | Sessions the lead starts, one per lane |
+| `cloud:reader` | Sessions the lead starts, one per pull request |
+| `cloud:retro` | A session you start to review past batches |
+| `github:pull-request` | All of them, and you: a pull request from open to merged. One set of rules and two routes, `gh` and GraphQL on your own machine, REST in a cloud session where those do not work |
 
 ## Quick start
 
-1. Add two lines to your cloud environment's setup script:
+1. Add three lines to your cloud environment's setup script:
 
    ```bash
    claude plugin marketplace add Talieisin/claude-plugins
    claude plugin install cloud@talieisin
+   claude plugin install github@talieisin
    ```
 
 2. Put your authorisation in the repository's `AGENTS.md`, starting from
@@ -48,7 +51,8 @@ The full walk-through, with what is optional and how to keep it working, is in
 
 | Path | What |
 |---|---|
-| `plugins/cloud/` | The plugin: its manifest and the skills |
+| `plugins/cloud/` | The `cloud` plugin: lead, worker, reader, retro |
+| `plugins/github/` | The `github` plugin: the pull-request skill, its two routes and its scripts |
 | `docs/setup.md` | How to set a repository and an environment up |
 | `templates/` | Files to copy: `AGENTS.md` (your authorisation and the repository's facts), labels, setup script, tracking issue, the optional start-from-a-label workflow |
 | `optional/mise/` | Pinned tool versions in a cloud session, for those who want them |

@@ -1,17 +1,17 @@
 ---
-name: cloud-lead
+name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 25 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 26 (delivered by the `cloud` plugin) -->
 
-You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `cloud:cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
+You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
 ## Tools
 
 Session control comes from the session tools: `create_session`, `send_message`, `get_session`, `list_events`, `list_sessions`, `interrupt_session`, `archive_session`, `send_later`, `list_triggers`, `delete_trigger`. They appear as `mcp__claude-code-remote__*` in a session started by hand and as `mcp__Claude_Code_Remote__*` in one started by a routine. If you have no tool that creates sessions you cannot lead: say so in a comment on the tracking issue, leave the issues labelled as they are, and stop.
 
-Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`), this skill's version and the `cloud-github` rule version you loaded. A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
+Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`), this skill's version and the version of the `github:pull-request` skill you loaded. A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
 
 ### Comments mode
 
@@ -19,11 +19,11 @@ Check which mode you are in before starting workers. You are in **comments mode*
 
 ### How children get their skills
 
-These skills come from the `cloud` plugin. Always use them by their plugin names, `cloud:cloud-lead`, `cloud:cloud-worker`, `cloud:cloud-reader` and `cloud:cloud-github`: a skill of the same name without the prefix is a repository's own copy, which may be older and wins on the bare name. If this repository carries such copies, say so in your report.
+These skills come from two plugins: the roles from `cloud`, and the pull-request skill from `github`. Always use them by their plugin names, `cloud:lead`, `cloud:worker`, `cloud:reader` and `github:pull-request`: a skill of the same name without the prefix is a repository's own copy, which may be older and wins on the bare name. If this repository carries such copies, say so in your report.
 
-A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows `cloud@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it does not, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
+A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows both `cloud@talieisin` and `github@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it lacks either, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
-A child you create names the versions of its skill and of the rule in its first comment, and again when it reports its pull request or its findings. If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
+A child you create names the versions of its skill and of the `github:pull-request` skill in its first comment, and again when it reports its pull request or its findings. If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
 
 ## 1. Plan the batch
 
@@ -54,7 +54,7 @@ At the end of the batch, propose changes to the facts as one pull request titled
 
 `create_session` with: this repository; your own environment; an explicit model; effort `high`; permission mode `auto`; title `worker-issue-<n>` (or `worker-issues-<n>-<m>` for a lane of several); a tag for the batch. Prompt:
 
-> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-worker` skill and follow it exactly. If you do not hold that skill, say so in a comment on the issue (`gh api repos/<owner>/<repo>/issues/<n>/comments -f body=...`; `gh issue comment` fails here) and stop.
+> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:worker` skill and follow it exactly. If you do not hold that skill, say so in a comment on the issue (`gh api repos/<owner>/<repo>/issues/<n>/comments -f body=...`; `gh issue comment` fails here) and stop.
 
 For a lane of several issues, name them all ("issues <n> and <m>, as one lane and one pull request") and say in which order to do them.
 
@@ -77,7 +77,7 @@ Add anything issue-specific in a second paragraph. Put corrections in the starti
 
 When a worker reports its pull request ready **and** any correction you sent has landed, start a reader. Reader settings: title `reader-pr-<n>`, same settings, prompt:
 
-> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-reader` skill and follow it exactly. If you do not hold that skill, say so in a comment on the pull request (`gh api repos/<owner>/<repo>/issues/<n>/comments -f body=...`; `gh pr comment` fails here) and stop.
+> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:reader` skill and follow it exactly. If you do not hold that skill, say so in a comment on the pull request (`gh api repos/<owner>/<repo>/issues/<n>/comments -f body=...`; `gh pr comment` fails here) and stop.
 
 For a gated lane, add: "This lane was plan-gated: say whether the diff departs from the approved `Plan` comment."
 
@@ -107,7 +107,7 @@ You are the merge gate; the ruleset alone would merge a stale branch. Before eac
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered; where a deep read was due, it has reported too and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
-6. If the issue carries `needs:codex-review`, or you plan-gated the lane, you have asked Codex for its one review as the `cloud-github` skill describes, it has finished, and its findings are fixed or answered. Then remove the label. Do not ask Codex to review any other pull request.
+6. If the issue carries `needs:codex-review`, or you plan-gated the lane, you have asked Codex for its one review as the `github:pull-request` skill describes, it has finished, and its findings are fixed or answered. Then remove the label. Do not ask Codex to review any other pull request.
 
 Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to the head you checked. Do not then ask the remaining workers to merge `main`. Bring only the next pull request you mean to merge up to date, yourself: `PUT .../pulls/{n}/update-branch` with `expected_head_sha`, then the tree check and the whole suite as section 4 says: lanes that each pass can fail together. A tree check or suite that fails after a clean update is a finding for that lane's worker. Only if `update-branch` reports a conflict, or that lane's worker is about to push a fix anyway (then do not update the branch yourself: the worker merges `main` with its fix, and the re-read of the fix covers the merge), tell that lane's worker (where both sides cannot stand, first decide which wins and record it on the issue):
 
