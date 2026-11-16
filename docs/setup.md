@@ -209,7 +209,6 @@ CLOUD_REVIEWERS=codex-github claude
 |---|---|---|---|
 | `claude` | A reader session on a stronger Claude model | Plans and pull requests | Nothing more |
 | `codex-github` | A comment on the pull request that asks the Codex GitHub app for a review | Pull requests only | The Codex GitHub app installed on the repository, and a Codex subscription on the account the sessions run as |
-| `codex-clean` | Codex run inside the session | Not yet usable from a cloud session | - |
 
 You do not have to know in advance what each repository has. A reviewer counts
 only if it answers: a model the platform accepts, or a Codex app that reacts to
@@ -253,8 +252,7 @@ issue's pull request, at depth 1 or more; if Codex cannot be reached, the lead t
 you and holds that one pull request until you answer.
 
 **Depth changes during a batch.** The lead picks a depth for each piece of work
-when it plans, and says why. It raises a depth if a reader finds a real defect
-in work that had no second reviewer. It never lowers one.
+when it plans, and says why. It never lowers one.
 
 **What depth costs.** Each second reviewer is a session or a Codex review.
 Depth 3 adds a test author session, a hand-off before the worker starts, and a

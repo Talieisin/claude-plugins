@@ -1,6 +1,6 @@
 {
   "name": "cloud",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "description": "Lead, worker, reader, test author and retro skills for running batches of GitHub issues in Claude Code cloud sessions. Needs the github plugin from the same marketplace. No hooks.",
   "author": {
     "name": "Talieisin"

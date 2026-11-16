@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 32 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 33 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -11,7 +11,7 @@ You are the lead. You do not edit code; workers do. You act for the owner inside
 
 Session control comes from the session tools: `create_session`, `send_message`, `get_session`, `list_events`, `list_sessions`, `interrupt_session`, `archive_session`, `send_later`, `list_triggers`, `delete_trigger`. They appear as `mcp__claude-code-remote__*` in a session started by hand and as `mcp__Claude_Code_Remote__*` in one started by a routine. If you have no tool that creates sessions you cannot lead: say so in a comment on the tracking issue, leave the issues labelled as they are, and stop.
 
-Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`), this skill's version and the version of the `github:pull-request` skill you loaded. A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
+Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`), this skill's version and the version of the `github:pull-request` skill you loaded.
 
 ### Comments mode
 
@@ -23,7 +23,7 @@ These skills come from two plugins: the roles from `cloud`, and the pull-request
 
 A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows both `cloud@talieisin` and `github@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it lacks either, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
-A child you create names the versions of its skill and of the `github:pull-request` skill in its first comment, and again in its report to you of its pull request or its findings (the message; a short comment that only links the pull request need not repeat them). If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
+A child names the versions of its skill and of `github:pull-request` in its first comment and in its report message to you. If neither names them, it does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault: note them in the run log.
 
 ### Review depth
 
@@ -36,17 +36,13 @@ Every pull request is read by an ordinary reader. Beyond that, how much review a
 | 2 | Two reviewers | The reader and two second reviewers |
 | 3 | Depth 2, then one recheck of the revised plan | Depth 2, with tests written first by a separate test author, then one recheck of the fixes |
 
-Three things decide it. Read them before you plan, and name them in your first comment.
+Three things decide it. Name them in your first comment.
 
-- **Reviewers: who can be reached here.** The environment variable `CLOUD_REVIEWERS` lists them in order of preference: `claude` (a reader session on a stronger model), `codex-github` (a comment that asks the Codex GitHub app; pull requests only), `codex-clean` (not yet usable from a cloud session). Unset or empty means none can be reached: say so, and give depth 0 wherever only the policy would have given more. A label still sets its floor.
-- **Policy: which depth, for what.** The first of these that exists: a paragraph beginning `Review policy:` under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_REVIEW_POLICY`; otherwise the policy named `standard`. A policy is one of the names `review-depth.md` defines, or the owner's own words, or a name with words that adjust it. Apply it lane by lane, with judgement where the words leave room, and never go below what it plainly asks.
-- **Labels: the owner sets a floor for one issue** (the owner sets these; you do not). `review:deep` means at least depth 2 for that lane's plan and code, and `review:max` at least depth 3. `needs:codex-review` means code depth at least 1 with Codex as one of the reviewers of its pull request.
+- **Reviewers.** The environment variable `CLOUD_REVIEWERS` lists who can be reached, in order of preference: `claude` (a reader session on a stronger model) and `codex-github` (the Codex GitHub app; pull requests only). Unset or empty means none: say so, and give depth 0 wherever only the policy would have given more.
+- **Policy.** The first of these that exists: a paragraph beginning `Review policy:` under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_REVIEW_POLICY`; otherwise `standard`. It is a name `review-depth.md` defines, the owner's own words, or both. Apply it lane by lane, and never go below what it plainly asks.
+- **Labels** are the owner's floor for one issue: `review:deep` means at least depth 2 for that lane's plan and code, `review:max` at least depth 3, and `needs:codex-review` code depth at least 1 with Codex among the reviewers. No limit and no missing reviewer lowers a floor, and a lane whose plan depth a label sets is plan-gated.
 
-Work a lane's depths out in this order: what the policy gives; then any limit the policy sets, which may hold that back; then the labels' floors, which no limit and no missing reviewer lowers. A lane whose plan depth is above 0 because of a label is plan-gated, whatever else you would have decided: settle that before you write its worker's prompt.
-
-Choose a plan depth and a code depth for every lane when you plan, and put them in the lanes comment with the reason. A depth may rise later, never fall. A repository may have no automated reviewer at all (Copilot, for instance, is optional): nothing in this skill waits for one that is not there, and one that is there never counts towards a depth.
-
-For any depth above 0, and for any lane that carries one of these labels, read `review-depth.md` in this skill's directory and follow it.
+Put each lane's plan depth and code depth in the lanes comment, with the reason. A depth may rise later, never fall. An automated reviewer such as Copilot never counts towards a depth, and nothing waits for one that is not there. For any depth above 0, or any of these labels, read `review-depth.md` in this skill's directory and follow it.
 
 ## 1. Plan the batch
 
@@ -58,13 +54,13 @@ The section of `AGENTS.md` headed `Repository facts` holds this repository's fac
 - Plan from what you observed, not from a fact you have just seen to be wrong.
 - If `AGENTS.md` has no `Repository facts` section, discover what you need, say so in the lanes comment, and propose the section at the end.
 
-**Scope.** That section holds only facts about this one repository that the code and GitHub cannot tell an agent directly. How sessions should work belongs in the skills, how the cloud platform behaves in the repository's findings register if it keeps one (`docs/FINDINGS.md`), and a single observation in your report. A fact never relaxes a rule of the skills or of the rest of `AGENTS.md`.
+**Scope.** That section holds only facts about this repository that the code and GitHub cannot tell an agent. How sessions work belongs in the skills, how the platform behaves in the findings register (`docs/FINDINGS.md`) if there is one, and a single observation in your report. A fact never relaxes a rule.
 
-At the end of the batch, propose changes to the facts as one pull request titled `Facts: <summary>`, separate from any code, which you write yourself and which changes nothing outside the `Repository facts` section (the rest of `AGENTS.md` is the owner's): corrections to facts the run showed to be wrong, and new facts the run discovered (a hazard that bit a lane, a test that fails intermittently, a command that was needed). Each line cites the issue or pull request that shows it. You may merge it yourself when it only corrects or adds facts you verified in this run, once a reader has read it as for any pull request (where the repository has no checks, the test count for merge condition 4 is your own). Anything under "Checks the owner wants before merge", or that changes what sessions are allowed to do, is the owner's: open the pull request and escalate it on the tracking issue as `AGENTS.md` says.
+At the end of the batch, write the changes to the facts yourself as one pull request titled `Facts: <summary>`, separate from any code and changing nothing outside the `Repository facts` section: corrections the run showed, and new facts it found (a hazard that bit a lane, a test that fails intermittently, a command that was needed), each citing the issue or pull request that shows it. Once a reader has read it, you may merge it when it only corrects or adds facts you verified in this run (where the repository has no checks, the test count for merge condition 4 is your own). Anything under "Checks the owner wants before merge", or that changes what sessions may do, is the owner's: open the pull request and escalate it as `AGENTS.md` says.
 
 - Read each issue and the code it will change. For a batch of more than a few issues, start the lanes comment with a table: issue, the functions or regions of each file it will touch, and which other issues it depends on. The lanes, holds and order below all follow from that table.
 - Then sort the batch into **lanes**. A lane is one worker, one branch and one pull request. The default is one issue per lane. Put issues in the same lane only when one depends on another, or when they would plainly rewrite the same function or the same few lines, so that separate pull requests would only conflict. Never group issues just because they are small. Record the lanes, and why, in a comment on the batch's tracking issue.
-- Issues in different lanes that touch the same file still run in parallel; those conflicts are handled at merge time. Exception: when one lane rewrites lines that another changes, hold one until the other merges, normally the larger or more mechanical (a refactor, a sweep), so that a small change is not stuck behind it. Say so in the lanes comment, and name the merged shape in the held lane's prompt; a held lane that is plan-gated may plan meanwhile. An issue that must describe the batch's final state (documentation, a changelog) merges last: start it once the others have merged, or earlier to draft from what has merged, and start its reader only after its last update.
+- Issues in different lanes that touch the same file still run in parallel; those conflicts are handled at merge time. Exception: when one lane rewrites lines that another changes, hold one until the other merges, normally the larger or more mechanical (a refactor, a sweep), so that a small change is not stuck behind it. Say so in the lanes comment, and name the merged shape in the held lane's prompt; a held lane that is plan-gated may plan meanwhile. An issue that must describe the batch's final state (documentation, a changelog) merges last: start it once the others have merged.
 - Tell each lane where its new code goes in a shared file: lanes that all append at the end of one file conflict on every merge of `main`. Tell each lane in its starting prompt to leave alone a file that another lane owns or that its issue does not ask for, such as the changelog.
 - Once the lanes are posted, swap `agent:ready` for `agent:claimed` on every issue that has a lane, held lanes included; mark a held lane as held in the lanes comment. An issue left at `agent:ready` reads as unclaimed to any other lead.
 - An issue gets no lane if only the owner can do it (it is wholly on the "always back to the owner" list in `AGENTS.md`) or if what it asks for already holds on `main` (run its example first). Escalate it as `AGENTS.md` says, push notification included (`PushNotification` may need loading with ToolSearch), swap `agent:ready` for `needs:owner`, not `agent:claimed`, and report it as open.
@@ -104,7 +100,7 @@ When a worker reports its pull request ready **and** any correction you sent has
 
 For a gated lane, add: "This lane was plan-gated: say whether the diff departs from the approved `Plan` comment."
 
-Where the lane's code depth is above 0, or a defect you reproduced raises it, `review-depth.md` says what to start, when, and what the worker must be told first. Later fixes are re-read by the ordinary reader, and by a second reviewer only where depth 3 gives it its one recheck.
+Where the lane's code depth is above 0, `review-depth.md` says what to start, when, and what the worker must be told first.
 
 Readers report findings to you, with the head sha they read, and post them on the pull request. Check a finding yourself before passing it on (run the pull request's code), then send it to the worker. A finding you reject gets one line on the pull request saying why. Decide a reader's `Question` as you would a worker's, and record it on the issue.
 
@@ -121,7 +117,7 @@ Merge in order of readiness. Among several ready at once, take first the one the
 You are the merge gate; the ruleset alone would merge a stale branch. Before each merge, all six of these must hold:
 
 1. `mergeable_state` is `clean` (it reads `unknown` for a few seconds after a push: wait and re-read).
-2. No review thread is unresolved: `.../pulls/{n}/ccr/review_threads` returns no thread that is still open. No requested review is still pending, and no automated reviewer's check run (for example `copilot-pull-request-reviewer`) on the head has any status other than `completed` (a run that is `queued` or waiting is still pending). The automated reviewer reads only the first head it sees, so its absence on a later head is not a pending review. A defect it names in its overview without opening a thread is a finding like a reader's.
+2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`), no requested review is pending, and no automated reviewer's check run on the head (for example `copilot-pull-request-reviewer`) is short of `completed`. The automated reviewer reads only the first head it sees, so its absence on a later head is not a pending review. A defect it names in its overview without opening a thread is a finding like a reader's.
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
@@ -135,7 +131,7 @@ Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to
 
 - Close each issue whose pull request merged (every issue in a lane). A pull request with a closing keyword closes its issue itself; a 422 saying it was closed by another request is expected.
 - Remove the `agent:` labels from closed issues.
-- Archive each worker and reader once its pull request has merged; there is nothing to ask them first. Archive a plan reviewer once you have approved its plan (after its recheck, at depth 3), a second reviewer of a pull request once its last round is in, and a test author once you have checked its commit.
+- Archive each session you started once its last job is done, without asking it first: a worker and its readers when the pull request has merged, a plan reviewer when you have approved its plan, a test author when you have checked its commit.
 - Confirm with `list_sessions(children=true)` (all archived) and `list_triggers`: delete any enabled trigger that you or a session you started created, and your own fallback trigger. Leave a trigger someone else created, and name it in your report.
 - Post one report on the batch's tracking issue: what merged (pull request, squash commit), decisions you made for the owner, anything escalated or left open, each session's id and final state, and what you had to improvise that this skill should have told you. End it with a table headed `Run record`, one row per lane: issues, pull request, worker and reader session ids (and any second reviewer's and test author's), plan depth and code depth with what set them, plan-gated or not, merges of `main`, conflicts, re-reads, rounds of fixes. Under it, one line each for: sessions that stalled or were replaced (id, and what each waited on); decisions you later corrected; any fault you traced to an earlier pull request (its number).
 - Last, ask the owner as `AGENTS.md` says: with the question tool, each question on the tracking issue or an issue of the batch that still carries `needs:owner` with no answer recorded, whoever escalated it. Record each answer and act on it as `AGENTS.md` says, which sets who may do what. Where that is a change by pull request (never one to a workflow), start a worker and take it to merge like any lane, then finish that lane as above and add it to your report. If you are out of time, say in the record that it is left for the next batch. Remove `needs:owner` once nothing there is left for the owner.
