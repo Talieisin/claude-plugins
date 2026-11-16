@@ -71,11 +71,21 @@ given in advance, so it has to be yours.
 
 From a clone of the repository that will use the skills, with the GitHub CLI
 signed in: download [`templates/labels.sh`](../templates/labels.sh), read it (it
-is a dozen `gh label create` lines), and run it:
+is a dozen `gh label create` lines), then run it:
+
+```bash
+curl -fsSL -o labels.sh https://raw.githubusercontent.com/Talieisin/claude-plugins/main/templates/labels.sh
+```
+
+```bash
+less labels.sh
+```
 
 ```bash
 bash labels.sh
 ```
+
+Delete `labels.sh` afterwards; it does not belong in your repository.
 
 Do not pipe it straight from the network into a shell: you would be running
 whatever the file holds at that moment with your GitHub sign-in. It creates `agent:ready`,
