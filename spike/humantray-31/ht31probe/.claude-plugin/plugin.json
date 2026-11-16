@@ -1,1 +1,1 @@
-{ "name": "ht31probe", "version": "0.1.0", "description": "Throwaway probe for spike issue 31 (humantray): artifact database, cross-session messages, $.store survival. Never merged." }
+{ "name": "ht31probe", "version": "0.1.1", "description": "Throwaway probe for spike issue 31 (humantray): artifact database, cross-session messages, $.store survival. Never merged." }

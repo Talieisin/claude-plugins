@@ -3,6 +3,6 @@
   "owner": { "name": "Talieisin" },
   "description": "Throwaway marketplace for spike issue 31. Never merged.",
   "plugins": [
-    { "name": "ht31probe", "source": "./ht31probe", "description": "Throwaway probe for spike issue 31.", "version": "0.1.0" }
+    { "name": "ht31probe", "source": "./ht31probe", "description": "Throwaway probe for spike issue 31.", "version": "0.1.1" }
   ]
 }

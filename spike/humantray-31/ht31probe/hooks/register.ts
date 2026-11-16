@@ -59,13 +59,29 @@ async function bootTime($: EngineInterface): Promise<string> {
   }
 }
 
+// Older builds lack some calls ($.session.info is not in 2.1.325), and a
+// missing one throws synchronously. Every optional call goes through this.
+async function attempt<T>(f: () => Promise<T> | T): Promise<T | { unavailable: string }> {
+  try {
+    return await f()
+  } catch (err) {
+    return { unavailable: errText(err).slice(0, 200) }
+  }
+}
+
+type Info = { platform?: string; isHosted?: boolean; scratchpadDir?: string }
+async function sessionInfo($: EngineInterface): Promise<Info> {
+  const info = await attempt(() => ($.session as unknown as { info: () => Promise<Info> }).info())
+  return info && typeof info === 'object' && !('unavailable' in info) ? info : {}
+}
+
 async function where($: EngineInterface) {
-  const info = await $.session.info().catch(err => ({ error: errText(err) }))
+  const info = await sessionInfo($)
   return {
-    id: await $.session.id().catch(errText),
-    version: await $.session.version().catch(errText),
-    platform: (info as { platform?: string }).platform,
-    isHosted: (info as { isHosted?: boolean }).isHosted,
+    id: await attempt(() => $.session.id()),
+    version: await attempt(() => $.session.version()),
+    platform: info.platform ?? 'unknown',
+    isHosted: info.isHosted,
   }
 }
 
@@ -81,7 +97,7 @@ async function dataCall($: EngineInterface, input: Record<string, unknown>) {
 async function dbWrite($: EngineInterface, url: string, origin: string, extra: Record<string, Json> = {}) {
   const w = await where($)
   const docId = `${origin}-${Date.now()}`
-  const data = { mark: MARK, origin, at: now(), session: String(w.id), platform: String(w.platform), note: 'spike 31 test row, no real data', ...extra }
+  const data = { mark: MARK, origin, at: now(), session: typeof w.id === 'string' ? w.id : JSON.stringify(w.id), platform: String(w.platform), note: 'spike 31 test row, no real data', ...extra }
   const res = await timed(() => dataCall($, { action: 'set', url, collection: COLLECTION, doc_id: docId, data }))
   return { docId, ...res }
 }
@@ -118,7 +134,7 @@ async function createIfMissing($: EngineInterface) {
   const found = await findArtifacts($)
   const existing = found.matches.find(m => m.line.includes(CREATED_TITLE))
   if (existing) return { created: false, found }
-  const info = await $.session.info()
+  const info = await sessionInfo($)
   const dir = info.scratchpadDir ?? '/tmp'
   const path = `${dir}/ht31probe/humantray-spike-31-created-by-mod.html`
   await $.fs.write(path, CREATED_PAGE)
@@ -132,7 +148,7 @@ async function createIfMissing($: EngineInterface) {
 
 const msgText = async ($: EngineInterface, via: string) => {
   const w = await where($)
-  return `${MARK} message via ${via} from session ${String(w.id)} (platform ${String(w.platform)}, hosted ${String(w.isHosted)}) at ${now()}. Test for spike issue 31; no action needed.`
+  return `${MARK} message via ${via} from session ${typeof w.id === 'string' ? w.id : 'unknown'} (platform ${String(w.platform)}, hosted ${String(w.isHosted)}) at ${now()}. Test for spike issue 31; no action needed.`
 }
 
 async function sendAll($: EngineInterface, peer: string) {
@@ -233,22 +249,26 @@ async function seen($: EngineInterface, hook: string, text: string) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    const starts = (((await $.store.get('starts')) as Json[] | undefined) ?? []).slice(-20)
-    const entry = { at: now(), boot: await bootTime($), source: (e as { source?: string }).source ?? null }
-    await $.store.set('starts', [...starts, entry])
-    await log($, 'session.start', { entry, where: await where($) })
-    try {
-      await $.tool.register({
+    // Register first, each on its own, so a later failure cannot hide them.
+    const registered: Record<string, unknown> = {}
+    registered.tool = await attempt(() =>
+      $.tool.register({
         name: 'probe',
         description:
           'Spike probe for issue 31. Input {action, args}. Fixed actions: setup (args.url, args.session_id), env, db-write (args.origin), db-read, artifact-find, artifact-create, send (args.session_id), store-mark, store-read, log (args.last).',
         inputSchema: { type: 'object', properties: { action: { type: 'string' }, args: { type: 'object' } }, required: ['action'] },
-      })
-      await $.command.register({ name: 'ht31-setup', description: 'Spike 31: set the artifact URL and the cloud session id', argumentHint: '<artifact-url> <cloud-session-id>' })
-      await $.command.register({ name: 'ht31-run', description: 'Spike 31: run the local checks and print the report' })
-      await $.command.register({ name: 'ht31-log', description: 'Spike 31: print the last 40 log entries' })
+      }),
+    )
+    registered.setup = await attempt(() => $.command.register({ name: 'ht31-setup', description: 'Spike 31: set the artifact URL and the cloud session id', argumentHint: '<artifact-url> <cloud-session-id>' }))
+    registered.run = await attempt(() => $.command.register({ name: 'ht31-run', description: 'Spike 31: run the local checks and print the report' }))
+    registered.log = await attempt(() => $.command.register({ name: 'ht31-log', description: 'Spike 31: print the last 40 log entries' }))
+    try {
+      const starts = (((await $.store.get('starts')) as Json[] | undefined) ?? []).slice(-20)
+      const entry = { at: now(), boot: await bootTime($), source: (e as { source?: string }).source ?? null }
+      await $.store.set('starts', [...starts, entry])
+      await log($, 'session.start', { entry, registered, where: await where($) })
     } catch (err) {
-      await log($, 'register.error', errText(err))
+      $.ui.status(`ht31probe start: ${errText(err).slice(0, 80)}`)
     }
     return next(e)
   })
@@ -262,8 +282,8 @@ export const register: Register = on => {
       return { text: `ht31probe: ${errText(err)}` }
     }
   })
-  on('command.run', { command: 'ht31-run' }, async $ => ({ text: `ht31probe local report:\n${JSON.stringify(await localRun($), null, 1)}` }))
-  on('command.run', { command: 'ht31-log' }, async $ => ({ text: `ht31probe log:\n${JSON.stringify(await runAction($, 'log', { last: 40 }), null, 1)}` }))
+  on('command.run', { command: 'ht31-run' }, async $ => ({ text: `ht31probe local report:\n${JSON.stringify(await attempt(() => localRun($)), null, 1)}` }))
+  on('command.run', { command: 'ht31-log' }, async $ => ({ text: `ht31probe log:\n${JSON.stringify(await attempt(() => runAction($, 'log', { last: 40 })), null, 1)}` }))
 
   on('session.receive', async ($, e, next) => {
     await seen($, 'session.receive', `${short(e.origin, 300)} ${e.text}`)
