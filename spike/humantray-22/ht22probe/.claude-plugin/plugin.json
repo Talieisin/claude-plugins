@@ -1,0 +1,1 @@
+{ "name": "ht22probe", "version": "0.1.0", "description": "Throwaway spike probe for humantray issue 22", "types": "./types/index.d.ts" }
