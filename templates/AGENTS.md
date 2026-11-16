@@ -40,6 +40,8 @@ This section is written by the repository owner. It is the owner's approval, giv
 
 Review policy: <`minimal`, `standard` or `thorough`, or your own words, or a name and words that adjust it; see "Review depth" in the set-up guide>
 
+Automated review: <`wait`, `catch-up` or `ignore`; only matters if the repository has a reviewer such as Copilot. Leave the line out for `wait`.>
+
 <Anything else, in your own words: how a lead is started, which models workers and readers run on, who counts as a trusted reviewer.>
 
 **Changes to how sessions work** (this file, and any skills or rules this repository itself carries) are read by a session other than their author before they merge, and the read covers the head that merges: a fix made after the read is read again. A conflict-free merge of `main`, checked as the lead skill describes, is not a fix. The read is in addition to the owner's approval, not instead of it, wherever the list below asks for that approval (this file, beyond a facts pull request). A retro's proposal pull request is merged by the owner or on the owner's say-so, never by the retro.
