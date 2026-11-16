@@ -1,48 +1,67 @@
 # claude-plugins
 
-Talieisin's shared Claude Code plugins, as one marketplace so that skills are
-delivered once and not copied into every repository.
+Claude Code plugins from Talieisin. One so far.
 
-- Marketplace name: `talieisin` (`.claude-plugin/marketplace.json`)
-- Synced to a claude.ai account from Plugins, Add, Add marketplace, Add from a
-  repository. From a terminal: `/plugin install cloud --marketplace Talieisin/claude-plugins`
+## `cloud`: batches of GitHub issues, done by cloud sessions
 
-## Plugins
+Skills that let a Claude Code cloud session (claude.ai/code) take a batch of
+GitHub issues to merged pull requests:
 
-| Plugin | What it holds | Runs code? |
-|---|---|---|
-| `cloud` | `cloud-lead`, `cloud-worker`, `cloud-reader`, `cloud-retro` and the `cloud-github` rule, for running batches of GitHub issues in cloud sessions | No: text only |
+- a **lead** plans the batch, starts the other sessions, decides small questions
+  for you inside limits you set, and merges one pull request at a time;
+- a **worker** per piece of work writes the code and opens the pull request;
+- a **reader** per pull request, which did not write it, reads the diff against
+  the issue and reports what is wrong;
+- a **retro** judges past batches and proposes changes to the skills.
 
-More plugins belong here as further folders under `plugins/`, each turned on
-separately. A plugin that runs code (hooks) is kept apart from text-only ones,
-so that turning it on is a deliberate choice.
+It is text only: instructions for Claude, no hooks and no code that runs on your
+machine.
 
-## How sessions get the skills
+| Skill | Used by |
+|---|---|
+| `cloud:cloud-lead` | The session you start to run a batch |
+| `cloud:cloud-worker` | Sessions the lead starts, one per lane |
+| `cloud:cloud-reader` | Sessions the lead starts, one per pull request |
+| `cloud:cloud-retro` | A session you start to review past batches |
+| `cloud:cloud-github` | All of them: how to use GitHub from a cloud session, where `gh pr` and GraphQL do not work |
 
-- Best: the environment's setup script installs the plugin, so every session
-  in that environment has it, however it was started. This repository is
-  public so that the script needs no credential. Add to the setup script:
+## Quick start
 
-  ```bash
-  claude plugin marketplace add Talieisin/claude-plugins
-  claude plugin install cloud@talieisin
-  ```
+1. Add two lines to your cloud environment's setup script:
 
-  `github.com` must be among the environment's allowed domains.
-- A cloud session started by hand also gets the plugin from the account it is
-  synced to. A session created by another session does not, unless its
-  environment installs it as above; without that, the lead hands each worker
-  and reader its skill and the `cloud-github` rule in the system prompt.
-- A repository that uses the plugin should carry no copies of these skills: a
-  copy wins on the bare name. Sessions use the `cloud:` names.
-- A plugin cannot carry a `.claude/rules` file, so the GitHub rule is the skill
-  `cloud-github`.
+   ```bash
+   claude plugin marketplace add Talieisin/claude-plugins
+   claude plugin install cloud@talieisin
+   ```
 
-## Source of truth
+2. Put your authorisation in the repository's `CLAUDE.md`, starting from
+   [`templates/CLAUDE-standing-authorisation.md`](templates/CLAUDE-standing-authorisation.md).
+3. Create the labels with [`templates/labels.sh`](templates/labels.sh).
+4. Label some issues `agent:ready`, open a tracking issue, and start a session
+   that names it as its brief.
 
-This repository is the source of truth for the `cloud` skills from version 18 (run 17 of the cloud-sessions experiment proved the hand-off).
-Repositories do not carry copies. What stays in each repository: `CLAUDE.md`
-(the standing authorisation is the owner's, per repository), `AGENTS.md` and
-`mise.toml`. A change here is read by a session other than its author before
-it merges, as each repository's `CLAUDE.md` asks for changes to how sessions
-work.
+The full walk-through, with what is optional and how to keep it working, is in
+[`docs/setup.md`](docs/setup.md).
+
+## What is in this repository
+
+| Path | What |
+|---|---|
+| `plugins/cloud/` | The plugin: its manifest and the skills |
+| `docs/setup.md` | How to set a repository and an environment up |
+| `templates/` | Files to copy: the `CLAUDE.md` sections, labels, setup script, tracking issue, `AGENTS.md` skeleton, the optional start-from-a-label workflow |
+| `optional/mise/` | Pinned tool versions in a cloud session, for those who want them |
+| `AGENTS.md` | For anyone, human or agent, changing this repository |
+
+## Status
+
+These skills were worked out over a series of test batches on toy repositories
+and are still changing. They are versioned: every skill file carries a
+`shared-skill-version` marker, and a lead says which version it holds in its
+first comment. Expect rough edges, and read
+[the limits in `docs/setup.md`](docs/setup.md#part-2-optional) before relying on
+the less-used routes.
+
+## Licence
+
+MIT. See [`LICENSE`](LICENSE).

@@ -1,0 +1,67 @@
+name: start-lead
+
+# Optional, unattended start. Starts a cloud lead when an issue is labelled
+# lead:start, by firing a Claude Code routine. The usual way to start a batch is
+# to open a lead session by hand; this is for when nobody is at a keyboard.
+# The label goes on the batch's tracking issue; the lead then takes every open
+# issue labelled agent:ready. No AI runs here: this job only filters and makes
+# one HTTP call. A newer lead:start run cancels an older one that is still
+# waiting; runs for any other label get a group of their own, so they cannot
+# cancel a waiting fire.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: start-lead-${{ github.event.label.name == 'lead:start' && 'fire' || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  fire:
+    if: github.event.label.name == 'lead:start'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ROUTINE_ID: ${{ vars.LEAD_ROUTINE_ID }}
+      ROUTINE_TOKEN: ${{ secrets.LEAD_ROUTINE_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Check configuration
+        run: |
+          if [ -z "$ROUTINE_ID" ] || [ -z "$ROUTINE_TOKEN" ]; then
+            echo "::warning::LEAD_ROUTINE_ID (variable) or LEAD_ROUTINE_TOKEN (secret) is not set; nothing fired."
+            echo "configured=false" >> "$GITHUB_ENV"
+          else
+            echo "configured=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Wait for issues labelled together
+        if: env.configured == 'true'
+        run: sleep 60
+
+      - name: Fire the lead routine
+        if: env.configured == 'true'
+        run: |
+          set -euo pipefail
+          ready=$(gh api --paginate "repos/$REPO/issues?state=open&labels=agent:ready&per_page=100" --jq '.[] | select(.pull_request | not) | .number' | paste -sd, - | sed 's/,/, /g')
+          if [ -z "$ready" ]; then
+            echo "No open issue is labelled agent:ready any more; nothing fired."
+            exit 0
+          fi
+          body=$(jq -n --arg t "Started by the lead:start label on issue ${{ github.event.issue.number }}, which is the tracking issue for this batch. Open issues labelled agent:ready when this fired: $ready." '{text: $t}')
+          status=$(curl -sS -o response.json -w '%{http_code}' \
+            -X POST "https://api.anthropic.com/v1/claude_code/routines/$ROUTINE_ID/fire" \
+            -H "Authorization: Bearer $ROUTINE_TOKEN" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "content-type: application/json" \
+            -d "$body")
+          echo "HTTP $status"
+          jq '{claude_code_session_id, claude_code_session_url, type, error}' response.json || true
+          case "$status" in 2*) ;; *) echo "::error::The routine did not fire."; exit 1 ;; esac

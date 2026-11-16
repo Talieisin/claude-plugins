@@ -3,7 +3,7 @@ name: cloud-lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 22 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 23 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `CLAUDE.md` ("Standing authorisation" and "Deciding for the owner"). First load the `cloud:cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -21,7 +21,7 @@ Check which mode you are in before starting workers. You are in **comments mode*
 
 These skills come from the `cloud` plugin. Always use them by their plugin names, `cloud:cloud-lead`, `cloud:cloud-worker`, `cloud:cloud-reader` and `cloud:cloud-github`: a skill of the same name without the prefix is a repository's own copy, which may be older and wins on the bare name. If this repository carries such copies, say so in your report.
 
-A session you create gets the plugin only if its environment's setup script installs it (register L15). Before you start any session, run `claude plugin list`. If it shows `cloud@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it does not, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
+A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows `cloud@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it does not, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
 A child you create names the versions of its skill and of the rule in its first comment, and again when it reports its pull request or its findings. If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
 
@@ -35,7 +35,7 @@ A child you create names the versions of its skill and of the rule in its first 
 - Plan from what you observed, not from a fact you have just seen to be wrong.
 - If `AGENTS.md` has no facts section, discover what you need, say so in the lanes comment, and propose the section at the end.
 
-**Scope.** `AGENTS.md` holds only facts about this one repository that the code and GitHub cannot tell an agent directly. How sessions should work belongs in the skills, how the cloud platform behaves in the findings register, and a single observation in your report. A fact never relaxes a rule of the skills or of `CLAUDE.md`.
+**Scope.** `AGENTS.md` holds only facts about this one repository that the code and GitHub cannot tell an agent directly. How sessions should work belongs in the skills, how the cloud platform behaves in the repository's findings register if it keeps one (`docs/FINDINGS.md`), and a single observation in your report. A fact never relaxes a rule of the skills or of `CLAUDE.md`.
 
 At the end of the batch, propose changes to the facts as one pull request titled `Facts: <summary>`, separate from any code, which you write yourself: corrections to facts the run showed to be wrong, and new facts the run discovered (a hazard that bit a lane, a test that fails intermittently, a command that was needed). Each line cites the issue or pull request that shows it. You may merge it yourself when it only corrects or adds facts you verified in this run, once a reader has read it as for any pull request (where the repository has no checks, the test count for merge condition 4 is your own). Anything under "Checks the owner wants before merge", or that changes what sessions are allowed to do, is the owner's: open the pull request and escalate it on the tracking issue as `CLAUDE.md` says.
 
@@ -106,7 +106,7 @@ You are the merge gate; the ruleset alone would merge a stale branch. Before eac
 2. No review thread is unresolved: `.../pulls/{n}/ccr/review_threads` returns no thread that is still open. No requested review is still pending, and no automated reviewer's check run (for example `copilot-pull-request-reviewer`) on the head has any status other than `completed` (a run that is `queued` or waiting is still pending). The automated reviewer reads only the first head it sees, so its absence on a later head is not a pending review. A defect it names in its overview without opening a thread is a finding like a reader's.
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
-5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered; where a deep read was due, it has reported too and its findings are fixed or answered. For a change to `docs/FINDINGS.md` alone, `CLAUDE.md` lets the automated review stand in for the reader.
+5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered; where a deep read was due, it has reported too and its findings are fixed or answered. Where `CLAUDE.md` lets the automated review stand in for the reader on some kind of change, follow it.
 6. If the issue carries `needs:codex-review`, or you plan-gated the lane, you have asked Codex for its one review as the `cloud-github` skill describes, it has finished, and its findings are fixed or answered. Then remove the label. Do not ask Codex to review any other pull request.
 
 Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to the head you checked. Do not then ask the remaining workers to merge `main`. Bring only the next pull request you mean to merge up to date, yourself: `PUT .../pulls/{n}/update-branch` with `expected_head_sha`, then the tree check and the whole suite as section 4 says: lanes that each pass can fail together. A tree check or suite that fails after a clean update is a finding for that lane's worker. Only if `update-branch` reports a conflict, or that lane's worker is about to push a fix anyway (then do not update the branch yourself: the worker merges `main` with its fix, and the re-read of the fix covers the merge), tell that lane's worker (where both sides cannot stand, first decide which wins and record it on the issue):

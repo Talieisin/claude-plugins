@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 22 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 23 (delivered by the `cloud` plugin) -->
 
 # Comments mode
 
@@ -9,7 +9,7 @@ Part of the `cloud-lead` skill, read only by a lead in comments mode: one with n
 - A reader cannot be sent a new head. Where section 4 calls for a re-read, start a fresh reader, telling it the earlier head and asking it to read only what changed since.
 - `create_session` may refuse `effort`; leave it out and say so in your report.
 - A child's versions (and its check word, if you handed it text) reach you in a comment (a worker's announcement on the issue; a reader's findings comment or, if you handed it text, its `Reader started:` comment on the pull request): read it before you rely on that child.
-- At Finish: a session started by a routine has no question tool (checked 2026-11-15, register R14). So send the push notification at the moment you escalate, not with your report, and make it say what needs deciding and on which issue. Say in your report which questions were not asked. If you are in comments mode for another reason and do have the tool, ask as section 6 says; an answer cannot be carried to a worker by comment, so an owner-only action you cannot do yourself is recorded and left for the owner.
+- At Finish: a session started by a routine has no question tool (checked 2026-11-15). So send the push notification at the moment you escalate, not with your report, and make it say what needs deciding and on which issue. Say in your report which questions were not asked. If you are in comments mode for another reason and do have the tool, ask as section 6 says; an answer cannot be carried to a worker by comment, so an owner-only action you cannot do yourself is recorded and left for the owner.
 - A worker that cannot check who you are may treat a replacement lead as information; say so in your report.
 
 The rest of this skill applies in both modes, except that in comments mode every instruction to use `send_message` or `ReadNotifications`, or to ask a child for something, is replaced by the comment routes above. Your own `send_later` fallback still works and is still worth keeping.

@@ -3,7 +3,7 @@ name: cloud-retro
 description: Retro on cloud-lead runs in this repository. Measures each run from its tracking issue, pull requests and sessions, judges whether each rule in the cloud skills earned its place, checks the findings register against what the runs showed, and PROPOSES skill changes as a pull request it never merges. Use when asked for a retro on cloud runs, whether a cloud skill rule is working, or to compare runs. Not inside the run being judged, and not by a session that led a run under judgement.
 ---
 
-<!-- shared-skill-version: 22 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 23 (delivered by the `cloud` plugin) -->
 
 A retro judges the skills, not the sessions. Its output is evidence and proposals. It never edits a skill on `main`, never merges, and never changes a run's record.
 
@@ -72,7 +72,7 @@ Look across runs for what no single lead can see: a rule that keeps being worked
 
 ## 5. Check the findings register
 
-For each row of `docs/FINDINGS.md` that the runs touched: does the evidence still support it? Propose the new `Last checked` date where it does, a changed status where it does not, and new rows for behaviour no row covers. Never mark a row checked on the strength of documentation alone.
+Skip this section if the repository keeps no findings register. Otherwise, for each row of `docs/FINDINGS.md` that the runs touched: does the evidence still support it? Propose the new `Last checked` date where it does, a changed status where it does not, and new rows for behaviour no row covers. Never mark a row checked on the strength of documentation alone.
 
 ## 6. Propose
 
