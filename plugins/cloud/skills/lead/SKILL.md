@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 33 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 34 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -42,7 +42,11 @@ Three things decide it. Name them in your first comment.
 - **Policy.** The first of these that exists: a paragraph beginning `Review policy:` under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_REVIEW_POLICY`; otherwise `standard`. It is a name `review-depth.md` defines, the owner's own words, or both. Apply it lane by lane, and never go below what it plainly asks.
 - **Labels** are the owner's floor for one issue: `review:deep` means at least depth 2 for that lane's plan and code, `review:max` at least depth 3, and `needs:codex-review` code depth at least 1 with Codex among the reviewers. No limit and no missing reviewer lowers a floor, and a lane whose plan depth a label sets is plan-gated.
 
-Put each lane's plan depth and code depth in the lanes comment, with the reason. A depth may rise later, never fall. An automated reviewer such as Copilot never counts towards a depth, and nothing waits for one that is not there. For any depth above 0, or any of these labels, read `review-depth.md` in this skill's directory and follow it.
+Put each lane's plan depth and code depth in the lanes comment, with the reason. A depth may rise later, never fall. For any depth above 0, or any of these labels, read `review-depth.md` in this skill's directory and follow it.
+
+### The automated reviewer
+
+A repository may have a reviewer that reads each pull request by itself (Copilot, for instance). It is optional and never counts towards a depth. At the facts gate, read `automated-review.md` in this skill's directory: it says how to tell whether this repository has one, when to wait for it, and what to sweep for at the end. Where there is none, nothing waits.
 
 ## 1. Plan the batch
 
@@ -117,7 +121,7 @@ Merge in order of readiness. Among several ready at once, take first the one the
 You are the merge gate; the ruleset alone would merge a stale branch. Before each merge, all six of these must hold:
 
 1. `mergeable_state` is `clean` (it reads `unknown` for a few seconds after a push: wait and re-read).
-2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`), no requested review is pending, and no automated reviewer's check run on the head (for example `copilot-pull-request-reviewer`) is short of `completed`. The automated reviewer reads only the first head it sees, so its absence on a later head is not a pending review. A defect it names in its overview without opening a thread is a finding like a reader's.
+2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`) and no review you or the owner requested is pending. Whether a merge waits for the automated reviewer, and for how long, is for `automated-review.md` alone; but every finding in an automated review that has arrived, its overview included, is fixed or answered before the merge.
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
@@ -132,6 +136,7 @@ Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to
 - Close each issue whose pull request merged (every issue in a lane). A pull request with a closing keyword closes its issue itself; a 422 saying it was closed by another request is expected.
 - Remove the `agent:` labels from closed issues.
 - Archive each session you started once its last job is done, without asking it first: a worker and its readers when the pull request has merged, a plan reviewer when you have approved its plan, a test author when you have checked its commit.
+- Where you expect an automated reviewer, sweep for late reviews as `automated-review.md` says, and finish any lanes that produces, before the next step.
 - Confirm with `list_sessions(children=true)` (all archived) and `list_triggers`: delete any enabled trigger that you or a session you started created, and your own fallback trigger. Leave a trigger someone else created, and name it in your report.
 - Post one report on the batch's tracking issue: what merged (pull request, squash commit), decisions you made for the owner, anything escalated or left open, each session's id and final state, and what you had to improvise that this skill should have told you. End it with a table headed `Run record`, one row per lane: issues, pull request, worker and reader session ids (and any second reviewer's and test author's), plan depth and code depth with what set them, plan-gated or not, merges of `main`, conflicts, re-reads, rounds of fixes. Under it, one line each for: sessions that stalled or were replaced (id, and what each waited on); decisions you later corrected; any fault you traced to an earlier pull request (its number).
 - Last, ask the owner as `AGENTS.md` says: with the question tool, each question on the tracking issue or an issue of the batch that still carries `needs:owner` with no answer recorded, whoever escalated it. Record each answer and act on it as `AGENTS.md` says, which sets who may do what. Where that is a change by pull request (never one to a workflow), start a worker and take it to merge like any lane, then finish that lane as above and add it to your report. If you are out of time, say in the record that it is left for the next batch. Remove `needs:owner` once nothing there is left for the owner.

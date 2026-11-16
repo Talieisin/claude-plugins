@@ -258,9 +258,36 @@ when it plans, and says why. It never lowers one.
 Depth 3 adds a test author session, a hand-off before the worker starts, and a
 recheck. Use it for the few changes that warrant it.
 
-**Automatic reviewers are optional too.** If the repository has one (Copilot,
-say), the lead waits for its review of the first head and treats its threads
-like any other. If it has none, nothing waits. It never counts towards a depth.
+### An automatic reviewer (Copilot, for instance)
+
+Optional. If the repository has a reviewer that reads each pull request by
+itself, the lead finds that out from the repository's facts in `AGENTS.md` or,
+failing that, from its recent pull requests; you set nothing. (A reviewer that
+only answers when asked, such as the Codex GitHub app, is not one of these.) It never counts towards a review depth. If the repository has
+none, nothing waits and nothing below applies.
+
+What the lead does about one is a line under "Defaults the owner has chosen" in
+`AGENTS.md`, or `CLOUD_AUTOMATED_REVIEW` in the environment for all your
+repositories:
+
+```
+Automated review: wait
+```
+
+| Setting | What the lead does |
+|---|---|
+| `wait` (the default) | Before merging, waits for the automatic review of the pull request's first version, for up to ten minutes from when it opened. If none comes (the reviewer may be out of quota), it says so on the pull request and in its report, and goes on. You may give another limit: `Automated review: wait up to 20 minutes` |
+| `catch-up` | Never waits, even if the review is still running |
+| `ignore` | Does not wait, and does not look for late comments |
+
+Whatever the setting, short of `ignore`, the lead looks back at the end of the
+batch, once each pull request has been open for the limit, for anything the
+automatic reviewer wrote that nobody dealt with: comments that arrived after
+the merge, or just before it. It answers
+the ones that are wrong, and opens one issue for each pull request that has
+real ones, labelled `agent:ready`. If the batch has time left it works those
+issues there and then, and looks once more at the pull requests that produces;
+anything found then waits for the next batch.
 
 ### A retro
 

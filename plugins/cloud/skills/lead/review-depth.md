@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 33 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 34 (delivered by the `cloud` plugin) -->
 
 # Review depth
 
@@ -20,7 +20,7 @@ No named policy gives depth 3. It comes from the owner's words or from `review:m
 
 ## Filling a depth with reviewers
 
-A depth asks for a number of second reviewers: one at depth 1, two at depths 2 and 3. Take them from `CLOUD_REVIEWERS` in its order, counting only those that are usable for the job, and never two from the same family. No reviewer is used twice on one plan or one pull request. An automated reviewer such as Copilot is never one of them. Whether a reviewer is usable is found by trying it:
+A depth asks for a number of second reviewers: one at depth 1, two at depths 2 and 3. Take them from `CLOUD_REVIEWERS` in its order, counting only those that are usable for the job, and never two from the same family. No reviewer is used twice on one plan or one pull request. The automated reviewer is never one of them. Whether a reviewer is usable is found by trying it:
 
 - **`claude`** is usable if `create_session` accepts the model. The model is the environment variable `CLOUD_REVIEW_MODEL`, or `claude-fable-5-2` if that is unset. A `claude` reader that has not reported twenty minutes after its start, or that ends without reporting, is replaced once; if the replacement fails the same way, it is not usable for that plan or pull request.
 - **`codex-github`** reviews pull requests only; for a plan it is not usable. For a pull request it is usable if the app answers: within five minutes of your request, `chatgpt-codex-connector[bot]` reacts to it or posts its summary comment, and within twenty minutes that summary reads Completed. If either limit passes, it is not usable in this repository: say so in the run log and do not try it again in this batch. A request you gave up on may still be answered later: if its review threads appear before you merge, they are findings like any other and must be fixed or answered, because the merge conditions count every open thread.
