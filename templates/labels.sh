@@ -16,8 +16,8 @@ label "agent:review"       "1d76db" "A pull request is open and being read"
 label "agent:question"     "d93f0b" "A worker or reader has asked its lead a question"
 label "needs:owner"        "b60205" "Waiting on the repository owner"
 label "plan:required"      "5319e7" "The worker must post a plan and have it approved first"
-label "review:deep"        "5319e7" "Give this issue's plan and pull request a second review"
-label "needs:codex-review" "c5def5" "The same as review:deep (kept for older issues)"
+label "review:deep"        "5319e7" "Give this issue's plan and pull request a second read by a Claude reader"
+label "needs:codex-review" "c5def5" "Give this issue's pull request a review by Codex"
 
 # Only needed if you start leads from a label (docs/setup.md, optional part):
 # label "lead:start" "0052cc" "Start a lead for the open agent:ready issues"

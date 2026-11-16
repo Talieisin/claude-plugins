@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 28 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 29 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -27,14 +27,17 @@ A child you create names the versions of its skill and of the `github:pull-reque
 
 ### Second reviews
 
-A second review is one more independent look, beyond the ordinary reader, at a plan or at a pull request. Two settings govern it. Read both before you plan, and name them in your first comment.
+A second review is one more independent look, beyond the ordinary reader, at a plan or at a pull request. Read these settings before you plan, and name them in your first comment.
 
-- **Routes: what this environment can reach.** The environment variable `CLOUD_SECOND_REVIEW` lists them, separated by spaces: `claude` (a second reader session on a stronger model), `codex-github` (a comment on the pull request that asks the Codex GitHub app), `codex-clean` (not yet usable from a cloud session). Unset or empty means there is none, and then no second review is ever due.
+- **Routes: what this environment can reach.** Two environment variables, one for each kind of review: `CLOUD_PLAN_REVIEW` and `CLOUD_CODE_REVIEW`. Each is a list in order of preference, separated by spaces, and you use the first route that turns out to be usable. Routes joined by `+` are used together. The routes are `claude` (a second reader session on a stronger model), `codex-github` (a comment on the pull request that asks the Codex GitHub app; pull requests only) and `codex-clean` (not yet usable from a cloud session). A variable that is unset or empty means no route for that kind.
 - **Policy: when one is due.** The first of these that exists decides: a line beginning `Second reviews:` (a list marker before it does not matter) under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_SECOND_REVIEW_POLICY`; otherwise `on-request`.
-  - `on-request`: for a lane with an issue that carries `review:deep` or `needs:codex-review` (the owner sets these; you do not), or that you plan-gated: its plan, if it has one, and its pull request.
-  - `plans-and-code`: every plan, before you approve it; and every pull request whose change is non-trivial, as well as those `on-request` names. A change is non-trivial when it adds or removes behaviour, changes an interface, or refactors code that other code depends on. A change to documentation, to the facts, or to tests alone is not.
+  - `on-request`: for a lane you plan-gated: its plan and its pull request.
+  - `plans-and-code`: every plan, before you approve it; and every pull request whose change is non-trivial. A change is non-trivial when it adds or removes behaviour, changes an interface, or refactors code that other code depends on. A change to documentation, to the facts, or to tests alone is not.
+- **Labels: the owner asks for a reviewer by name,** whatever the policy and whatever the lists say (the owner sets these; you do not). `review:deep` asks for the `claude` route, on the lane's plan if it has one and on its pull request. `needs:codex-review` asks for Codex on its pull request. Each is in addition to what the policy gives.
 
-When one is due, read `second-review.md` in this skill's directory and follow it. Say in the lanes comment which lanes will get one, of what, and why.
+A repository may have no automated reviewer at all (Copilot, for instance, is optional). Nothing in this skill waits for one that is not there, and its absence changes none of the above.
+
+When a second review is due, read `second-review.md` in this skill's directory and follow it. Say in the lanes comment which lanes will get one, of what, by which route, and why.
 
 ## 1. Plan the batch
 
@@ -113,7 +116,7 @@ You are the merge gate; the ruleset alone would merge a stale branch. Before eac
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
-6. Every second review that was due on this pull request has reported, by every route `second-review.md` has you use, and its findings are fixed or answered.
+6. Every second review that was due on this pull request has reported, by every route `second-review.md` has you use, its findings are fixed or answered, and where a Codex recheck was due it has reported too.
 
 Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to the head you checked. Do not then ask the remaining workers to merge `main`. Bring only the next pull request you mean to merge up to date, yourself: `PUT .../pulls/{n}/update-branch` with `expected_head_sha`, then the tree check and the whole suite as section 4 says: lanes that each pass can fail together. A tree check or suite that fails after a clean update is a finding for that lane's worker. Only if `update-branch` reports a conflict, or that lane's worker is about to push a fix anyway (then do not update the branch yourself: the worker merges `main` with its fix, and the re-read of the fix covers the merge), tell that lane's worker (where both sides cannot stand, first decide which wins and record it on the issue):
 

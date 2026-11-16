@@ -38,7 +38,7 @@ Do not work on local `main`: it is an old snapshot. After `git fetch origin main
 
 Codex never reviews by itself here. It is asked, once, when a pull request calls for it.
 
-**When to ask.** Only where the role you are working under says a review by this route is due (for a batch, the lead decides, and only the lead asks). Never for every pull request as a matter of course. Ask once per pull request. Do not ask again after a fix unless the fix was itself substantial; there is no review loop.
+**When to ask.** Only where the role you are working under says a review by this route is due (for a batch, the lead decides, and only the lead asks). Never for every pull request as a matter of course. Ask once per pull request, and at most once more as a recheck where that role says so, on the head that carries the fixes to its own findings. There is no further round.
 
 **How to ask.** The lead posts one ordinary comment on the pull request (`POST repos/{o}/{r}/issues/{n}/comments`) whose first line is the Codex mention followed by the word `review`: `@codex review`. A footer added after it does no harm. Sessions act as the owner's account, which is linked to Codex, so this counts as the owner's manual request and draws on the owner's subscription. Never write that mention anywhere else (issue bodies, plans, commit messages, pull request descriptions): it triggers the app wherever it appears.
 

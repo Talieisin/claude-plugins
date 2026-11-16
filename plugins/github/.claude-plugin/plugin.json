@@ -1,6 +1,6 @@
 {
   "name": "github",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The pull-request skill: take a GitHub pull request from open to merged, from your own machine or from a Claude Code cloud session. No hooks; the local route calls read-only scripts shipped with the skill.",
   "author": {
     "name": "Talieisin"

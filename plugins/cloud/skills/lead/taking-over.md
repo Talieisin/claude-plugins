@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 28 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 29 (delivered by the `cloud` plugin) -->
 
 # Taking over a batch
 
