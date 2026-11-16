@@ -20,13 +20,26 @@ given at run time with `/ht31-setup`, and kept in the mod's own store.
 
 ## Running it locally (the owner's half)
 
-```sh
-git clone --depth 1 --branch spike/humantray-31 https://github.com/Talieisin/claude-plugins.git ht31-spike
-cd ht31-spike
-claude --plugin-dir spike/humantray-31/ht31probe --remote-control ht31-local
+In an already-running local session (keeps its Remote Control id), from the root
+of a checkout of this repository:
+
+```text
+! git fetch origin spike/humantray-31 && git worktree add --detach ../ht31-spike FETCH_HEAD
+/plugin marketplace add ../ht31-spike/spike/humantray-31
+/plugin install ht31probe@ht31spike
+/reload-plugins
 ```
 
-Then, in that session, the two commands the lead sends you (with the real URL
-and id), and `/ht31-log` when asked.
+Or start a fresh session with it instead:
+
+```sh
+claude --plugin-dir ../ht31-spike/spike/humantray-31/ht31probe --remote-control ht31-local
+```
+
+Then `/ht31-setup <artifact-url> <cloud-session-id>`, `/ht31-run`, and `/ht31-log`
+when asked. The lead sends the real URL and id.
+
+Afterwards: `/plugin uninstall ht31probe@ht31spike`, `/plugin marketplace remove ht31spike`,
+`! git worktree remove ../ht31-spike`.
 
 This branch exists for the record only. Do not merge it.
