@@ -3,7 +3,7 @@ name: retro
 description: Retro on batches a cloud lead ran in this repository. Measures each run from its tracking issue, pull requests and sessions, judges whether each rule in the cloud skills earned its place, checks the findings register against what the runs showed, and PROPOSES skill changes as a pull request it never merges. Use when asked for a retro on cloud runs, whether a cloud skill rule is working, or to compare runs. Not inside the run being judged, and not by a session that led a run under judgement.
 ---
 
-<!-- shared-skill-version: 30 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 31 (delivered by the `cloud` plugin) -->
 
 A retro judges the skills, not the sessions. Its output is evidence and proposals. It never edits a skill on `main`, never merges, and never changes a run's record.
 

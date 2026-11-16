@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 30 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 31 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -135,7 +135,7 @@ Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to
 
 - Close each issue whose pull request merged (every issue in a lane). A pull request with a closing keyword closes its issue itself; a 422 saying it was closed by another request is expected.
 - Remove the `agent:` labels from closed issues.
-- Archive each worker and reader once its pull request has merged; there is nothing to ask them first.
+- Archive each worker and reader once its pull request has merged; there is nothing to ask them first. Archive a plan reviewer once you have approved its plan (after its recheck, at depth 3), a second reviewer of a pull request once its last round is in, and a test author once you have checked its commit.
 - Confirm with `list_sessions(children=true)` (all archived) and `list_triggers`: delete any enabled trigger that you or a session you started created, and your own fallback trigger. Leave a trigger someone else created, and name it in your report.
 - Post one report on the batch's tracking issue: what merged (pull request, squash commit), decisions you made for the owner, anything escalated or left open, each session's id and final state, and what you had to improvise that this skill should have told you. End it with a table headed `Run record`, one row per lane: issues, pull request, worker and reader session ids (and any second reviewer's and test author's), plan depth and code depth with what set them, plan-gated or not, merges of `main`, conflicts, re-reads, rounds of fixes. Under it, one line each for: sessions that stalled or were replaced (id, and what each waited on); decisions you later corrected; any fault you traced to an earlier pull request (its number).
 - Last, ask the owner as `AGENTS.md` says: with the question tool, each question on the tracking issue or an issue of the batch that still carries `needs:owner` with no answer recorded, whoever escalated it. Record each answer and act on it as `AGENTS.md` says, which sets who may do what. Where that is a change by pull request (never one to a workflow), start a worker and take it to merge like any lane, then finish that lane as above and add it to your report. If you are out of time, say in the record that it is left for the next batch. Remove `needs:owner` once nothing there is left for the owner.
