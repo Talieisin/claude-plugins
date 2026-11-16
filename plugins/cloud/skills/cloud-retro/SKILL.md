@@ -15,7 +15,7 @@ A retro judges the skills, not the sessions. Its output is evidence and proposal
 
 ## 1. Gather the runs
 
-A run is a tracking issue whose comments include a lead's report (a comment beginning `Lead:` that holds a table headed `Run record`). For each run in scope, collect, from GitHub and the session tools only:
+A run is a tracking issue whose comments include a lead's report (the comment that holds a table headed `Run record`). For each run in scope, collect, from GitHub and the session tools only:
 
 - the tracking issue: brief, lanes comment, report, any owner notes;
 - every issue and pull request in the batch: comments (`Decided for the owner:`, `Plan`, reader and worker reports), reviews, review threads, commits, merge commit, check runs;
