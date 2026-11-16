@@ -5,11 +5,11 @@ description: How to use GitHub from a Claude Code cloud session, where the proxy
 
 # Pull requests from a cloud session
 
-<!-- shared-rule-version: 8 (delivered by the `cloud` plugin as a skill, and handed by a lead to its workers and readers in their system prompt) -->
+<!-- shared-rule-version: 9 (delivered by the `cloud` plugin as a skill, and handed by a lead to its workers and readers in their system prompt) -->
 
-Having read this, as a skill or in your system prompt, say so where your role's skill tells you to: "cloud-github rule version 8". A session that has not said so has not read it.
+Having read this, as a skill or in your system prompt, say so where your role's skill tells you to: "cloud-github rule version 9". A session that has not said so has not read it.
 
-Locally, the `github-pr` skill drives a pull request with `gh pr`, `gh pr checks --watch` and GraphQL. In a cloud session (`CLAUDE_CODE_REMOTE` is set) none of those work: the GitHub proxy rejects GraphQL, serves only the repositories attached to the session, and rejects branch deletion. Follow the same lifecycle with the REST calls below. `{o}/{r}` is this repository; `{n}` is the pull request number.
+Locally, the `github-pr` skill drives a pull request with `gh pr`, `gh pr checks --watch` and GraphQL. In a cloud session (`CLAUDE_CODE_REMOTE` is set) none of those work: the GitHub proxy rejects GraphQL, serves only the repositories attached to the session, and rejects branch deletion and any change to repository settings (the owner makes those by hand). Follow the same lifecycle with the REST calls below. `{o}/{r}` is this repository; `{n}` is the pull request number.
 
 Routes marked (unverified) are taken from the proxy's own error text or GitHub's REST documentation and have not yet been exercised; if one fails, record the error on the issue and say so, do not improvise around it. The others have been used successfully from cloud sessions.
 

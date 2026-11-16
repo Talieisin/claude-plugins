@@ -11,7 +11,7 @@
       "name": "cloud",
       "description": "Lead, worker, reader and retro skills for running batches of GitHub issues in Claude Code cloud sessions, with the GitHub rule as a skill. Text only: no hooks, no code.",
       "source": "./plugins/cloud",
-      "version": "0.21.0"
+      "version": "0.22.0"
     }
   ]
 }
