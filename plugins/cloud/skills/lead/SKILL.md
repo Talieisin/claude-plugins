@@ -46,7 +46,7 @@ Put each lane's plan depth and code depth in the lanes comment, with the reason.
 
 ### The automated reviewer
 
-A repository may have a reviewer that reads each pull request by itself (Copilot, for instance). It is optional, it never counts towards a depth, and nothing waits for one a repository does not have. At the facts gate, find out whether to expect one: look at the reviews on the last few merged pull requests (`.../pulls/{n}/reviews`) for a reviewer with `user.type` of `Bot` that nobody asked for. If there is one, say so in the lanes comment, and read `automated-review.md` in this skill's directory: it says when to wait for it and what to sweep for at the end.
+A repository may have a reviewer that reads each pull request by itself (Copilot, for instance). It is optional and never counts towards a depth. At the facts gate, read `automated-review.md` in this skill's directory: it says how to tell whether this repository has one, when to wait for it, and what to sweep for at the end. Where there is none, nothing waits.
 
 ## 1. Plan the batch
 
@@ -121,7 +121,7 @@ Merge in order of readiness. Among several ready at once, take first the one the
 You are the merge gate; the ruleset alone would merge a stale branch. Before each merge, all six of these must hold:
 
 1. `mergeable_state` is `clean` (it reads `unknown` for a few seconds after a push: wait and re-read).
-2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`), no requested review is pending, and no automated reviewer's check run on the head (for example `copilot-pull-request-reviewer`) is short of `completed`. Where `automated-review.md` has you wait for an automated reviewer, its review of the first head has arrived or its time has passed. The automated reviewer reads only the first head it sees, so its absence on a later head is not a pending review. A defect it names in its overview without opening a thread is a finding like a reader's.
+2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`) and no review you or the owner requested is pending. The automated reviewer is not covered by this condition: `automated-review.md` alone says whether a merge waits for it, and for how long.
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
