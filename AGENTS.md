@@ -21,7 +21,7 @@ something up.
 Write nothing here that should not be read by anyone: no session, environment
 or trigger ids, no names of private repositories or their issue numbers, no
 credentials, no personal details. The skills say "this repository" and
-`CLAUDE.md`; they do not name ours.
+`AGENTS.md`; they do not name ours.
 
 Evidence for why a rule exists (which test batch showed what) is kept privately
 by Talieisin, not here. A skill states the rule and, where it helps, the reason
@@ -67,8 +67,7 @@ So that nobody looks for them here, or forgets they exist:
 |---|---|
 | A cloud environment's setup script, allowed domains and network secrets | The environment, on claude.ai. [`templates/setup-script.sh`](templates/setup-script.sh) is the copy to paste |
 | A routine that starts a lead | The owner's claude.ai account, under Scheduled. Its id and token are a variable and a secret on the repository that fires it |
-| What sessions may do in a repository | That repository's `CLAUDE.md` |
-| A repository's facts | That repository's `AGENTS.md` |
+| What sessions may do in a repository, and its facts | That repository's `AGENTS.md` (the facts in its `Repository facts` section) |
 
 If you change how any of those must be set up, change `docs/setup.md` and the
 matching file under `templates/` in the same pull request.

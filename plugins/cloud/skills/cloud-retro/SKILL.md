@@ -3,7 +3,7 @@ name: cloud-retro
 description: Retro on cloud-lead runs in this repository. Measures each run from its tracking issue, pull requests and sessions, judges whether each rule in the cloud skills earned its place, checks the findings register against what the runs showed, and PROPOSES skill changes as a pull request it never merges. Use when asked for a retro on cloud runs, whether a cloud skill rule is working, or to compare runs. Not inside the run being judged, and not by a session that led a run under judgement.
 ---
 
-<!-- shared-skill-version: 23 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 24 (delivered by the `cloud` plugin) -->
 
 A retro judges the skills, not the sessions. Its output is evidence and proposals. It never edits a skill on `main`, never merges, and never changes a run's record.
 
@@ -66,7 +66,7 @@ Treat a lead's "Skill corrections" list as claims to test, not as findings. For 
 - **Propose removing** a rule that has been provisional across two retros, that runs keep working round, or whose problem a simpler rule or a change to the platform has since removed.
 - **Propose loosening** a rule written as an absolute ("always", "never", "exactly") where the runs show judgement would have done as well. Reserve absolutes for the few invariants: who merges, the merge conditions, a diff read by someone other than its author, and what goes back to the owner.
 
-Prefer fewer, plainer rules. A lesson about one repository belongs in that repository's `AGENTS.md`; one about the platform belongs in the findings register.
+Prefer fewer, plainer rules. A lesson about one repository belongs in the `Repository facts` section of that repository's `AGENTS.md`; one about the platform belongs in the findings register.
 
 Look across runs for what no single lead can see: a rule that keeps being worked round, the same improvisation in several reports, a measure drifting the wrong way as the skills grow, and steps that have accumulated without anyone showing they are still needed. A skill that only ever gets longer is itself a finding.
 
@@ -78,7 +78,7 @@ Skip this section if the repository keeps no findings register. Otherwise, for e
 
 - Write the report as a comment on the issue your brief names or, without one, on a new issue titled `Retro: <scope>`: the header (repository, runs covered, skill versions, writer model and effort), the measures table, the baseline comparison, the rule judgements, the register changes, and a short list of proposals ranked by expected effect.
 - Put the proposed changes to this repository's files (the findings register, `AGENTS.md`, the baseline) on a branch and open a pull request titled `Retro proposals: <scope>`. The skills are in the plugin's repository, which you cannot write to: post their changes as one comment on the same issue headed `Proposed wording`, each an exact replacement, addition or removal that names the file and the sentence it changes and the version of your copy. Each change cites the evidence for it. Include removals as well as additions. Do not merge the pull request and do not mark it ready if the review below has not happened.
-- A proposal that would change `CLAUDE.md`, a workflow, a ruleset or a repository setting is listed in the report for the owner and is not put in the pull request.
+- A proposal that would change `AGENTS.md`, a workflow, a ruleset or a repository setting is listed in the report for the owner and is not put in the pull request.
 
 ## Review
 
