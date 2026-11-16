@@ -223,7 +223,7 @@ three lanes at depth 2 or above in a batch.
 |---|---|
 | `minimal` | Depth 0 for everything |
 | `standard` (used when nothing is set) | A lane the lead made plan first: plan depth 1, code depth 1. Everything else: 0 |
-| `thorough` | Every plan: depth 1. Every non-trivial change: code depth 1. A change to an interface other code relies on, to how data is stored, or to sign-in, permissions or secrets: depth 2 for both |
+| `thorough` | Every plan the lead asks for: depth 1. Every non-trivial change: code depth 1. A change to an interface other code relies on, to how data is stored, or to sign-in, permissions or secrets: depth 2 for both |
 
 A change is non-trivial when it adds or removes behaviour, changes an
 interface, or refactors code other code depends on. No built-in policy gives
