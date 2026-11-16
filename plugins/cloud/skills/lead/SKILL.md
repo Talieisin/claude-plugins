@@ -38,13 +38,15 @@ Every pull request is read by an ordinary reader. Beyond that, how much review a
 
 Three things decide it. Read them before you plan, and name them in your first comment.
 
-- **Reviewers: who can be reached here.** The environment variable `CLOUD_REVIEWERS` lists them in order of preference: `claude` (a reader session on a stronger model), `codex-github` (a comment that asks the Codex GitHub app; pull requests only), `codex-clean` (not yet usable from a cloud session). Unset or empty means none: every depth is then 0, and you say so.
+- **Reviewers: who can be reached here.** The environment variable `CLOUD_REVIEWERS` lists them in order of preference: `claude` (a reader session on a stronger model), `codex-github` (a comment that asks the Codex GitHub app; pull requests only), `codex-clean` (not yet usable from a cloud session). Unset or empty means none can be reached: say so, and give depth 0 wherever only the policy would have given more. A label still sets its floor.
 - **Policy: which depth, for what.** The first of these that exists: a paragraph beginning `Review policy:` under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_REVIEW_POLICY`; otherwise the policy named `standard`. A policy is one of the names `review-depth.md` defines, or the owner's own words, or a name with words that adjust it. Apply it lane by lane, with judgement where the words leave room, and never go below what it plainly asks.
-- **Labels: the owner sets a floor for one issue** (the owner sets these; you do not). `review:deep` means at least depth 2 for that lane's plan and code, and `review:max` at least depth 3. `needs:codex-review` means Codex must be one of the reviewers of its pull request.
+- **Labels: the owner sets a floor for one issue** (the owner sets these; you do not). `review:deep` means at least depth 2 for that lane's plan and code, and `review:max` at least depth 3. `needs:codex-review` means code depth at least 1 with Codex as one of the reviewers of its pull request.
 
-Choose a plan depth and a code depth for every lane when you plan, and put them in the lanes comment with the reason. A depth may rise later, never fall. A repository may have no automated reviewer at all (Copilot, for instance, is optional): nothing in this skill waits for one that is not there, and one that is there does not count towards a depth unless the policy says it does.
+Work a lane's depths out in this order: what the policy gives; then any limit the policy sets, which may hold that back; then the labels' floors, which no limit and no missing reviewer lowers. A lane whose plan depth is above 0 because of a label is plan-gated, whatever else you would have decided: settle that before you write its worker's prompt.
 
-For any depth above 0, read `review-depth.md` in this skill's directory and follow it.
+Choose a plan depth and a code depth for every lane when you plan, and put them in the lanes comment with the reason. A depth may rise later, never fall. A repository may have no automated reviewer at all (Copilot, for instance, is optional): nothing in this skill waits for one that is not there, and one that is there never counts towards a depth.
+
+For any depth above 0, and for any lane that carries one of these labels, read `review-depth.md` in this skill's directory and follow it.
 
 ## 1. Plan the batch
 

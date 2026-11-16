@@ -98,8 +98,9 @@ these, but they stop a mistake from merging.
 
 1. Open the issues you want done and label each `agent:ready`. Add
    `plan:required` to one you want planned and approved before any code is
-   written, and `review:deep` to one that should get a second, deeper read by a
-   Claude reader (see "Review depth" below).
+   written, and `review:deep` to one that should get more review: at least depth 2
+   for its plan and its code, filled from the reviewers your environment lists
+   (see "Review depth" below).
 2. Open one more issue as the brief, from
    [`templates/tracking-issue.md`](../templates/tracking-issue.md). The lead
    reports there.
@@ -173,8 +174,8 @@ started by hand, and has not been run since the skills moved into this plugin.
 
 Every pull request is read by a reader session. How much more review a piece
 of work gets is a depth, from 0 to 3, set separately for its plan and its code.
-Nothing here is needed for a batch to work: with none of it set, every depth is
-0 or 1 and a batch behaves as described in Part 1.
+Nothing here is needed for a batch to work: with no reviewers listed and no
+labels, every depth is 0 and a batch behaves as described in Part 1.
 
 | Depth | Plan | Code |
 |---|---|---|
@@ -233,8 +234,11 @@ To give all your repositories the same policy without repeating it, set
 overrides it.
 
 **A floor for one issue.** Label an issue `review:deep` for at least depth 2,
-or `review:max` for at least depth 3. `needs:codex-review` asks for Codex by
-name on that issue's pull request; if Codex cannot be reached, the lead tells
+or `review:max` for at least depth 3. A floor on the plan means the worker must
+plan first. A label is honoured whatever your policy's limit says. Put
+`review:max` on before the batch starts: tests can only be written first if the
+worker has not begun. `needs:codex-review` asks for Codex by name on that
+issue's pull request, at depth 1 or more; if Codex cannot be reached, the lead tells
 you and holds that one pull request until you answer.
 
 **Depth changes during a batch.** The lead picks a depth for each piece of work
@@ -247,8 +251,7 @@ recheck. Use it for the few changes that warrant it.
 
 **Automatic reviewers are optional too.** If the repository has one (Copilot,
 say), the lead waits for its review of the first head and treats its threads
-like any other. If it has none, nothing waits. It does not count towards a
-depth unless your policy says it does.
+like any other. If it has none, nothing waits. It never counts towards a depth.
 
 ### A retro
 
