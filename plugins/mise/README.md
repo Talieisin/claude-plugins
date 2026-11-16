@@ -7,15 +7,19 @@ work with those.
 Use it when your repositories must run on exact versions of their tools and you
 already pin them with [mise](https://mise.jdx.dev). A cloud session has neither
 mise nor your personal mise configuration. This plugin fills the gap: when a
-session starts, it installs what the repository's own `mise.toml` names and puts
-those tools first on `PATH`. A repository that has no `mise.toml` is left alone
-and sees no output.
+session starts, it installs what the repository's own `mise.toml` (or
+`.mise.toml`) names and puts those tools first on `PATH`. A repository that has
+neither file is left alone and sees no output.
 
 **This plugin runs code.** It has a SessionStart hook that runs one script,
 [`scripts/bootstrap-tools.sh`](scripts/bootstrap-tools.sh), in every session.
 Read the script before you install it. It installs only the tools the
-repository's `mise.toml` lists, changes no file in the repository, and never
-fails the session.
+repository's own mise config lists, and it never fails the session. It edits
+nothing in the repository, and removes a `mise.lock` if mise writes one where
+there was none. But it runs `mise install`, and mise then does whatever the
+repository's config tells it to do on install, such as a `[hooks] postinstall`
+command. If your repositories have such hooks, expect them to run at the start
+of every session.
 
 Proven so far for Python and `uv`. Other tools (Node, Go, Rust, Terraform)
 should work the same way but have not been tried.
@@ -48,7 +52,7 @@ tuf-repo-cdn.sigstore.dev
 **2. Each repository.** Nothing to copy. It needs only what it would have
 anyway:
 
-- `mise.toml` with exact versions, not ranges:
+- `mise.toml` (or `.mise.toml`) with exact versions, not ranges:
 
   ```toml
   [tools]
@@ -71,7 +75,7 @@ The first lines of a new session show one of:
   from `mise.toml` alone.
 - `mise-bootstrap: TOOLS NOT PINNED. ...` with the reason. The session carries
   on with whatever tools the image has, so do not rely on versions in it.
-- Nothing: the repository has no `mise.toml`.
+- Nothing: the repository has neither `mise.toml` nor `.mise.toml`.
 
 ## If you use something other than mise
 
