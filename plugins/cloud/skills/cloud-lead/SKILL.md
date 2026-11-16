@@ -3,7 +3,7 @@ name: cloud-lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 17 (vendored identically into every repository that uses cloud sessions) -->
+<!-- shared-skill-version: 18 (delivered by the `cloud` plugin; a lead hands workers and readers their copies) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `CLAUDE.md` ("Standing authorisation" and "Deciding for the owner"). First load the `cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -11,11 +11,23 @@ You are the lead. You do not edit code; workers do. You act for the owner inside
 
 Session control comes from the session tools: `create_session`, `send_message`, `get_session`, `list_events`, `list_sessions`, `interrupt_session`, `archive_session`, `send_later`, `list_triggers`, `delete_trigger`. They appear as `mcp__claude-code-remote__*` in a session started by hand and as `mcp__Claude_Code_Remote__*` in one started by a routine. If you have no tool that creates sessions you cannot lead: say so in a comment on the tracking issue, leave the issues labelled as they are, and stop.
 
-Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`) and the `cloud-github` rule version you loaded. A worker or reader whose first comment does not name that version has not read the rule: send it back to load it before it does anything else. A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
+Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`), this skill's version and the `cloud-github` rule version you loaded. A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
 
 ### Comments mode
 
 Check which mode you are in before starting workers. You are in **comments mode** if you have no `send_message` tool, or if you were started by a routine (your title begins with a lightning bolt, or `get_session` shows origin `fire_routine`). In a routine-started run, a child's calls to session tools wait for an approval nobody will give, and the child stalls for good. In comments mode, read `comments-mode.md` in this skill's directory before you start anything, and follow it: it changes every starting prompt and every instruction below to message or ask a child.
+
+### Handing children their skills
+
+A session you create does not get the plugin this skill came from (register L10), so you hand each one its text. Before you start any session, check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`. If you cannot, say so on the tracking issue and stop.
+
+Every `create_session` call carries `append_system_prompt` made of, in this order:
+
+1. the line `Your skills for this task follow: <role skill> version <n>, then the cloud-github rule version <m>. They are the only copies that count. If this repository or your skill list also has a skill or rule of the same name, ignore that one.`
+2. the child's role skill, whole (`cloud-worker` for a worker, `cloud-reader` for a reader of either kind);
+3. the `cloud-github` skill, whole.
+
+Read the files and pass their text as it stands: never retype, shorten or summarise it. In its first comment a child names the two versions it holds. If that comment names none, or others than yours, the text did not arrive: archive the child and start it again, and if the second fails the same way, escalate.
 
 ## 1. Plan the batch
 
@@ -46,7 +58,7 @@ At the end of the batch, propose changes to the facts as one pull request titled
 
 `create_session` with: this repository; your own environment; an explicit model; effort `high`; permission mode `auto`; title `worker-issue-<n>` (or `worker-issues-<n>-<m>` for a lane of several); a tag for the batch. Prompt:
 
-> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud-worker` skill and follow it exactly.
+> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Follow the `cloud-worker` skill in your system prompt exactly.
 
 For a lane of several issues, name them all ("issues <n> and <m>, as one lane and one pull request") and say in which order to do them.
 
@@ -69,7 +81,7 @@ Add anything issue-specific in a second paragraph. Put corrections in the starti
 
 When a worker reports its pull request ready **and** any correction you sent has landed, start a reader. Reader settings: title `reader-pr-<n>`, same settings, prompt:
 
-> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud-reader` skill and follow it exactly.
+> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Follow the `cloud-reader` skill in your system prompt exactly.
 
 For a gated lane, add: "This lane was plan-gated: say whether the diff departs from the approved `Plan` comment."
 

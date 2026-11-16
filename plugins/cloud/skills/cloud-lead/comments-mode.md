@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 17 (vendored identically into every repository that uses cloud sessions) -->
+<!-- shared-skill-version: 18 (delivered by the `cloud` plugin; a lead hands workers and readers their copies) -->
 
 # Comments mode
 
