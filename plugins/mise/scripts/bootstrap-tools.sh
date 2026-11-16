@@ -31,7 +31,13 @@ if ! command -v mise >/dev/null 2>&1; then
   exit 0
 fi
 
-mise trust --quiet >/dev/null 2>&1 || true
+# Trusting a mise config lets mise run what that config says, so it is only done
+# automatically in a cloud session, which is a disposable machine holding a
+# repository its owner chose to work in. On your own machine the repository must
+# already be trusted (`mise trust`), or MISE_BOOTSTRAP_TRUST=1 must be set.
+if [ -n "${CLAUDE_CODE_REMOTE:-}" ] || [ "${MISE_BOOTSTRAP_TRUST:-}" = 1 ]; then
+  mise trust --quiet >/dev/null 2>&1 || true
+fi
 
 # Only the tools this repository names: a laptop's global mise config has others
 # that the repository's lockfile rightly does not record. mise itself says which tools
@@ -85,7 +91,7 @@ status=$?
 # a lockfile is the repository owner's to create and review.
 [ -n "$had_lock" ] || rm -f mise.lock
 if [ "$status" -ne 0 ]; then
-  echo "mise-bootstrap: TOOLS NOT PINNED. mise install failed; see $err. Do not rely on tool versions in this session."
+  echo "mise-bootstrap: TOOLS NOT PINNED. mise install failed; see $err (on your own machine, a repository that mise does not yet trust needs 'mise trust' first). Do not rely on tool versions in this session."
   exit 0
 fi
 [ "$err" = /dev/null ] || rm -f "$err"

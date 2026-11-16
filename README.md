@@ -1,8 +1,9 @@
 # claude-plugins
 
-Claude Code plugins from Talieisin. Two so far: `cloud`, for running batches of
-GitHub issues in cloud sessions, and `github`, the pull-request skill it relies
-on, which is also useful on its own.
+Claude Code plugins from Talieisin. Three so far: `cloud`, for running batches of
+GitHub issues in cloud sessions; `github`, the pull-request skill it relies on,
+which is also useful on its own; and `mise`, an optional hook that installs a
+repository's pinned tools.
 
 ## `cloud`: batches of GitHub issues, done by cloud sessions
 
@@ -65,9 +66,10 @@ The full walk-through, with what is optional and how to keep it working, is in
 ## Status
 
 These skills were worked out over a series of test batches on toy repositories
-and are still changing. They are versioned: every skill file carries a
-`shared-skill-version` marker, and a lead says which version it holds in its
-first comment. Expect rough edges, and read
+and are still changing. They are versioned: every `cloud` skill file carries a
+`shared-skill-version` marker and the pull-request skill a
+`pull-request-skill-version` marker, and a lead names both versions in its first
+comment. Expect rough edges, and read
 [the limits in `docs/setup.md`](docs/setup.md#part-2-optional) before relying on
 the less-used routes.
 

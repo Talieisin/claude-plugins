@@ -166,7 +166,7 @@ git fetch
 git status -sb                       # confirm branch is up-to-date with remote tracking
 ```
 
-If untracked or behind: push first. If ahead by uncommitted work: surface to user, do not auto-commit.
+If the working tree is not clean (uncommitted or untracked files), stop and surface it to the user: a push would silently leave those files out of the pull request, and you do not auto-commit. If the branch is behind its remote, update it before you push; if it has no upstream yet, the push below creates one.
 
 ### Branch-naming gate (run before any push)
 

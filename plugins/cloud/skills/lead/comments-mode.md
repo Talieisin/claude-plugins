@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 31 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 32 (delivered by the `cloud` plugin) -->
 
 # Comments mode
 

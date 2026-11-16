@@ -9,9 +9,9 @@ something up.
 - A Claude Code plugin marketplace named `talieisin`
   (`.claude-plugin/marketplace.json`), public so that a cloud environment's
   setup script can install from it without a credential.
-- Two plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
+- Three plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
   author and retro skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
-  read-only scripts its local route calls. Neither has hooks; keep it so. `mise` (`plugins/mise/`) is the one plugin that
+  read-only scripts its local route calls. Neither of those has hooks; keep it so. `mise` (`plugins/mise/`) is the one plugin that
   runs code by itself: a SessionStart hook and one script. It is versioned on its
   own in its `plugin.json` and marketplace entry. A plugin that runs code (hooks) goes in its own folder under `plugins/`
   so that turning it on is a separate, deliberate choice.
@@ -42,7 +42,10 @@ in a clause. It does not cite a private record.
    skill or its route files, and its `plugin.json` and marketplace entry rise
    with it.
 3. **Have it read by someone other than its author** before it merges, and read
-   again after any fix. The read is of the text as instructions: contradictions
+   again after any fix. If the repository has an automated reviewer, wait for its
+   review of the pull request as well, and fix or answer each of its comments
+   before you merge: it posts a minute or two after the pull request opens, so a
+   pull request merged at once is merged unreviewed. The read is of the text as instructions: contradictions
    between files, a reference to a section or file that moved, a step a session
    could not carry out, a role left without an instruction. Small wording
    changes have broken these in practice.

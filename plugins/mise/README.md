@@ -21,6 +21,12 @@ repository's config tells it to do on install, such as a `[hooks] postinstall`
 command. If your repositories have such hooks, expect them to run at the start
 of every session.
 
+Because of that, the script trusts a repository's mise config by itself only in
+a cloud session, which is a disposable machine holding a repository you chose
+to work in. On your own machine it installs nothing in a repository mise does
+not already trust: run `mise trust` there yourself first, or set
+`MISE_BOOTSTRAP_TRUST=1` if you want the cloud behaviour everywhere.
+
 Proven so far for Python and `uv`. Other tools (Node, Go, Rust, Terraform)
 should work the same way but have not been tried.
 
