@@ -24,7 +24,7 @@ A pull request that is waiting only for this must not be forgotten. While any is
 
 ## The sweep, at Finish
 
-Under `wait` and `catch-up`, before your report, read what the automated reviewer wrote after each merge. A pull request is ready to be swept once its time is up (ten minutes after it opened, or the owner's figure); if one is not ready when you reach Finish, set your reminder for it and sweep it then. For each pull request the batch merged, your facts pull request included, list the review comments and reviews created after its `merged_at` (`.../pulls/{n}/comments` and `.../pulls/{n}/reviews`).
+Under `wait` and `catch-up`, before you confirm that sessions are archived and triggers deleted and before your report, read what the automated reviewer wrote that nobody dealt with. A reminder you set for the sweep is deleted with the rest in that later step. A pull request is ready to be swept once its time is up (ten minutes after it opened, or the owner's figure); if one is not ready when you reach Finish, set your reminder for it and sweep it then. For each pull request the batch merged, your facts pull request included, list everything the automated reviewer wrote on it (`.../pulls/{n}/comments` and `.../pulls/{n}/reviews`) and take each item that was not dealt with before the merge: whatever came after `merged_at`, and anything from just before it that nobody had yet read.
 
 - Check each as you would a finding.
 - One that is wrong: reply on its thread in a line beginning `Lead:`, saying why.
