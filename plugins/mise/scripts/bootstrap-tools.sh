@@ -17,6 +17,16 @@
 
 set -u
 
+# `mise install` trusts the config it installs from, and a trusted config can run
+# commands of its own. So this script acts only where that is acceptable: in a
+# cloud session, which is a disposable machine holding a repository its owner
+# chose to work in, or where the person has opted in with MISE_BOOTSTRAP_TRUST=1.
+# Anywhere else it does nothing and prints nothing: on your own machine mise's
+# shell activation already gives you the pinned tools in repositories you trust.
+if [ -z "${CLAUDE_CODE_REMOTE:-}" ] && [ "${MISE_BOOTSTRAP_TRUST:-}" != 1 ]; then
+  exit 0
+fi
+
 dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$dir" 2>/dev/null || exit 0
 

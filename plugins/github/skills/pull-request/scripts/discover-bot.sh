@@ -71,7 +71,11 @@ for n in $prs; do
   fi
 done
 
-sort -u "$out"
+if ! sort -u "$out"; then
+  echo "discover-bot: could not sort the collected logins; result is UNKNOWN, not 'no bot'." >&2
+  rm -f "$out"
+  exit 3
+fi
 rm -f "$out"
 
 if [ "$failed" -eq 1 ]; then

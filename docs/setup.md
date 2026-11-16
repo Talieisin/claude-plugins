@@ -70,14 +70,25 @@ given in advance, so it has to be yours.
 ### 3. Labels
 
 From a clone of the repository that will use the skills, with the GitHub CLI
-signed in, run [`templates/labels.sh`](../templates/labels.sh) straight from
-this repository:
+signed in: download [`templates/labels.sh`](../templates/labels.sh), read it (it
+is a dozen `gh label create` lines), then run it:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Talieisin/claude-plugins/main/templates/labels.sh | bash
+curl -fsSL -o labels.sh https://raw.githubusercontent.com/Talieisin/claude-plugins/main/templates/labels.sh
 ```
 
-or download the file, read it, and run `bash labels.sh`. It creates `agent:ready`,
+```bash
+less labels.sh
+```
+
+```bash
+bash labels.sh
+```
+
+Delete `labels.sh` afterwards; it does not belong in your repository.
+
+Do not pipe it straight from the network into a shell: you would be running
+whatever the file holds at that moment with your GitHub sign-in. It creates `agent:ready`,
 `agent:claimed`, `agent:review`, `agent:question`, `needs:owner`,
 `plan:required`, `review:deep`, `review:max` and `needs:codex-review`.
 
@@ -111,8 +122,8 @@ these, but they stop a mistake from merging.
    > read it and follow it, using the `cloud:lead` skill. If you do not
    > hold that skill, say so on the issue and stop.
 
-The lead's first comment on the tracking issue names the versions of the skill
-and of the GitHub rule that it holds. Then it posts its lanes, starts workers,
+The lead's first comment on the tracking issue names the versions of its own skill
+and of the `github:pull-request` skill that it holds. Then it posts its lanes, starts workers,
 has each pull request read, and merges one at a time. When it has a question
 only you can answer, it labels the issue `needs:owner`, sends a push
 notification, and asks you in its own session once its report is posted.

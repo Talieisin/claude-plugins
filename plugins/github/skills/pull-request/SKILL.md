@@ -3,7 +3,7 @@ name: pull-request
 description: Take a GitHub pull request through its whole life, from your own machine or from a Claude Code cloud session - open it with a real body, watch checks and the automated review, handle review threads (fix, reply, resolve only when really fixed), and merge by squash on the head you checked. Use when asked to open a PR, ship this, handle or drive the PR, check or address review comments, or merge when ready; when a message names a pull request by number or URL; and, in a cloud session, BEFORE the first GitHub call, and whenever `gh pr`, `gh issue` or a GraphQL call fails there.
 ---
 
-<!-- pull-request-skill-version: 5 -->
+<!-- pull-request-skill-version: 6 -->
 
 # pull-request
 

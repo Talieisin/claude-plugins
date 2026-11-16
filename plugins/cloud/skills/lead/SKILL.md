@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 31 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 32 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -125,7 +125,7 @@ You are the merge gate; the ruleset alone would merge a stale branch. Before eac
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.
-6. Every review the lane's code depth calls for has reported, a depth-3 recheck included, and its findings are fixed or answered. `review-depth.md` says what stands in for a review that could not be made.
+6. Every review the lane's code depth calls for has reported, a depth-3 recheck included, and its findings are fixed or answered. `review-depth.md` says what stands in for a review or a recheck that could not be made or did not report in time.
 
 Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to the head you checked. Do not then ask the remaining workers to merge `main`. Bring only the next pull request you mean to merge up to date, yourself: `PUT .../pulls/{n}/update-branch` with `expected_head_sha`, then the tree check and the whole suite as section 4 says: lanes that each pass can fail together. A tree check or suite that fails after a clean update is a finding for that lane's worker. Only if `update-branch` reports a conflict, or that lane's worker is about to push a fix anyway (then do not update the branch yourself: the worker merges `main` with its fix, and the re-read of the fix covers the merge), tell that lane's worker (where both sides cannot stand, first decide which wins and record it on the issue):
 
