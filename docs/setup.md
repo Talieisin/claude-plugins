@@ -98,8 +98,8 @@ these, but they stop a mistake from merging.
 
 1. Open the issues you want done and label each `agent:ready`. Add
    `plan:required` to one you want planned and approved before any code is
-   written, and `review:deep` to one that should get a second review (see
-   "Second reviews" below; it needs a route set in the environment).
+   written, and `review:deep` to one that should get a second, deeper read by a
+   Claude reader (see "Second reviews" below).
 2. Open one more issue as the brief, from
    [`templates/tracking-issue.md`](../templates/tracking-issue.md). The lead
    reports there.
@@ -173,11 +173,16 @@ started by hand, and has not been run since the skills moved into this plugin.
 
 Every pull request is read by a reader session. A second review is one more
 independent look, at a plan before it is approved or at a pull request before
-it merges. Two settings govern it.
+it merges. Nothing here is needed for a batch to work: with none of it set, no
+second review is asked for.
 
 **What the environment can reach.** In the cloud environment's **Environment
-variables**, set `CLOUD_SECOND_REVIEW` to the routes you have, separated by
-spaces:
+variables**, set a list of routes for each kind of review:
+
+```
+CLOUD_PLAN_REVIEW=claude
+CLOUD_CODE_REVIEW=codex-github claude
+```
 
 | Route | What it is | Reviews | Needs |
 |---|---|---|---|
@@ -185,9 +190,15 @@ spaces:
 | `codex-github` | A comment on the pull request that asks the Codex GitHub app for a review | Pull requests only | The Codex GitHub app installed on the repository, and a Codex subscription on the account the sessions run as |
 | `codex-clean` | Codex run inside the session | Not yet usable from a cloud session | - |
 
-For example `CLOUD_SECOND_REVIEW=claude codex-github`. Leave it unset if you
-want none: a batch then never asks for a second review, and nothing else
-changes.
+Each list is in order of preference, and the lead uses the first route that
+turns out to be usable: a model the platform accepts, or a Codex app that
+answers the request. So `codex-github claude` means Codex where the repository
+has it and a Claude reader where it does not. To have two routes both review,
+join them with `+`: `codex-github+claude`. You do not have to know in advance
+what a repository has; an unusable route is skipped and noted.
+
+`CLOUD_REVIEW_MODEL` names the model the `claude` route uses. Unset, it is
+`claude-fable-5-2`.
 
 **When one is due.** State it in the repository's `AGENTS.md`, as a line under
 "Defaults the owner has chosen":
@@ -198,15 +209,25 @@ Second reviews: plans-and-code
 
 | Policy | A second review is made of |
 |---|---|
-| `on-request` (the default) | A lane whose issue you labelled `review:deep` or `needs:codex-review`, or that the lead made plan first: its plan, and its pull request |
-| `plans-and-code` | Every plan; and every pull request whose change is non-trivial (it adds or removes behaviour, changes an interface, or refactors code other code depends on), as well as the above |
+| `on-request` (the default) | A lane the lead made plan first: its plan, and its pull request |
+| `plans-and-code` | Every plan; and every pull request whose change is non-trivial (it adds or removes behaviour, changes an interface, or refactors code other code depends on) |
 
 To give all your repositories the same policy without repeating it, set
 `CLOUD_SECOND_REVIEW_POLICY` in the environment as well. A repository's
 `AGENTS.md` line overrides it.
 
+**Asking for a reviewer by name, on one issue.** Whatever the policy, label an
+issue `review:deep` to give it the Claude reader, or `needs:codex-review` to
+give its pull request a Codex review, in addition to anything the policy gives.
+If the reviewer you asked for cannot be reached, the lead tells you and holds
+that one pull request.
+
 A second review costs a session, or a Codex review, each time. `plans-and-code`
 will roughly double the reading done on a batch of real changes.
+
+**Automatic reviewers are optional too.** If the repository has one (Copilot,
+say), the lead waits for its review of the first head and treats its threads
+like any other. If it has none, nothing waits.
 
 ### A retro
 
