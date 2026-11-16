@@ -1,10 +1,10 @@
-<!-- shared-skill-version: 23 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 24 (delivered by the `cloud` plugin) -->
 
 # Taking over a batch
 
-Part of the `cloud-lead` skill, read only by the replacement lead of a batch another lead began, as `CLAUDE.md` defines one.
+Part of the `cloud-lead` skill, read only by the replacement lead of a batch another lead began, as `AGENTS.md` defines one.
 
-Say that you are the replacement in your first comment on the tracking issue, then find where each lane stands before you start anything: the tracking issue (lanes comment, run log), each issue's labels and comments, each pull request's head, review threads and reader comments, and the earlier lead's children (`list_sessions`, by `parent_session_id`), which are yours as `CLAUDE.md` allows a replacement lead.
+Say that you are the replacement in your first comment on the tracking issue, then find where each lane stands before you start anything: the tracking issue (lanes comment, run log), each issue's labels and comments, each pull request's head, review threads and reader comments, and the earlier lead's children (`list_sessions`, by `parent_session_id`), which are yours as `AGENTS.md` allows a replacement lead.
 
 - A reader's report on an earlier head still counts once you have checked the later merges of `main` as section 4 says. Start a reader only for a pull request that has none, or whose last report predates a fix; and a deep read where one was due and none was started.
 - Send a fix to the lane's own worker, by a `Lead:` comment on its pull request and a `send_message` to wake it. If it will not act on your word, escalate.

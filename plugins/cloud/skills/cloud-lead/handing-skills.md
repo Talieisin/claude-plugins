@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 23 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 24 (delivered by the `cloud` plugin) -->
 
 # Handing children their skills
 

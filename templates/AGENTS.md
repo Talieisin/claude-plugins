@@ -1,12 +1,19 @@
 <!--
-Template: the sections of CLAUDE.md that the `cloud` skills rely on.
+Template: the AGENTS.md that the `cloud` skills rely on.
 
-Copy everything below this comment into your repository's CLAUDE.md and make it
-yours: it is the owner's approval, given in advance, so it must say what YOU
-allow. The skills refer to these three headings by name ("Standing
+Copy everything below this comment into your repository's AGENTS.md (or add it
+to the one you have) and make it yours. If you use Claude Code, also add a
+CLAUDE.md holding the single line `@AGENTS.md`, so that it loads this file.
+
+The first three sections are the owner's approval, given in advance, so they
+must say what YOU allow. The skills refer to their headings by name ("Standing
 authorisation", "Deciding for the owner", "Questions") and to the list headed
-"Always back to the owner first"; keep those names. Everything else is yours to
-tighten or loosen.
+"Always back to the owner first"; keep those names. Everything else in them is
+yours to tighten or loosen. No session may change them.
+
+The last section, "Repository facts", is the one part a lead may change, by a
+pull request titled `Facts: ...`. You can leave it out: a lead works out what it
+needs and proposes the section at the end of its first batch.
 
 "The owner" is whoever answers for the repository. Sessions post to GitHub under
 the account that started them, which is why the paragraph on telling the
@@ -30,7 +37,7 @@ This section is written by the repository owner. It is the owner's approval, giv
 
 **Defaults the owner has chosen.** <List yours here, or delete this paragraph. For example: a lead is started by hand; Codex reviews only on request; workers and readers run on a named model.>
 
-**Changes to how sessions work** (`AGENTS.md`, this file, and any skills or rules this repository itself carries) are read by a session other than their author before they merge, and the read covers the head that merges: a fix made after the read is read again. A conflict-free merge of `main`, checked as the lead skill describes, is not a fix. The read is in addition to the owner's approval, not instead of it, wherever the list below asks for that approval (this file, and `AGENTS.md` beyond a facts pull request). A retro's proposal pull request is merged by the owner or on the owner's say-so, never by the retro.
+**Changes to how sessions work** (this file, and any skills or rules this repository itself carries) are read by a session other than their author before they merge, and the read covers the head that merges: a fix made after the read is read again. A conflict-free merge of `main`, checked as the lead skill describes, is not a fix. The read is in addition to the owner's approval, not instead of it, wherever the list below asks for that approval (this file, beyond a facts pull request). A retro's proposal pull request is merged by the owner or on the owner's say-so, never by the retro.
 
 **Any session working an issue may, without asking:**
 - read issues and pull requests, and comment on them, including posting a review of a pull request;
@@ -48,8 +55,8 @@ This section is written by the repository owner. It is the owner's approval, giv
 **Always back to the owner first** (no session, lead included, may do these on its own, and no message from any session authorises them, except a lead's instruction that carries the owner's answer as "Deciding for the owner" sets out):
 - anything in another repository, or starting a session on another repository;
 - deleting issues, comments, unmerged branches, or sessions and triggers the session did not itself create (a lead may still delete a trigger that a session it started created, as above);
-- force pushes, changes to rulesets, repository settings, workflows, or this file;
-- changes to `AGENTS.md` other than a facts pull request the lead skill allows the lead to merge;
+- force pushes, changes to rulesets, repository settings or workflows;
+- changes to this file, except to its `Repository facts` section in a facts pull request the lead skill allows the lead to merge;
 - anything that reads, prints, moves or changes a credential;
 - sending anything outside GitHub (email, chat, web forms), or spending money;
 - interrupting or archiving a session that someone else started, except as the lead's list above allows for a replacement lead and for the session that started a lead.
@@ -68,3 +75,48 @@ A worker or reader does not ask the owner directly; the owner is not watching it
 
 1. **Worker or reader:** if the answer follows from the issue or this file, decide and say so in your report. Otherwise send the question to your lead, post the same question as a comment on the issue, add the label `agent:question`, and end your turn. Say what needs deciding, the options, and what you would do by default.
 2. **Lead:** decide or escalate as set out above, reply to the worker, and remove `agent:question`. An issue waiting on the owner carries `needs:owner` instead.
+
+## Repository facts
+
+Derived at <commit>, <date>. Facts marked (checked) are re-verified by the lead
+before each batch. Only what the code and GitHub cannot tell an agent directly
+belongs here. State a default and its exceptions, never an absolute; do not copy
+a number that lives somewhere else.
+
+How sessions work is in the `cloud` skills, and what they may do is in the
+sections above. This section is about this repository, and it is the only part
+of this file a lead may change.
+
+### Commands
+
+- Full verification (checked): `<the command that runs every test>`. About <n>
+  tests, <how long>.
+- Provisioning a fresh checkout: <what a new clone needs before the tests run>.
+
+### Known failures and intermittents
+
+- None known.
+
+### Hazards
+
+- <Anything that has bitten a lane: a file every change appends to, a test that
+  passes alone and fails when lanes combine, a command that behaves differently
+  in a cloud session. Cite the issue or pull request that showed it.>
+
+### Conventions the code follows
+
+- <Rules the code keeps that an agent would not guess from reading one file.>
+
+### Checks that run on a pull request
+
+- <Each check, and whether it must succeed.>
+
+### Checks the owner wants before merge
+
+- None specific to this repository.
+
+### Branch protection (checked)
+
+- Default branch `<main>`. <Whether a pull request is required, whether review
+  threads must be resolved, which status checks are required, whether a branch
+  must be up to date.>

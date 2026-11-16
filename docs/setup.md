@@ -38,17 +38,24 @@ account reaches only the sessions you start by hand. A lead creates its workers
 and readers itself, and those sessions get nothing from your account. The setup
 script runs for every session in the environment, however it was started.
 
-### 2. The owner's authorisation in `CLAUDE.md`
+### 2. The owner's authorisation in `AGENTS.md`
 
 The skills act for you inside limits you set, and they read those limits from
-three sections of the repository's `CLAUDE.md`: "Standing authorisation",
+three sections of the repository's `AGENTS.md`: "Standing authorisation",
 "Deciding for the owner" and "Questions". Copy
-[`templates/CLAUDE-standing-authorisation.md`](../templates/CLAUDE-standing-authorisation.md)
-into your `CLAUDE.md` and edit it until it says what you actually allow.
+[`templates/AGENTS.md`](../templates/AGENTS.md) into your `AGENTS.md` (or add it
+to the one you have) and edit it until it says what you actually allow.
+
+Claude Code loads `CLAUDE.md`, so also add a `CLAUDE.md` that holds the single
+line `@AGENTS.md` ([`templates/CLAUDE.md`](../templates/CLAUDE.md)). If you
+already have a `CLAUDE.md`, add that line to it, and move anything in it that
+says what sessions may do into `AGENTS.md`: the skills read `AGENTS.md`, and two
+files that both set limits will sooner or later disagree.
 
 Read the list headed "Always back to the owner first" with care. It is what no
 session may do without you: force pushes, repository settings, workflows,
-credentials, anything outside the repository.
+credentials, anything outside the repository, and any change to these sections
+themselves.
 
 This is the one part that cannot be installed for you. It is your approval,
 given in advance, so it has to be yours.
@@ -103,14 +110,15 @@ has each pull request read, and merges one at a time. When it has a question
 only you can answer, it labels the issue `needs:owner`, sends a push
 notification, and asks you in its own session once its report is posted.
 
-### What `AGENTS.md` is for
+### The `Repository facts` section
 
-The lead keeps this repository's facts in `AGENTS.md`: the test command and how
-long it takes, hazards that have bitten a lane, what branch protection requires.
-You do not have to write it. If there is none, the lead works out what it needs
-and proposes the file at the end of its first batch as a pull request titled
-`Facts: ...`. To start one yourself, use
-[`templates/AGENTS-facts.md`](../templates/AGENTS-facts.md).
+The same `AGENTS.md` ends with a section headed `Repository facts`: the test
+command and how long it takes, hazards that have bitten a lane, what branch
+protection requires. It is the one part of the file a lead may change, by a pull
+request titled `Facts: ...` that a reader reads before it merges. You do not
+have to write it: if it is missing, the lead works out what it needs and
+proposes the section at the end of its first batch. The template includes a
+skeleton.
 
 ## Part 2: optional
 
@@ -187,8 +195,7 @@ the environment you edited, and check that nothing blocks `github.com`.
 | What | Where |
 |---|---|
 | The skills | This repository, `plugins/cloud/skills/` |
-| What sessions may do | Each repository's `CLAUDE.md` |
-| Facts about a repository | That repository's `AGENTS.md` |
+| What sessions may do, and a repository's facts | That repository's `AGENTS.md` |
 | The setup script | The cloud environment, on claude.ai (not in any repository) |
 | The routine, if you use one | Your claude.ai account, under Scheduled |
 | A batch's record | Its tracking issue |
