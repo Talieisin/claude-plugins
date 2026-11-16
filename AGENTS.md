@@ -31,8 +31,8 @@ in a clause. It does not cite a private record.
 
 1. **Branch and pull request.** Never push to `main`.
 2. **Bump the versions together.** Every file under `plugins/cloud/skills/`
-   carries `<!-- shared-skill-version: N ... -->`; all carry the same N. Raise N
-   in all of them, and raise `version` in both `plugins/cloud/.claude-plugin/plugin.json`
+   except `cloud-github/SKILL.md` carries `<!-- shared-skill-version: N ... -->`;
+   all carry the same N. Raise N in all of them, and raise `version` in both `plugins/cloud/.claude-plugin/plugin.json`
    and `.claude-plugin/marketplace.json` to match (`0.N.0`). `cloud-github`
    carries its own `shared-rule-version`, which rises only when that file's
    rules change; the sentence in it that names the version rises with it.
@@ -77,7 +77,7 @@ matching file under `templates/` in the same pull request.
 
 There is no test suite. Before opening a pull request:
 
-- every skill file's marker carries the same version, and the two manifests
-  match it;
+- every `shared-skill-version` marker carries the same version, and the two
+  manifests match it (`cloud-github` has only its own `shared-rule-version`);
 - every path a skill, the README or `docs/setup.md` names exists;
 - `bash -n` passes on each script under `templates/` and `optional/`.

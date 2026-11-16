@@ -15,7 +15,7 @@ A retro judges the skills, not the sessions. Its output is evidence and proposal
 
 ## 1. Gather the runs
 
-A run is a tracking issue labelled `probe` whose comments include a lead's report. For each run in scope, collect, from GitHub and the session tools only:
+A run is a tracking issue whose comments include a lead's report (a comment beginning `Lead:` that holds a table headed `Run record`). For each run in scope, collect, from GitHub and the session tools only:
 
 - the tracking issue: brief, lanes comment, report, any owner notes;
 - every issue and pull request in the batch: comments (`Decided for the owner:`, `Plan`, reader and worker reports), reviews, review threads, commits, merge commit, check runs;
@@ -76,7 +76,7 @@ Skip this section if the repository keeps no findings register. Otherwise, for e
 
 ## 6. Propose
 
-- Write the report as a comment on the issue your brief names or, without one, on a new issue titled `Retro: <scope>`, labelled `probe`: the header (repository, runs covered, skill versions, writer model and effort), the measures table, the baseline comparison, the rule judgements, the register changes, and a short list of proposals ranked by expected effect.
+- Write the report as a comment on the issue your brief names or, without one, on a new issue titled `Retro: <scope>`: the header (repository, runs covered, skill versions, writer model and effort), the measures table, the baseline comparison, the rule judgements, the register changes, and a short list of proposals ranked by expected effect.
 - Put the proposed changes to this repository's files (the findings register, `AGENTS.md`, the baseline) on a branch and open a pull request titled `Retro proposals: <scope>`. The skills are in the plugin's repository, which you cannot write to: post their changes as one comment on the same issue headed `Proposed wording`, each an exact replacement, addition or removal that names the file and the sentence it changes and the version of your copy. Each change cites the evidence for it. Include removals as well as additions. Do not merge the pull request and do not mark it ready if the review below has not happened.
 - A proposal that would change `CLAUDE.md`, a workflow, a ruleset or a repository setting is listed in the report for the owner and is not put in the pull request.
 

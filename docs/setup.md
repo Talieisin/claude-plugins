@@ -55,13 +55,15 @@ given in advance, so it has to be yours.
 
 ### 3. Labels
 
-From a clone of the repository:
+From a clone of the repository that will use the skills, with the GitHub CLI
+signed in, run [`templates/labels.sh`](../templates/labels.sh) straight from
+this repository:
 
 ```bash
-bash labels.sh
+curl -fsSL https://raw.githubusercontent.com/Talieisin/claude-plugins/main/templates/labels.sh | bash
 ```
 
-using [`templates/labels.sh`](../templates/labels.sh). It creates `agent:ready`,
+or download the file, read it, and run `bash labels.sh`. It creates `agent:ready`,
 `agent:claimed`, `agent:review`, `agent:question`, `needs:owner`,
 `plan:required`, `review:deep` and `needs:codex-review`.
 
@@ -134,6 +136,8 @@ you use a version manager other than mise.
 [`templates/start-lead.yml`](../templates/start-lead.yml) is a workflow that
 fires a Claude Code routine when an issue is labelled `lead:start`. You need:
 
+- the workflow itself: copy the template to `.github/workflows/start-lead.yml`
+  in your repository;
 - a routine on claude.ai (under Scheduled) for the repository and the
   environment from step 1, with an API trigger, and with a prompt that tells it
   to lead the batch whose tracking issue the trigger's text names, using
