@@ -19,7 +19,7 @@ A run is a tracking issue labelled `probe` whose comments include a lead's repor
 
 - the tracking issue: brief, lanes comment, report, any owner notes;
 - every issue and pull request in the batch: comments (`Decided for the owner:`, `Plan`, reader and worker reports), reviews, review threads, commits, merge commit, check runs;
-- the versions in force at the commit the lead's session started from: the `shared-skill-version` marker of each skill and the `shared-rule-version` marker of the `cloud-github` skill (or of `.claude/rules/cloud-github.md` where a repository still carries it). Judge each against the wording at that commit;
+- the versions in force: from version 18, the skill and rule versions the lead's first comment on the tracking issue names, with the wording of that version in `Talieisin/claude-plugins`; for an earlier run, the `shared-skill-version` and `shared-rule-version` markers in the repository at the commit the lead's session started from. Judge each against that wording;
 - sessions, where you can read them: the lead's children and their final state. A routine-started lead is reached through the routine's run list;
 - anything opened after the run that traces back to it: follow-up issues, later fixes to the same lines, reverted commits.
 

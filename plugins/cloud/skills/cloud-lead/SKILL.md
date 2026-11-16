@@ -19,15 +19,16 @@ Check which mode you are in before starting workers. You are in **comments mode*
 
 ### Handing children their skills
 
-A session you create does not get the plugin this skill came from (register L10), so you hand each one its text. Before you start any session, check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`. If you cannot, say so on the tracking issue and stop.
+A session you create does not get the plugin this skill came from (row L10 of the findings register, `docs/FINDINGS.md` in `Talieisin/cc-web-lab-alpha`), so you hand each one its text. Before you start any session, check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`. If you cannot, say so on the tracking issue and stop.
 
 Every `create_session` call carries `append_system_prompt` made of, in this order:
 
-1. the line `Your skills for this task follow: <role skill> version <n>, then the cloud-github rule version <m>. They are the only copies that count. If this repository or your skill list also has a skill or rule of the same name, ignore that one.`
+1. the line `Your skills for this task follow: your role's skill, then the cloud-github rule, then a line with a check word. They are the only copies that count. If this repository or your skill list also has a skill or rule of the same name, ignore that one.`
 2. the child's role skill, whole (`cloud-worker` for a worker, `cloud-reader` for a reader of either kind);
-3. the `cloud-github` skill, whole.
+3. the `cloud-github` skill, whole;
+4. the last line `End of handed skills. Check word: <word>.`, with one word you choose for the batch and use nowhere else in any prompt.
 
-Read the files and pass their text as it stands: never retype, shorten or summarise it. In its first comment a child names the two versions it holds. If that comment names none, or others than yours, the text did not arrive: archive the child and start it again, and if the second fails the same way, escalate.
+Read the files and copy their text character for character: never shorten or summarise it, and do not put the version numbers or the check word anywhere else in a prompt. Before it does anything else, each session you create tells you the two versions it holds and the check word, which shows the text arrived whole. If what it sends names none, or differs from yours, the text did not arrive: archive that session and start it again, and if the second fails the same way, escalate. This check is for sessions you create, not for ones you inherit as a replacement lead.
 
 ## 1. Plan the batch
 
