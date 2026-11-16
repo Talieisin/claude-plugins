@@ -48,7 +48,9 @@ to the one you have) and edit it until it says what you actually allow.
 
 Claude Code loads `CLAUDE.md`, so also add a `CLAUDE.md` that holds the single
 line `@AGENTS.md` ([`templates/CLAUDE.md`](../templates/CLAUDE.md)). If you
-already have a `CLAUDE.md`, add that line to it.
+already have a `CLAUDE.md`, add that line to it, and move anything in it that
+says what sessions may do into `AGENTS.md`: the skills read `AGENTS.md`, and two
+files that both set limits will sooner or later disagree.
 
 Read the list headed "Always back to the owner first" with care. It is what no
 session may do without you: force pushes, repository settings, workflows,

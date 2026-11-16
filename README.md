@@ -35,7 +35,9 @@ machine.
    ```
 
 2. Put your authorisation in the repository's `AGENTS.md`, starting from
-   [`templates/AGENTS.md`](templates/AGENTS.md).
+   [`templates/AGENTS.md`](templates/AGENTS.md), and add a `CLAUDE.md` holding
+   the line `@AGENTS.md` ([`templates/CLAUDE.md`](templates/CLAUDE.md)) so that
+   Claude Code loads it.
 3. Create the labels with [`templates/labels.sh`](templates/labels.sh).
 4. Label some issues `agent:ready`, open a tracking issue, and start a session
    that names it as its brief.

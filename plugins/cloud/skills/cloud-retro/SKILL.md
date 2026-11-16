@@ -77,8 +77,8 @@ Skip this section if the repository keeps no findings register. Otherwise, for e
 ## 6. Propose
 
 - Write the report as a comment on the issue your brief names or, without one, on a new issue titled `Retro: <scope>`: the header (repository, runs covered, skill versions, writer model and effort), the measures table, the baseline comparison, the rule judgements, the register changes, and a short list of proposals ranked by expected effect.
-- Put the proposed changes to this repository's files (the findings register, `AGENTS.md`, the baseline) on a branch and open a pull request titled `Retro proposals: <scope>`. The skills are in the plugin's repository, which you cannot write to: post their changes as one comment on the same issue headed `Proposed wording`, each an exact replacement, addition or removal that names the file and the sentence it changes and the version of your copy. Each change cites the evidence for it. Include removals as well as additions. Do not merge the pull request and do not mark it ready if the review below has not happened.
-- A proposal that would change `AGENTS.md`, a workflow, a ruleset or a repository setting is listed in the report for the owner and is not put in the pull request.
+- Put the proposed changes to this repository's files (the findings register, the `Repository facts` section of `AGENTS.md`, the baseline) on a branch and open a pull request titled `Retro proposals: <scope>`. The skills are in the plugin's repository, which you cannot write to: post their changes as one comment on the same issue headed `Proposed wording`, each an exact replacement, addition or removal that names the file and the sentence it changes and the version of your copy. Each change cites the evidence for it. Include removals as well as additions. Do not merge the pull request and do not mark it ready if the review below has not happened.
+- A proposal that would change `AGENTS.md` outside its `Repository facts` section, a workflow, a ruleset or a repository setting is listed in the report for the owner and is not put in the pull request.
 
 ## Review
 
