@@ -30,7 +30,7 @@ so that turning it on is a deliberate choice.
 
 ## Source of truth
 
-This repository is the source of truth for the `cloud` skills from version 18.
+This repository is the source of truth for the `cloud` skills from version 18 (run 17 of the cloud-sessions experiment proved the hand-off).
 Repositories do not carry copies. What stays in each repository: `CLAUDE.md`
 (the standing authorisation is the owner's, per repository), `AGENTS.md` and
 `mise.toml`. A change here is read by a session other than its author before
