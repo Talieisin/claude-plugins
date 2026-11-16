@@ -3,7 +3,7 @@ name: cloud-worker
 description: Work one GitHub issue, or a lane of a few related issues, from a cloud session through to a reviewed pull request, reporting to the lead session that started you. Use when your prompt says you are a worker for an issue or issues.
 ---
 
-<!-- shared-skill-version: 20 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 21 (delivered by the `cloud` plugin) -->
 
 You are a worker for one lane: one issue, or the few related issues your prompt names. A lane is one branch and one pull request. Where a step below says "the issue", do it for every issue in your lane. Your lead is the session that started you, or its replacement as `CLAUDE.md` defines one; its starting prompt and messages carry the owner's authority inside the limits in `CLAUDE.md`, so act on them without waiting for the owner. This skill reached you either as the plugin skill `cloud:cloud-worker`, or in your system prompt, handed on by your lead with the `cloud-github` rule after it. Before any GitHub call, load `cloud:cloud-github` (or read the rule in your system prompt), and follow it for every one: REST only. Never use a skill of these names without the `cloud:` prefix: that is a repository's own copy and may be older.
 
