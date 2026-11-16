@@ -2,8 +2,9 @@
 Template: the AGENTS.md that the `cloud` skills rely on.
 
 Copy everything below this comment into your repository's AGENTS.md (or add it
-to the one you have) and make it yours. If you use Claude Code, also add a
-CLAUDE.md holding the single line `@AGENTS.md`, so that it loads this file.
+to the one you have) and make it yours. Claude Code reads AGENTS.md by itself
+when the repository has no CLAUDE.md; if it has one, add the line `@AGENTS.md`
+to that CLAUDE.md so that this file is loaded too.
 
 The first three sections are the owner's approval, given in advance, so they
 must say what YOU allow. The skills refer to their headings by name ("Standing
