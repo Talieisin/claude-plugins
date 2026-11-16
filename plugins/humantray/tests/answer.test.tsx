@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Item, ItemResponse } from '../types'
-import { ADD, FILE, PANE, START_EVENT, type Step, answerOne, stored, world } from './world'
+import { ADD, answerOf, FILE, PANE, START_EVENT, type Step, answerOne, stored, world } from './world'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -85,7 +85,7 @@ describe('notes', () => {
     world(on)
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q', notes: false })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect(await ui.find({ key: `${id}:notes` })).toBeUndefined()
     expect(await ui.find({ key: `${id}:ack` })).toBeDefined()
@@ -111,7 +111,7 @@ describe('empty and conflicting answers', () => {
     const w = world(on)
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'choice', header: 'C', question: 'Which?', options: OPTIONS })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     const before = w.files.get(FILE)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:submit` })
@@ -125,7 +125,7 @@ describe('empty and conflicting answers', () => {
     const w = world(on)
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'question', header: 'Q', question: 'Name?' })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     const before = w.files.get(FILE)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     await ui.input({ key: `${id}:text`, text: '  ' })
@@ -165,7 +165,7 @@ describe('empty and conflicting answers', () => {
     await $.session.start(START_EVENT)
     const call = { type: 'choice', header: 'C', question: 'Which?', options: OPTIONS, multiSelect: true, key: 'c' }
     const added = await $.tool.call({ ...call, tool: ADD })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:opt:0` })
     await ui.press({ key: `${id}:opt:1` })
@@ -186,8 +186,8 @@ describe('cards', () => {
       await $.session.start(START_EVENT)
       const first = await $.tool.call({ tool: ADD, type, header: 'One', question: 'First' })
       const second = await $.tool.call({ tool: ADD, type, header: 'Two', question: 'Second' })
-      const firstId = (first.result as { id: string }).id
-      const secondId = (second.result as { id: string }).id
+      const firstId = answerOf<{ id: string }>(first).id
+      const secondId = answerOf<{ id: string }>(second).id
       const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
       expect(await ui.findAll({ type: 'Button', key: `${firstId}:${control}` })).toHaveLength(1)
       await ui.press({ key: `${secondId}:${control}` })
@@ -213,7 +213,7 @@ describe('compare-and-set', () => {
     const w = world(on)
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     // Another pane answered it; this session's cache still shows it open.
     const file = w.store()
     const item = file.items[0]
@@ -236,7 +236,7 @@ describe('compare-and-set', () => {
     const w = world(on)
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     w.seed('{"version": 9}')
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })

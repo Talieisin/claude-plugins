@@ -16,6 +16,7 @@ import {
   START_EVENT,
   type Step,
   TURN,
+  answerOf,
   answerOne,
   stored,
   world,
@@ -175,7 +176,7 @@ describe('claim, send, settle', () => {
       return { text: e.text }
     }
     const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
-    const id = (added.result as { id: string }).id
+    const id = answerOf<{ id: string }>(added).id
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.unmount()
@@ -226,7 +227,7 @@ describe('cold starts (each test loads the module afresh)', () => {
     await w.drain()
     expect(w.submits).toEqual(['humantray HT-ANSWR (Plan): Approve'])
     const listed = await $.tool.call({ tool: LIST })
-    expect((listed.result as { items: Array<{ short: string }> }).items.map(i => i.short)).toEqual(['HT-STILL'])
+    expect(answerOf<{ items: Array<{ short: string }> }>(listed).items.map(i => i.short)).toEqual(['HT-STILL'])
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect(await ui.find({ type: 'Text', text: /\[Still\]/ })).toBeDefined()
     await ui.unmount()
@@ -353,13 +354,13 @@ describe('/clear, /resume and /branch', () => {
     expect(w.store().sessions['session-a']?.successor).toBe('session-new')
     // The item made before the clear is the new session's to list and to receive.
     const listed = await $.tool.call({ tool: LIST })
-    expect((listed.result as { items: Array<{ header: string }> }).items.map(i => i.header).sort()).toEqual(['After', 'Before'])
-    const id = (before.result as { id: string }).id
+    expect(answerOf<{ items: Array<{ header: string }> }>(listed).items.map(i => i.header).sort()).toEqual(['After', 'Before'])
+    const id = answerOf<{ id: string }>(before).id
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.unmount()
     expect(w.submits).toEqual([`humantray HT-${id.slice(-5)} (Before): Approve`])
-    expect(after.isError).toBeUndefined()
+    expect(after.deny).toBeUndefined()
   })
 
   test('a session resumed again answers for itself: its old successor is dropped', async ($, on) => {

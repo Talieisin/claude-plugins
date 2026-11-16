@@ -93,7 +93,10 @@ const ADD_DESCRIPTION =
 const LIST_DESCRIPTION =
   "List this session's humantray items that are open, or answered and not yet delivered: { items: [{ id, short, type, header, status }] }, newest first."
 
-const fail = (message: string) => ({ isError: true as const, result: message })
+// A tool's result reaches the model as text: the engine takes a string (or a
+// list of blocks) and refuses an object, so the object goes as JSON text. A
+// refused call is a deny, which the model reads as an error result.
+const fail = (message: string) => ({ deny: message })
 
 async function hasSurface($: EngineInterface): Promise<boolean> {
   try {
@@ -303,7 +306,7 @@ export const register: Register = on => {
     await showTray($, done.ok.file, me)
     await toast($, `Humantray: ${bumped ? 'bumped' : 'added'} ${item.short} (${item.header})`)
     await openPane($)
-    return { result: { id: item.id, short: item.short, bumped } }
+    return { result: JSON.stringify({ id: item.id, short: item.short, bumped }) }
   }).catch(() => fail('humantray: humantray_add failed unexpectedly; nothing was added'))
 
   on('tool.call', { tool: LIST }, async $ => {
@@ -321,7 +324,7 @@ export const register: Register = on => {
       .sort((a, b) => b.updated - a.updated)
       .map(item => ({ id: item.id, short: item.short, type: item.type, header: item.header, status: item.status }))
     await showTray($, file, me)
-    return { result: { items } }
+    return { result: JSON.stringify({ items }) }
   }).catch(() => fail('humantray: humantray_list failed unexpectedly'))
 
   on('command.run', { command: 'humantray' }, async $ => {

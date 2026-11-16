@@ -248,7 +248,7 @@ export async function answerOne(
   steps: Step[],
 ): Promise<Item> {
   const added = await $.tool.call({ ...call, tool: ADD })
-  const id = (added.result as { id: string }).id
+  const id = answerOf<{ id: string }>(added).id
   const ui = await $.ui.mount({ ...PANE, surface })
   for (const step of steps) {
     if ('press' in step) await ui.press({ key: `${id}:${step.press}` })
@@ -268,3 +268,12 @@ export const COMMAND = {
   origin: { kind: 'composer' },
   presentation: { isFullscreen: true, columns: 160 },
 } as const
+
+/**
+ * A tool's answer as the model reads it. The engine takes only a string (or a
+ * list of blocks) as a mod tool's result, so this fails on anything else.
+ */
+export function answerOf<T = Record<string, unknown>>(ran: { result?: unknown; isError?: true; deny?: string }): T {
+  if (typeof ran.result !== 'string') throw new Error(`a tool result must be a string, got ${typeof ran.result}`)
+  return JSON.parse(ran.result) as T
+}

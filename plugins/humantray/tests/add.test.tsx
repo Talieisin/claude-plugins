@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ADD, DIR, FILE, HOUR, LIST, LOCK, START, START_EVENT, stored, world } from './world'
+import { ADD, DIR, FILE, HOUR, LIST, LOCK, START, START_EVENT, answerOf, stored, world } from './world'
 
 const CHOICE = {
   tool: ADD,
@@ -28,8 +28,8 @@ describe('validation', () => {
       { tool: ADD, type: 'approve', header: 'Plan', question: 'Approve the plan?' },
     ] as const) {
       const ran = await $.tool.call(call)
-      expect(ran.isError).toBeUndefined()
-      expect(ran.result).toMatchObject({ short: expect.stringMatching(/^HT-[0-9A-Z]{5}$/), bumped: false })
+      expect(ran.deny).toBeUndefined()
+      expect(answerOf(ran)).toMatchObject({ short: expect.stringMatching(/^HT-[0-9A-Z]{5}$/), bumped: false })
     }
     const items = w.store().items
     expect(items.map(item => item.type)).toEqual(['ack', 'choice', 'question', 'do', 'approve'])
@@ -80,8 +80,8 @@ describe('validation', () => {
       await $.session.start(START_EVENT)
       const before = w.files.get(FILE)
       const ran = await $.tool.call({ ...call, tool: ADD })
-      expect(ran.isError).toBe(true)
-      expect(String(ran.result)).toStartWith('humantray: ')
+      expect(ran.deny).toBeDefined()
+      expect(String(ran.deny)).toStartWith('humantray: ')
       expect(w.files.get(FILE)).toBe(before)
     })
   }
@@ -104,8 +104,8 @@ describe('bumping', () => {
         { label: 'Blue', description: 'Cool' },
       ],
     })
-    const firstResult = first.result as { id: string }
-    expect(again.result).toEqual({ id: firstResult.id, short: `HT-${firstResult.id.slice(-5)}`, bumped: true })
+    const firstResult = answerOf<{ id: string }>(first)
+    expect(answerOf(again)).toEqual({ id: firstResult.id, short: `HT-${firstResult.id.slice(-5)}`, bumped: true })
     const items = w.store().items
     expect(items).toHaveLength(2)
     const bumped = items.find(item => item.id === firstResult.id)
@@ -113,7 +113,7 @@ describe('bumping', () => {
     expect(bumped?.body_md).toBe('two')
     expect(bumped?.options?.map(o => o.label)).toEqual(['Green', 'Blue'])
     const listed = await $.tool.call({ tool: LIST })
-    expect((listed.result as { items: Array<{ id: string }> }).items[0]?.id).toBe(firstResult.id)
+    expect(answerOf<{ items: Array<{ id: string }> }>(listed).items[0]?.id).toBe(firstResult.id)
   })
 
   test('the question is the key when none is given', async ($, on) => {
@@ -121,7 +121,7 @@ describe('bumping', () => {
     await $.session.start(START_EVENT)
     await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Build  is   green' })
     const again = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'build is green ' })
-    expect((again.result as { bumped: boolean }).bumped).toBe(true)
+    expect(answerOf<{ bumped: boolean }>(again).bumped).toBe(true)
     expect(w.store().items).toHaveLength(1)
   })
 
@@ -134,12 +134,12 @@ describe('bumping', () => {
     })
     await $.session.start(START_EVENT)
     const fresh = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q', key: 'same' })
-    expect((fresh.result as { bumped: boolean }).bumped).toBe(false)
+    expect(answerOf<{ bumped: boolean }>(fresh).bumped).toBe(false)
     w.sessionId = 'session-b'
     const other = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q', key: 'same' })
-    expect((other.result as { bumped: boolean }).bumped).toBe(false)
+    expect(answerOf<{ bumped: boolean }>(other).bumped).toBe(false)
     const third = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q', key: 'different' })
-    expect((third.result as { bumped: boolean }).bumped).toBe(false)
+    expect(answerOf<{ bumped: boolean }>(third).bumped).toBe(false)
     expect(w.store().items).toHaveLength(4)
   })
 
@@ -149,8 +149,8 @@ describe('bumping', () => {
     await $.tool.call({ ...CHOICE, key: 'k' })
     const before = w.files.get(FILE)
     const ran = await $.tool.call({ tool: ADD, type: 'question', header: 'X', question: 'Q', key: 'k' })
-    expect(ran.isError).toBe(true)
-    expect(String(ran.result)).toContain('open choice item')
+    expect(ran.deny).toBeDefined()
+    expect(String(ran.deny)).toContain('open choice item')
     expect(w.files.get(FILE)).toBe(before)
   })
 })
@@ -178,7 +178,7 @@ describe('humantray_list', () => {
     })
     // No session.start here: a list makes no delivery of its own.
     const listed = await $.tool.call({ tool: LIST })
-    expect(listed.result).toEqual({
+    expect(answerOf(listed)).toEqual({
       items: [
         { id: '01AAAAAAAAAAAAAAAAAAAAWAITS', short: 'HT-WAITS', type: 'question', header: 'Seeded', status: 'answered' },
         { id: '01AAAAAAAAAAAAAAAAAAAAOPEN2', short: 'HT-OPEN2', type: 'do', header: 'Seeded', status: 'open' },
@@ -194,9 +194,9 @@ describe('the store', () => {
     const w = world(on, { isRepo: false })
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
-    expect(added).toEqual({ isError: true, result: 'humantray: not in a git repository' })
+    expect(added).toEqual({ deny: 'humantray: not in a git repository' })
     const listed = await $.tool.call({ tool: LIST })
-    expect(listed).toEqual({ isError: true, result: 'humantray: not in a git repository' })
+    expect(listed).toEqual({ deny: 'humantray: not in a git repository' })
     expect(w.files.size).toBe(0)
     expect(w.opened).toEqual([])
   })
@@ -211,11 +211,11 @@ describe('the store', () => {
       w.seed(text)
       await $.session.start(START_EVENT)
       const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
-      expect(added.isError).toBe(true)
-      expect(String(added.result)).toContain('is unreadable')
-      expect(String(added.result)).toContain('it was not changed')
+      expect(added.deny).toBeDefined()
+      expect(String(added.deny)).toContain('is unreadable')
+      expect(String(added.deny)).toContain('it was not changed')
       const listed = await $.tool.call({ tool: LIST })
-      expect(listed.isError).toBe(true)
+      expect(listed.deny).toBeDefined()
       expect(w.files.get(FILE)).toBe(text)
     })
   }
@@ -228,8 +228,8 @@ describe('the store', () => {
     await $.session.start(START_EVENT)
     const before = w.files.get(FILE)
     const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q', body_md: 'b'.repeat(19_000) })
-    expect(ran.isError).toBe(true)
-    expect(String(ran.result)).toContain('the store is full')
+    expect(ran.deny).toBeDefined()
+    expect(String(ran.deny)).toContain('the store is full')
     expect(w.files.get(FILE)).toBe(before)
     expect(w.store().items).toHaveLength(1)
   })
@@ -249,8 +249,8 @@ describe('the lock', () => {
     w.dirs.set(LOCK, w.clock.now())
     await w.clock.advance(1100)
     const ran = await pending
-    expect(ran.isError).toBe(true)
-    expect(String(ran.result)).toContain('the store is busy')
+    expect(ran.deny).toBeDefined()
+    expect(String(ran.deny)).toContain('the store is busy')
     expect(w.files.get(FILE)).toBe(before)
     expect(w.dirs.has(LOCK)).toBe(true)
   })
@@ -260,7 +260,7 @@ describe('the lock', () => {
     await $.session.start(START_EVENT)
     w.dirs.set(LOCK, w.clock.now() - 3000)
     const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
-    expect(ran.isError).toBeUndefined()
+    expect(ran.deny).toBeUndefined()
     expect(w.lockRenames).toBe(1)
     expect(w.dirs.has(LOCK)).toBe(false)
     expect([...w.dirs.keys()].some(dir => dir.startsWith(`${LOCK}.stale-`))).toBe(false)
@@ -275,7 +275,7 @@ describe('the lock', () => {
     const two = $.tool.call({ tool: ADD, type: 'ack', header: 'Two', question: 'Second' })
     await w.clock.advance(500)
     const ran = await Promise.all([one, two])
-    expect(ran.map(r => r.isError)).toEqual([undefined, undefined])
+    expect(ran.map(r => r.deny)).toEqual([undefined, undefined])
     expect(w.lockRenames).toBe(1)
     expect(w.store().items.map(item => item.header).sort()).toEqual(['One', 'Two'])
   })
@@ -287,8 +287,8 @@ describe('the lock', () => {
     const before = w.files.get(FILE)
     w.failMoveOfTemporary = true
     const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'Y', question: 'Other' })
-    expect(ran.isError).toBe(true)
-    expect(String(ran.result)).toContain('could not write')
+    expect(ran.deny).toBeDefined()
+    expect(String(ran.deny)).toContain('could not write')
     expect(w.files.get(FILE)).toBe(before)
     expect(w.dirs.has(LOCK)).toBe(false)
     expect([...w.files.keys()].filter(path => path.startsWith(DIR) && path !== FILE)).toEqual([])

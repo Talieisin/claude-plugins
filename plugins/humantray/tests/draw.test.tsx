@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ADD, BAND, START_EVENT, TURN, stored, world } from './world'
+import { ADD, answerOf, BAND, START_EVENT, TURN, stored, world } from './world'
 
 describe('no surface', () => {
   test('a start with no surface opens nothing and toasts nothing; the tools work; a later attach opens the pane', async ($, on) => {
@@ -10,7 +10,7 @@ describe('no surface', () => {
     w.seed({ version: 1, items: [stored({ id: '01AAAAAAAAAAAAAAAAAAAAOPEN1', type: 'ack' })], sessions: {} })
     await $.session.start({ ...START_EVENT, surface: null })
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q' })
-    expect(added.isError).toBeUndefined()
+    expect(added.deny).toBeUndefined()
     expect(w.opened).toEqual([])
     expect(w.toasts).toEqual([])
     w.surfaces = ['desktop']
@@ -26,7 +26,7 @@ describe('with a surface', () => {
     await $.session.start(START_EVENT)
     expect(w.opened).toEqual(['humantray'])
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q' })
-    const short = (added.result as { short: string }).short
+    const short = answerOf<{ short: string }>(added).short
     expect(w.toasts).toEqual([`Humantray: added ${short} (FYI)`])
     await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q' })
     expect(w.toasts.at(-1)).toBe(`Humantray: bumped ${short} (FYI)`)
