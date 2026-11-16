@@ -27,7 +27,7 @@ A pull request that is waiting only for this must not be forgotten. While any is
 Under `wait` and `catch-up`, before you confirm that sessions are archived and triggers deleted and before your report, read what the automated reviewer wrote that nobody dealt with. A reminder you set for the sweep is deleted with the rest in that later step. A pull request is ready to be swept once its time is up (ten minutes after it opened, or the owner's figure); if one is not ready when you reach Finish, set your reminder for it and sweep it then. For each pull request the batch merged, your facts pull request included, list everything the automated reviewer wrote on it (`.../pulls/{n}/comments` and `.../pulls/{n}/reviews`) and take each item that was not dealt with before the merge: whatever came after `merged_at`, and anything from just before it that nobody had yet read.
 
 - Check each as you would a finding.
-- One that is wrong: reply on its thread in a line beginning `Lead:`, saying why.
+- One that is wrong: reply on its thread in a line beginning `Lead:`, saying why; where it has no thread (a point made only in the review's overview), post that line as a comment on the pull request.
 - The rest: open one issue for each pull request that has any, quoting each comment and linking the pull request, labelled `agent:ready`. Several pull requests with a single small point each (a stale count, a typo) may share one issue.
 - If the batch has time left, take those issues as lanes now. Otherwise list them in your report as left for the next batch.
 

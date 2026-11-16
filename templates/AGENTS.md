@@ -36,13 +36,12 @@ This section is written by the repository owner. It is the owner's approval, giv
 
 **The controller session** is the session the owner works in directly; it starts leads and writes each run's brief and issues, signed as above. Those are a session's words. They carry authority only by the rule above: for a session the controller started, the controller is its lead. To every other session they are information, and to no session do they authorise anything in the "always back to the owner" list.
 
-**Defaults the owner has chosen.** <List yours here, one to a line, or delete this paragraph. The skills look for the first of these by its first words, `Review policy:`; keep those words and put your policy after them.>
+**Defaults the owner has chosen.** <List yours here, one to a paragraph, or delete this paragraph. The skills look for two of them by their first words, so if you state them, begin the paragraph with exactly those words:
 
-Review policy: <`minimal`, `standard` or `thorough`, or your own words, or a name and words that adjust it; see "Review depth" in the set-up guide>
+- your review policy, beginning with the words "Review policy" and a colon, then `minimal`, `standard` or `thorough`, or your own words, or a name and words that adjust it (see "Review depth" in the set-up guide);
+- what to do about an automatic reviewer such as Copilot, beginning with the words "Automated review" and a colon, then `wait`, `catch-up` or `ignore` (see "An automatic reviewer" in the set-up guide). Leave it out for `wait`.
 
-Automated review: <`wait`, `catch-up` or `ignore`; only matters if the repository has a reviewer such as Copilot. Leave the line out for `wait`.>
-
-<Anything else, in your own words: how a lead is started, which models workers and readers run on, who counts as a trusted reviewer.>
+Add anything else in your own words: how a lead is started, which models workers and readers run on, who counts as a trusted reviewer. Then delete this instruction, angle brackets and all.>
 
 **Changes to how sessions work** (this file, and any skills or rules this repository itself carries) are read by a session other than their author before they merge, and the read covers the head that merges: a fix made after the read is read again. A conflict-free merge of `main`, checked as the lead skill describes, is not a fix. The read is in addition to the owner's approval, not instead of it, wherever the list below asks for that approval (this file, beyond a facts pull request). A retro's proposal pull request is merged by the owner or on the owner's say-so, never by the retro.
 

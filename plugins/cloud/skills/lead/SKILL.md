@@ -121,7 +121,7 @@ Merge in order of readiness. Among several ready at once, take first the one the
 You are the merge gate; the ruleset alone would merge a stale branch. Before each merge, all six of these must hold:
 
 1. `mergeable_state` is `clean` (it reads `unknown` for a few seconds after a push: wait and re-read).
-2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`) and no review you or the owner requested is pending. The automated reviewer is not covered by this condition: `automated-review.md` alone says whether a merge waits for it, and for how long.
+2. No review thread is still open (`.../pulls/{n}/ccr/review_threads`) and no review you or the owner requested is pending. Whether a merge waits for the automated reviewer, and for how long, is for `automated-review.md` alone; but every finding in an automated review that has arrived, its overview included, is fixed or answered before the merge.
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered. Where `AGENTS.md` lets the automated review stand in for the reader on some kind of change, follow it.

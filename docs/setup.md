@@ -281,8 +281,9 @@ Automated review: wait
 | `ignore` | Does not wait, and does not look for late comments |
 
 Whatever the setting, short of `ignore`, the lead looks back at the end of the
-batch, once each pull request has been open for the limit, for review comments
-that arrived after it merged. It answers
+batch, once each pull request has been open for the limit, for anything the
+automatic reviewer wrote that nobody dealt with: comments that arrived after
+the merge, or just before it. It answers
 the ones that are wrong, and opens one issue for each pull request that has
 real ones, labelled `agent:ready`. If the batch has time left it works those
 issues there and then, and looks once more at the pull requests that produces;
