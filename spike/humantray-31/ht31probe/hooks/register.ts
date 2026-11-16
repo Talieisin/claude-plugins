@@ -154,6 +154,10 @@ const msgText = async ($: EngineInterface, via: string) => {
 async function sendAll($: EngineInterface, peer: string) {
   const out: Record<string, unknown> = {}
   out.sessionSend = await timed(async () => $.session.send({ to: { sessionId: peer }, text: await msgText($, '$.session.send') }))
+  out.toolCall = await timed(async () => {
+    const ran = await $.tool.call({ tool: 'mcp__claude-code-remote__send_message', session_id: peer, message: await msgText($, '$.tool.call') } as never)
+    return short(ran, 1500)
+  })
   for (const server of ['claude-code-remote', 'claude.ai Claude Code Remote']) {
     out[`mcp:${server}`] = await timed(async () => $.mcp.call(server, 'send_message', { session_id: peer, message: await msgText($, `$.mcp.call ${server}`) }))
   }
