@@ -23,7 +23,7 @@ Routes marked (unverified) are taken from the proxy's own error text or GitHub's
 | List review threads (GraphQL) | `gh api repos/{o}/{r}/pulls/{n}/ccr/review_threads`: returns every thread, resolved ones included, each marked `resolved` and `outdated` |
 | Reply to a review comment | `gh api -X POST repos/{o}/{r}/pulls/{n}/comments/{comment_id}/replies -f body=...` |
 | Resolve a thread (GraphQL mutation) | `gh api -X POST repos/{o}/{r}/pulls/{n}/ccr/comments/{comment_id}/resolve` |
-| Draft and ready | `gh api -X POST repos/{o}/{r}/pulls/{n}/ccr/ready_for_review` (used on `cc-web-lab-alpha` pull request 82) |
+| Draft and ready | `gh api -X POST repos/{o}/{r}/pulls/{n}/ccr/ready_for_review` |
 | `gh pr merge --auto --squash --match-head-commit` | `gh api -X PUT repos/{o}/{r}/pulls/{n}/merge -f merge_method=squash -f sha={head sha}` |
 | Bring a branch up to date with `main` before you merge it | `gh api -X PUT repos/{o}/{r}/pulls/{n}/update-branch -f expected_head_sha={head sha}`: a merge of `main`, never a force push. Run the whole test suite at the new head afterwards |
 | Delete the remote branch | Not needed: the repository deletes head branches on merge. |

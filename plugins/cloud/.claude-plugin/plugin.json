@@ -1,6 +1,6 @@
 {
   "name": "cloud",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "description": "Lead, worker, reader and retro skills for running batches of GitHub issues in Claude Code cloud sessions, with the GitHub rule as a skill. Text only: no hooks, no code.",
   "author": {
     "name": "Talieisin"
