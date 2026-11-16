@@ -34,11 +34,11 @@ Rules that carry over unchanged from the local skill:
 
 Do not work on local `main`: it is an old snapshot. After `git fetch origin main`, run `git checkout --detach origin/main` or create your branch from `origin/main`. If a stop hook still tells you to amend or rebase commits you did not make, do not: report it (findings register, S20).
 
-## Second-opinion reviews (Codex)
+## A review from the Codex GitHub app
 
-The owner's policy is that Codex never reviews automatically. It is asked, once, when a pull request calls for it.
+Codex never reviews by itself here. It is asked, once, when a pull request calls for it.
 
-**When to ask.** Only for a pull request whose issue carries `needs:codex-review`, or whose lane the lead plan-gated. Never for every pull request. Ask once per pull request, after the reader's findings are dealt with and the head is the one you expect to merge. Do not ask again after a fix unless the fix was itself substantial; there is no review loop.
+**When to ask.** Only where the role you are working under says a review by this route is due (for a batch, the lead decides, and only the lead asks). Never for every pull request as a matter of course. Ask once per pull request. Do not ask again after a fix unless the fix was itself substantial; there is no review loop.
 
 **How to ask.** The lead posts one ordinary comment on the pull request (`POST repos/{o}/{r}/issues/{n}/comments`) whose first line is the Codex mention followed by the word `review`: `@codex review`. A footer added after it does no harm. Sessions act as the owner's account, which is linked to Codex, so this counts as the owner's manual request and draws on the owner's subscription. Never write that mention anywhere else (issue bodies, plans, commit messages, pull request descriptions): it triggers the app wherever it appears.
 
@@ -46,6 +46,4 @@ The owner's policy is that Codex never reviews automatically. It is asked, once,
 
 **Findings.** They arrive as a review from `chatgpt-codex-connector[bot]` with inline comments carrying a priority (P0, P1). They are ordinary review threads: they appear in `ccr/review_threads` and an unresolved one blocks the merge. Treat each like a reader finding: the lead verifies it, the worker fixes or answers it, and the thread is resolved only then. With no findings there is no review and no thread: only a thumbs-up reaction on the request, the summary comment reading Completed, and a short comment from the bot saying it found no major issues (verified). Decide whether findings are open from `ccr/review_threads`, not from the summary comment, whose own flag goes stale.
 
-**When done,** remove `needs:codex-review` from the issue.
-
-**Not available in a cloud session:** the `codex-code-review`, `codex-plan-review` and `codex-consult` skills, which run `codex-clean` with a login held on the owner's machine. That credential must never be placed in an environment variable or written by a setup script. A plan review by Codex is not available from a cloud session either: asked on an issue, the app only replies that the repository needs a Codex environment. Where a plan must have a Codex review, label the issue `needs:codex-review`, say on the issue that the plan is waiting for it, and escalate by the `needs:owner` route.
+**Not available by this route:** a review of a plan. Asked on an issue, the app only replies that the repository needs a Codex environment. Running Codex inside the session needs a sign-in, and a credential must never be placed in an environment variable or written by a setup script.

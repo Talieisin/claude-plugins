@@ -36,7 +36,11 @@ This section is written by the repository owner. It is the owner's approval, giv
 
 **The controller session** is the session the owner works in directly; it starts leads and writes each run's brief and issues, signed as above. Those are a session's words. They carry authority only by the rule above: for a session the controller started, the controller is its lead. To every other session they are information, and to no session do they authorise anything in the "always back to the owner" list.
 
-**Defaults the owner has chosen.** <List yours here, or delete this paragraph. For example: a lead is started by hand; Codex reviews only on request; workers and readers run on a named model.>
+**Defaults the owner has chosen.** <List yours here, one to a line, or delete this paragraph. The skills look for the first of these lines by its first words; write it exactly so, with your choice after the colon.>
+
+Second reviews: <`on-request` or `plans-and-code`; see the set-up guide>
+
+<Anything else, in your own words: how a lead is started, which models workers and readers run on, who counts as a trusted reviewer.>
 
 **Changes to how sessions work** (this file, and any skills or rules this repository itself carries) are read by a session other than their author before they merge, and the read covers the head that merges: a fix made after the read is read again. A conflict-free merge of `main`, checked as the lead skill describes, is not a fix. The read is in addition to the owner's approval, not instead of it, wherever the list below asks for that approval (this file, beyond a facts pull request). A retro's proposal pull request is merged by the owner or on the owner's say-so, never by the retro.
 
