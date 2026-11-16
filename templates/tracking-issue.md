@@ -9,7 +9,7 @@ This issue is the brief for this batch and its tracking issue.
 **Lead:** a cloud session started for this repository on <model> at <effort>
 effort, whose first prompt names this issue.
 
-**Task.** Use the `cloud:cloud-lead` skill to take issues <#a to #b, or "every
+**Task.** Use the `cloud:lead` skill to take issues <#a to #b, or "every
 open issue labelled `agent:ready`"> as far as they can properly go. Workers and
 readers run on <model> at <effort>. Plan the batch as the skill says: decide the
 lanes, any plan gates, what must wait for something else to merge, what goes

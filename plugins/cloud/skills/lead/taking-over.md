@@ -1,8 +1,8 @@
-<!-- shared-skill-version: 25 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 26 (delivered by the `cloud` plugin) -->
 
 # Taking over a batch
 
-Part of the `cloud-lead` skill, read only by the replacement lead of a batch another lead began, as `AGENTS.md` defines one.
+Part of the `lead` skill, read only by the replacement lead of a batch another lead began, as `AGENTS.md` defines one.
 
 Say that you are the replacement in your first comment on the tracking issue, then find where each lane stands before you start anything: the tracking issue (lanes comment, run log), each issue's labels and comments, each pull request's head, review threads and reader comments, and the earlier lead's children (`list_sessions`, by `parent_session_id`), which are yours as `AGENTS.md` allows a replacement lead.
 

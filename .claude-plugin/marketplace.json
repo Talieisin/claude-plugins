@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "talieisin",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Talieisin's shared Claude Code plugins",
   "owner": {
     "name": "Talieisin"
@@ -9,9 +9,15 @@
   "plugins": [
     {
       "name": "cloud",
-      "description": "Lead, worker, reader and retro skills for running batches of GitHub issues in Claude Code cloud sessions, with the GitHub rule as a skill. Text only: no hooks, no code.",
+      "description": "Lead, worker, reader and retro skills for running batches of GitHub issues in Claude Code cloud sessions. Needs the github plugin from the same marketplace. No hooks.",
       "source": "./plugins/cloud",
-      "version": "0.25.0"
+      "version": "0.26.0"
+    },
+    {
+      "name": "github",
+      "description": "The pull-request skill: take a GitHub pull request from open to merged, from your own machine or from a Claude Code cloud session. No hooks; the local route calls read-only scripts shipped with the skill.",
+      "source": "./plugins/github",
+      "version": "0.1.0"
     }
   ]
 }

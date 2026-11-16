@@ -9,8 +9,9 @@ something up.
 - A Claude Code plugin marketplace named `talieisin`
   (`.claude-plugin/marketplace.json`), public so that a cloud environment's
   setup script can install from it without a credential.
-- One plugin, `cloud` (`plugins/cloud/`): five skills, text only. Keep it text
-  only. A plugin that runs code (hooks) goes in its own folder under `plugins/`
+- Two plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader and retro
+  skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
+  read-only scripts its local route calls. Neither has hooks; keep it so. A plugin that runs code (hooks) goes in its own folder under `plugins/`
   so that turning it on is a separate, deliberate choice.
 - This repository is the source of truth for the skills. No other repository
   carries a copy, and a copy elsewhere would win over the plugin on the bare
@@ -31,17 +32,19 @@ in a clause. It does not cite a private record.
 
 1. **Branch and pull request.** Never push to `main`.
 2. **Bump the versions together.** Every file under `plugins/cloud/skills/`
-   except `cloud-github/SKILL.md` carries `<!-- shared-skill-version: N ... -->`;
+   carries `<!-- shared-skill-version: N ... -->`;
    all carry the same N. Raise N in all of them, and raise `version` in both `plugins/cloud/.claude-plugin/plugin.json`
-   and `.claude-plugin/marketplace.json` to match (`0.N.0`). `cloud-github`
-   carries its own `shared-rule-version`, which rises only when that file's
-   rules change; the sentence in it that names the version rises with it.
+   and `.claude-plugin/marketplace.json` to match (`0.N.0`). The `github` plugin is
+   versioned on its own: `pull-request/SKILL.md` carries
+   `<!-- pull-request-skill-version: N -->`, which rises with any change to that
+   skill or its route files, and its `plugin.json` and marketplace entry rise
+   with it.
 3. **Have it read by someone other than its author** before it merges, and read
    again after any fix. The read is of the text as instructions: contradictions
    between files, a reference to a section or file that moved, a step a session
    could not carry out, a role left without an instruction. Small wording
    changes have broken these in practice.
-4. **Keep the lead skill short.** `cloud-lead/SKILL.md` is read in full by every
+4. **Keep the lead skill short.** `lead/SKILL.md` is read in full by every
    lead. What only some leads need lives in a side file beside it
    (`comments-mode.md`, `handing-skills.md`, `taking-over.md`) that the skill
    points to. A rule added must be paid for by one removed or shortened.
@@ -77,6 +80,6 @@ matching file under `templates/` in the same pull request.
 There is no test suite. Before opening a pull request:
 
 - every `shared-skill-version` marker carries the same version, and the two
-  manifests match it (`cloud-github` has only its own `shared-rule-version`);
+  manifests match it; the `github` plugin's marker and manifests match each other;
 - every path a skill, the README or `docs/setup.md` names exists;
 - `bash -n` passes on each script under `templates/` and `optional/`.

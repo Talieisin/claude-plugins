@@ -1,4 +1,4 @@
-# Setting up the `cloud` skills
+# Setting up the `cloud` and `github` plugins
 
 How to get a repository to the point where a Claude Code cloud session can lead
 a batch of GitHub issues to merged pull requests, with a worker session per
@@ -24,11 +24,12 @@ Sessions get the skills from the environment they run in. On claude.ai/code,
 open the environment picker (beside the repository picker, under the prompt
 box), choose **New environment** (or the gear beside an existing one), and paste
 [`templates/setup-script.sh`](../templates/setup-script.sh) into **Setup
-script**. Its two working lines are:
+script**. Its three working lines are:
 
 ```bash
 claude plugin marketplace add Talieisin/claude-plugins
 claude plugin install cloud@talieisin
+claude plugin install github@talieisin
 ```
 
 Leave **Network access** on Limited. No extra domains are needed for the plugin.
@@ -82,9 +83,8 @@ or download the file, read it, and run `bash labels.sh`. It creates `agent:ready
 
 ### 4. Nothing of the same name in the repository
 
-The repository must not carry its own `cloud-lead`, `cloud-worker`,
-`cloud-reader` or `cloud-retro` under `.claude/skills/`, nor a
-`.claude/rules/cloud-github.md`. Where a repository and the plugin both supply a
+The repository must not carry its own skills named `lead`, `worker`, `reader`,
+`retro` or `pull-request` under `.claude/skills/`. Where a repository and the plugin both supply a
 skill, the repository's copy is the one a bare name loads.
 
 ### 5. Branch protection
@@ -107,7 +107,7 @@ these, but they stop a mistake from merging.
    and start a session with:
 
    > You are the lead for this batch. Your brief is issue N of this repository:
-   > read it and follow it, using the `cloud:cloud-lead` skill. If you do not
+   > read it and follow it, using the `cloud:lead` skill. If you do not
    > hold that skill, say so on the issue and stop.
 
 The lead's first comment on the tracking issue names the versions of the skill
@@ -132,8 +132,8 @@ skeleton.
 
 Useful if you start sessions in environments that do not have the setup script.
 On claude.ai: **Plugins**, **Add**, **Add marketplace**, **Add from a
-repository**, and give `Talieisin/claude-plugins`; then add the `cloud` plugin.
-It adds instructions only and runs no code.
+repository**, and give `Talieisin/claude-plugins`; then add the `cloud` and `github`
+plugins. Neither has hooks.
 
 If neither the environment nor the account gives a lead's children the plugin,
 the lead falls back to handing each child its skill text when it starts them.
@@ -155,7 +155,7 @@ fires a Claude Code routine when an issue is labelled `lead:start`. You need:
 - a routine on claude.ai (under Scheduled) for the repository and the
   environment from step 1, with an API trigger, and with a prompt that tells it
   to lead the batch whose tracking issue the trigger's text names, using
-  `cloud:cloud-lead`, and to post its session link on that issue first;
+  `cloud:lead`, and to post its session link on that issue first;
 - the routine's id as the repository variable `LEAD_ROUTINE_ID`, and its token
   as the repository secret `LEAD_ROUTINE_TOKEN`;
 - the `lead:start` label.
@@ -175,7 +175,7 @@ label.
 
 ### A retro
 
-After a few batches, start a session with "Use the `cloud:cloud-retro` skill on
+After a few batches, start a session with "Use the `cloud:retro` skill on
 runs <tracking issues>". It measures each run from its issues, pull requests and
 sessions, judges whether each rule in the skills earned its place, and proposes
 changes. It never merges anything.
@@ -189,7 +189,7 @@ script and save. Then check: the next lead's first comment names the versions
 it holds.
 
 **How to tell what a session got.** In the session, `claude plugin list` shows
-`cloud@talieisin` and its version, and `cat /tmp/cloud-setup.log` shows what the
+`cloud@talieisin` and `github@talieisin` with their versions, and `cat /tmp/cloud-setup.log` shows what the
 setup script did. If the plugin is missing, the log says why.
 
 **If a lead says it does not hold the skill,** the environment's setup script
@@ -200,7 +200,7 @@ the environment you edited, and check that nothing blocks `github.com`.
 
 | What | Where |
 |---|---|
-| The skills | This repository, `plugins/cloud/skills/` |
+| The skills | This repository, `plugins/cloud/skills/` and `plugins/github/skills/` |
 | What sessions may do, and a repository's facts | That repository's `AGENTS.md` |
 | The setup script | The cloud environment, on claude.ai (not in any repository) |
 | The routine, if you use one | Your claude.ai account, under Scheduled |
