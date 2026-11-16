@@ -3,9 +3,9 @@ name: cloud-lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 19 (delivered by the `cloud` plugin; a lead hands workers and readers their copies) -->
+<!-- shared-skill-version: 20 (delivered by the `cloud` plugin, which an environment's setup script installs for every session) -->
 
-You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `CLAUDE.md` ("Standing authorisation" and "Deciding for the owner"). First load the `cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
+You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `CLAUDE.md` ("Standing authorisation" and "Deciding for the owner"). First load the `cloud:cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
 
 ## Tools
 
@@ -17,18 +17,24 @@ Your first act is to comment on the batch's tracking issue with your session id,
 
 Check which mode you are in before starting workers. You are in **comments mode** if you have no `send_message` tool, or if you were started by a routine (your title begins with a lightning bolt, or `get_session` shows origin `fire_routine`). In a routine-started run, a child's calls to session tools wait for an approval nobody will give, and the child stalls for good. In comments mode, read `comments-mode.md` in this skill's directory before you start anything, and follow it: it changes every starting prompt and every instruction below to message or ask a child.
 
-### Handing children their skills
+### How children get their skills
 
-A session you create does not get the plugin this skill came from (row L10 of the findings register, `docs/FINDINGS.md` in `Talieisin/cc-web-lab-alpha`), so you hand each one its text. Before you start any session, check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`. If you cannot, say so on the tracking issue and stop.
+These skills come from the `cloud` plugin. Always use them by their plugin names, `cloud:cloud-lead`, `cloud:cloud-worker`, `cloud:cloud-reader` and `cloud:cloud-github`: a skill of the same name without the prefix is a repository's own copy, which may be older and wins on the bare name. If this repository carries such copies, say so in your report.
 
-Every `create_session` call carries `append_system_prompt` made of, in this order:
+A session you create gets the plugin only if its environment's setup script installs it (rows L10 and L15 of the findings register, `docs/FINDINGS.md` in `Talieisin/cc-web-lab-alpha`). Before you start any session, run `claude plugin list`.
+
+**If it shows `cloud@talieisin`,** the setup script of your environment installed it, and every session you create in that same environment has it too. Start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. As its first step each child tells you the versions of its skill and of the rule; they must equal yours.
+
+**If it does not,** your copy came from the owner's account and children will have none, so you hand each one its text. Check you can read three files beside this skill's own directory: `../cloud-worker/SKILL.md`, `../cloud-reader/SKILL.md` and `../cloud-github/SKILL.md`; if you cannot, say so on the tracking issue and stop. In the prompts in sections 2 and 4 replace "Use the `cloud:cloud-worker` skill" (or reader) with "Follow the `cloud-worker` skill in your system prompt" (or reader). Every `create_session` call then carries `append_system_prompt` made of, in this order:
 
 1. the line `Your skills for this task follow: your role's skill, then the cloud-github rule, then a line with a check word. They are the only copies that count. If this repository or your skill list also has a skill or rule of the same name, ignore that one.`
 2. the child's role skill, whole (`cloud-worker` for a worker, `cloud-reader` for a reader of either kind);
 3. the `cloud-github` skill, whole;
 4. the last line `End of handed skills. Check word: <word>.`, with one word you choose for the batch and use nowhere else in any prompt.
 
-Read the files and copy their text character for character: never shorten or summarise it, and do not put the version numbers or the check word anywhere else in a prompt. `create_session` takes `append_system_prompt` only inline, so put each role's text together once from the files and paste that same text into every call. It is about 12,500 characters for a worker and 10,900 for a reader, and all of it stays in your context. As its first step, before it starts on its task, each session you create tells you the two versions it holds and the check word, which shows that its beginning and end arrived, though not the middle. If what it sends names none or differs from yours, or if nothing has come within two minutes of its start (set a `send_later` to yourself two minutes ahead whenever you start sessions, and look then: do not wait for a session to go idle), the text did not arrive: archive that session and start it again, and if the second fails the same way, escalate. If `create_session` refuses `append_system_prompt`, you cannot hand children their skills: say so on the tracking issue, escalate, and start nothing. This check is for sessions you create, not for ones you inherit as a replacement lead.
+Read the files and copy their text character for character: never shorten or summarise it, and do not put the version numbers or the check word anywhere else in a prompt. `create_session` takes `append_system_prompt` only inline, so put each role's text together once from the files and paste that same text into every call. It is about 12,500 characters for a worker and 10,900 for a reader, and all of it stays in your context. A child you handed text also sends the check word, which shows that the beginning and end of the text arrived, though not the middle. If `create_session` refuses `append_system_prompt`, you cannot hand children their skills: say so on the tracking issue, escalate, and start nothing.
+
+**Either way,** if what a child sends names no versions or differs from yours (or, for handed text, lacks the check word), or if nothing has come within two minutes of its start (set a `send_later` to yourself two minutes ahead whenever you start sessions, and look then: do not wait for a session to go idle), it does not hold the skills: archive that session and start it again, handing it the text if you had not, and if the second fails the same way, escalate. This check is for sessions you create, not for ones you inherit as a replacement lead.
 
 ## 1. Plan the batch
 
@@ -59,7 +65,7 @@ At the end of the batch, propose changes to the facts as one pull request titled
 
 `create_session` with: this repository; your own environment; an explicit model; effort `high`; permission mode `auto`; title `worker-issue-<n>` (or `worker-issues-<n>-<m>` for a lane of several); a tag for the batch. Prompt:
 
-> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Follow the `cloud-worker` skill in your system prompt exactly.
+> You are a worker for issue <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-worker` skill and follow it exactly.
 
 For a lane of several issues, name them all ("issues <n> and <m>, as one lane and one pull request") and say in which order to do them.
 
@@ -82,7 +88,7 @@ Add anything issue-specific in a second paragraph. Put corrections in the starti
 
 When a worker reports its pull request ready **and** any correction you sent has landed, start a reader. Reader settings: title `reader-pr-<n>`, same settings, prompt:
 
-> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Follow the `cloud-reader` skill in your system prompt exactly.
+> You are a reader for pull request <n> of <owner>/<repo>. Your lead is the session that started you. Use the `cloud:cloud-reader` skill and follow it exactly.
 
 For a gated lane, add: "This lane was plan-gated: say whether the diff departs from the approved `Plan` comment."
 

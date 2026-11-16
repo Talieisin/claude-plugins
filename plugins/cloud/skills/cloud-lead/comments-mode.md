@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 19 (delivered by the `cloud` plugin; a lead hands workers and readers their copies) -->
+<!-- shared-skill-version: 20 (delivered by the `cloud` plugin, which an environment's setup script installs for every session) -->
 
 # Comments mode
 

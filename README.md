@@ -19,12 +19,22 @@ so that turning it on is a deliberate choice.
 
 ## How sessions get the skills
 
-- A cloud session started by hand gets the plugin from the account it is synced
-  to. That is the lead (and a retro).
-- A session created by another session does not get the plugin. So the lead
-  reads the worker or reader skill and the `cloud-github` rule from its own
-  copy and passes them to each session it starts, in that session's system
-  prompt. Each child names the versions it holds in its first comment.
+- Best: the environment's setup script installs the plugin, so every session
+  in that environment has it, however it was started. This repository is
+  public so that the script needs no credential. Add to the setup script:
+
+  ```bash
+  claude plugin marketplace add Talieisin/claude-plugins
+  claude plugin install cloud@talieisin
+  ```
+
+  `github.com` must be among the environment's allowed domains.
+- A cloud session started by hand also gets the plugin from the account it is
+  synced to. A session created by another session does not, unless its
+  environment installs it as above; without that, the lead hands each worker
+  and reader its skill and the `cloud-github` rule in the system prompt.
+- A repository that uses the plugin should carry no copies of these skills: a
+  copy wins on the bare name. Sessions use the `cloud:` names.
 - A plugin cannot carry a `.claude/rules` file, so the GitHub rule is the skill
   `cloud-github`.
 
