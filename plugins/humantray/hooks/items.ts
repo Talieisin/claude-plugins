@@ -26,8 +26,6 @@ export const LIMITS = {
 
 /** A claim held longer than this by another module instance is dead. */
 export const CLAIM_STALE_MS = 60_000
-/** An owner with no successor, unseen this long, gives up its answers. */
-export const ORPHAN_MS = 24 * 60 * 60 * 1000
 /** Session records no item names, unseen this long, are dropped. */
 export const SESSION_FORGET_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -110,6 +108,9 @@ export const validateAdd = (raw: Record<string, unknown>): Checked<AddInput> => 
   }
   if (multiSelect !== undefined && kind !== 'choice') {
     return { error: 'multiSelect is for choice items only' }
+  }
+  if (notify_on_done !== undefined && kind !== 'ack') {
+    return { error: 'notify_on_done is for ack items only' }
   }
 
   let checkedOptions: ItemOption[] | undefined
@@ -208,34 +209,45 @@ export const resolveOwner = (sessions: Record<string, SessionRecord>, id: string
   return current
 }
 
-/** Records that `me` was seen now, and that it took over from `previous`. */
-export const noteSession = (
-  file: StoreFile,
-  me: string,
-  previous: string | undefined,
-  now: number,
-): void => {
-  if (previous !== undefined && previous !== me) {
-    const old = file.sessions[previous] ?? { seen: now }
-    file.sessions[previous] = { ...old, successor: me }
+/** Every session id an item's owner chain runs through, its own included. */
+export const chainsInUse = (file: StoreFile): Set<string> => {
+  const used = new Set<string>()
+  for (const item of file.items) {
+    let current: string | undefined = item.session_id
+    while (current !== undefined && !used.has(current)) {
+      used.add(current)
+      current = file.sessions[current]?.successor
+    }
+  }
+  return used
+}
+
+/**
+ * Records that `me` was seen now and, after a /clear or a /branch in this
+ * process, that it took over from `handoverFrom`. A record is dropped only
+ * when it is old and no item's owner chain runs through it.
+ */
+export const noteSession = (file: StoreFile, me: string, now: number, handoverFrom?: string): void => {
+  if (handoverFrom !== undefined && handoverFrom !== me) {
+    const old = file.sessions[handoverFrom] ?? { seen: now }
+    file.sessions[handoverFrom] = { ...old, successor: me }
   }
   // A session seen again (a resume back to it) answers for itself once more,
   // so any successor it had is dropped: no chain can loop through it.
   file.sessions[me] = { seen: now }
+  const used = chainsInUse(file)
   for (const [id, record] of Object.entries(file.sessions)) {
-    if (id === me) continue
-    const isNamed = file.items.some(item => item.session_id === id)
-    if (!isNamed && now - record.seen > SESSION_FORGET_MS) delete file.sessions[id]
+    if (id === me || used.has(id)) continue
+    if (now - record.seen > SESSION_FORGET_MS) delete file.sessions[id]
   }
 }
 
-/** Whether `me` should deliver this item's answer now. */
-export const isMineToDeliver = (file: StoreFile, item: Item, me: string, now: number): boolean => {
-  const owner = resolveOwner(file.sessions, item.session_id)
-  if (owner === me) return true
-  const seen = file.sessions[owner]?.seen ?? item.updated
-  return now - seen > ORPHAN_MS
-}
+/**
+ * Whether `me` delivers this item's answer: only the session that owns it,
+ * or that session's successor. Nobody else ever takes an answer over.
+ */
+export const isMineToDeliver = (file: StoreFile, item: Item, me: string): boolean =>
+  resolveOwner(file.sessions, item.session_id) === me
 
 /** Open items, the most recently added or bumped first. */
 export const openItems = (file: StoreFile): Item[] =>
@@ -390,18 +402,79 @@ export const summaryOf = (item: Item): string => {
 export const deliveryLine = (item: Item): string =>
   `humantray ${item.short} (${oneLine(item.header)}): ${summaryOf(item)}`
 
+const STATUSES: readonly string[] = ['open', 'acknowledged', 'done', 'answered']
+
+const isOptional = (v: unknown, kind: 'string' | 'number' | 'boolean') => v === undefined || typeof v === kind
+
+const isOptionList = (v: unknown): boolean =>
+  Array.isArray(v) && v.every(o => isRecord(o) && typeof o.label === 'string' && typeof o.description === 'string')
+
+/** Whether a stored response has the shape its item's type gives it. */
+const isResponseOf = (type: string, r: unknown): boolean => {
+  if (!isRecord(r) || !isOptional(r.notes, 'string')) return false
+  switch (type) {
+    case 'ack':
+      return r.acknowledged === true
+    case 'question':
+      return typeof r.text === 'string'
+    case 'do':
+      return (r.outcome === 'done' || r.outcome === 'not_done') && isOptional(r.feedback, 'string')
+    default:
+      return Array.isArray(r.selected) && r.selected.every(l => typeof l === 'string') && isOptional(r.other, 'string')
+  }
+}
+
+/** Why a stored item is not one this version can use, or undefined when it is. */
+const itemProblem = (item: unknown): string | undefined => {
+  if (!isRecord(item)) return 'an item is not an object'
+  const name = typeof item.id === 'string' ? item.id : '(no id)'
+  for (const field of ['id', 'short', 'repo', 'session_id', 'header', 'question', 'body_md', 'key'] as const) {
+    if (typeof item[field] !== 'string') return `item ${name}: ${field} is not a string`
+  }
+  for (const field of ['created', 'updated', 'bumps'] as const) {
+    if (typeof item[field] !== 'number') return `item ${name}: ${field} is not a number`
+  }
+  if (typeof item.type !== 'string' || !(TYPES as readonly string[]).includes(item.type)) {
+    return `item ${name}: unknown type`
+  }
+  if (typeof item.status !== 'string' || !STATUSES.includes(item.status)) return `item ${name}: unknown status`
+  if (typeof item.delivered !== 'boolean') return `item ${name}: delivered is not true or false`
+  if (item.origin !== 'local' && item.origin !== 'relayed') return `item ${name}: unknown origin`
+  if (item.options !== undefined && !isOptionList(item.options)) return `item ${name}: options are malformed`
+  if ((item.type === 'choice' || item.type === 'approve') && item.options === undefined) {
+    return `item ${name}: options are missing`
+  }
+  for (const field of ['multiSelect', 'notes', 'notify_on_done'] as const) {
+    if (!isOptional(item[field], 'boolean')) return `item ${name}: ${field} is not true or false`
+  }
+  for (const field of ['response_at', 'delivered_at', 'delivering_at'] as const) {
+    if (!isOptional(item[field], 'number')) return `item ${name}: ${field} is not a number`
+  }
+  if (!isOptional(item.delivering_by, 'string') || !isOptional(item.lead_id, 'string')) {
+    return `item ${name}: a session field is not a string`
+  }
+  if (item.status !== 'open' && !isResponseOf(item.type, item.response)) {
+    return `item ${name}: the response is missing or malformed`
+  }
+  return undefined
+}
+
 /** Reads a parsed `items.json`, or says why it is not one this version can use. */
 export const checkStoreFile = (parsed: unknown): Checked<StoreFile> => {
   if (!isRecord(parsed)) return { error: 'not a JSON object' }
   if (parsed.version !== 1) return { error: `version ${String(parsed.version)}, not 1` }
   if (!Array.isArray(parsed.items)) return { error: 'items is not a list' }
   for (const item of parsed.items) {
-    if (!isRecord(item) || typeof item.id !== 'string' || typeof item.status !== 'string') {
-      return { error: 'an item is not a record with an id and a status' }
-    }
+    const problem = itemProblem(item)
+    if (problem !== undefined) return { error: problem }
   }
   const sessions = parsed.sessions === undefined ? {} : parsed.sessions
   if (!isRecord(sessions)) return { error: 'sessions is not an object' }
+  for (const [id, record] of Object.entries(sessions)) {
+    if (!isRecord(record) || typeof record.seen !== 'number' || !isOptional(record.successor, 'string')) {
+      return { error: `session ${id}: malformed` }
+    }
+  }
   return {
     ok: {
       version: 1,

@@ -31,8 +31,26 @@ export type World = {
   /** A hook to run inside each submit, before it answers (to look at the disk). */
   duringSubmit: (e: PromptSubmitInput) => void
   failMoveOfTemporary: boolean
+  /** Fail this many more moves of a temporary file into place, then succeed. */
+  failMoves: number
+  /** Every mkdir fails, as on a read-only disk. */
+  failMkdir: boolean
+  /** Every toast fails, as a surface that went away might. */
+  failToast: boolean
   /** Every rename of the lock directory that succeeded. */
   lockRenames: number
+  /** Every temporary file moved into place as the store: one per committed write. */
+  commits: number
+  /** Runs after a stat is measured and before it is answered (to change the disk in between). */
+  afterStat: (path: string) => void | Promise<void>
+  /** Runs before a move is made. */
+  beforeMove: (from: string, to: string) => void | Promise<void>
+  /** Runs before a file is written. */
+  beforeWrite: (path: string) => void | Promise<void>
+  /** Puts a lock on the disk as another holder's, taken now unless `at` is given. */
+  holdLock: (token: string, at?: number) => void
+  /** Removes the lock, as its holder does when it finishes. */
+  dropLock: () => void
   toasts: string[]
   opened: string[]
   argv: string[][]
@@ -66,7 +84,25 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,
     failMoveOfTemporary: false,
+    failMoves: 0,
+    failMkdir: false,
+    failToast: false,
     lockRenames: 0,
+    commits: 0,
+    afterStat: () => undefined,
+    beforeMove: () => undefined,
+    beforeWrite: () => undefined,
+    dropLock: () => {
+      for (const path of [...w.files.keys()]) if (path.startsWith(`${LOCK}/`)) w.files.delete(path)
+      w.dirs.delete(LOCK)
+    },
+    holdLock: (token, at) => {
+      const when = at ?? clock.now()
+      for (const path of [...w.files.keys()]) if (path.startsWith(`${LOCK}/`)) w.files.delete(path)
+      w.dirs.set(DIR, w.dirs.get(DIR) ?? START)
+      w.dirs.set(LOCK, when)
+      w.files.set(`${LOCK}/owner`, `${token}\n`)
+    },
     toasts: [],
     opened: [],
     argv: [],
@@ -96,6 +132,7 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
     return { value: { isPlaced: true } }
   })
   on('ui.toast', (_, e) => {
+    if (w.failToast) return { deny: 'the surface went away' }
     w.toasts.push(e.text)
     return { value: undefined }
   })
@@ -118,6 +155,7 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
       return w.isRepo ? ok(`${GIT}\n`) : result(128, '', 'fatal: not a git repository')
     }
     if (command === 'mkdir') {
+      if (w.failMkdir) return no('mkdir: cannot create directory: Read-only file system')
       if (rest[0] === '-p') {
         w.dirs.set(rest[1] ?? '', w.dirs.get(rest[1] ?? '') ?? (await clock.now()))
         return ok()
@@ -131,17 +169,28 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
       const paths = rest.filter(arg => !arg.startsWith('-'))
       const from = paths[0] ?? ''
       const to = paths[1] ?? ''
+      await w.beforeMove(from, to)
       if (w.dirs.has(from)) {
-        if (w.dirs.has(to)) return no('exists')
+        if (w.dirs.has(to) || w.files.has(to)) return no('exists')
         w.dirs.set(to, w.dirs.get(from) ?? 0)
         w.dirs.delete(from)
+        for (const path of [...w.files.keys()]) {
+          if (path.startsWith(`${from}/`)) {
+            w.files.set(`${to}${path.slice(from.length)}`, w.files.get(path) ?? '')
+            w.files.delete(path)
+          }
+        }
         if (from === LOCK) w.lockRenames += 1
         return ok()
       }
       if (w.files.has(from)) {
-        if (w.failMoveOfTemporary && from.includes('.tmp-')) return no('mv: cannot move: Input/output error')
+        if (from.includes('.tmp-') && (w.failMoveOfTemporary || w.failMoves > 0)) {
+          w.failMoves = Math.max(0, w.failMoves - 1)
+          return no('mv: cannot move: Input/output error')
+        }
         w.files.set(to, w.files.get(from) ?? '')
         w.files.delete(from)
+        if (to === FILE) w.commits += 1
         return ok()
       }
       return no('No such file or directory')
@@ -150,32 +199,41 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
       const path = rest.filter(arg => !arg.startsWith('-'))[0] ?? ''
       w.files.delete(path)
       w.dirs.delete(path)
+      for (const each of [...w.files.keys()]) if (each.startsWith(`${path}/`)) w.files.delete(each)
+      for (const each of [...w.dirs.keys()]) if (each.startsWith(`${path}/`)) w.dirs.delete(each)
       return ok()
     }
     if (command === 'rmdir') {
-      w.dirs.delete(rest[0] ?? '')
+      const path = rest[0] ?? ''
+      if ([...w.files.keys()].some(each => each.startsWith(`${path}/`))) return no('Directory not empty')
+      w.dirs.delete(path)
       return ok()
     }
     return result(127, '', `not found: ${command}`)
   })
 
   on('fs.exists', (_, e) => ({ value: w.files.has(e.path) || w.dirs.has(e.path) }))
-  on('fs.stat', (_, e) => {
+  on('fs.stat', async (_, e) => {
     const text = w.files.get(e.path)
-    if (text !== undefined) {
-      return { value: { kind: 'file' as const, size: new TextEncoder().encode(text).length, mtimeMs: START, isLink: false } }
-    }
     const made = w.dirs.get(e.path)
-    if (made !== undefined) return { value: { kind: 'dir' as const, size: 0, mtimeMs: made, isLink: false } }
-    throw new Error(`ENOENT: ${e.path}`)
+    let value: { kind: 'file' | 'dir'; size: number; mtimeMs: number; isLink: boolean } | undefined
+    if (text !== undefined) value = { kind: 'file', size: new TextEncoder().encode(text).length, mtimeMs: START, isLink: false }
+    else if (made !== undefined) value = { kind: 'dir', size: 0, mtimeMs: made, isLink: false }
+    await w.afterStat(e.path)
+    if (value === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value }
   })
   on('fs.read', (_, e) => {
     const text = w.files.get(e.path)
     if (text === undefined) throw new Error(`ENOENT: ${e.path}`)
     return { value: text }
   })
-  on('fs.write', (_, e) => {
+  on('fs.write', async (_, e) => {
+    await w.beforeWrite(e.path)
     w.files.set(e.path, e.text)
+    // Writing a file into a directory moves the directory's mtime, as on a disk.
+    const parent = e.path.slice(0, e.path.lastIndexOf('/'))
+    if (w.dirs.has(parent)) w.dirs.set(parent, clock.now())
     return { value: undefined }
   })
 
@@ -198,6 +256,14 @@ export function stored(fields: Partial<Item> & Pick<Item, 'id' | 'type'>): Item 
     status: 'open',
     delivered: false,
     origin: 'local',
+    ...(fields.type === 'approve' || fields.type === 'choice'
+      ? {
+          options: [
+            { label: 'Approve', description: 'Go ahead as proposed.' },
+            { label: 'Reject', description: 'Do not go ahead.' },
+          ],
+        }
+      : {}),
     ...fields,
   }
 }

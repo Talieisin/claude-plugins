@@ -32,6 +32,19 @@ describe('with a surface', () => {
     expect(w.toasts.at(-1)).toBe(`Humantray: bumped ${short} (FYI)`)
   })
 
+  test('a toast or a redraw that fails after the write does not turn the add into a failure', async ($, on) => {
+    const w = world(on)
+    let refuseDraw = false
+    on('state.set', { plugin: 'humantray', key: 'tray' }, (_, e, next) => (refuseDraw ? { deny: 'refused' } : next(e)))
+    await $.session.start(START_EVENT)
+    w.failToast = true
+    refuseDraw = true
+    const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q' })
+    expect(added.deny).toBeUndefined()
+    expect(answerOf<{ bumped: boolean }>(added).bumped).toBe(false)
+    expect(w.store().items).toHaveLength(1)
+  })
+
   test('a start with nothing open opens no pane', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)

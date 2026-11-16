@@ -232,17 +232,39 @@ describe('compare-and-set', () => {
     await ui.unmount()
   })
 
-  test('a store that became unreadable: the press shows the error, the file byte-identical', async ($, on) => {
+  for (const [name, text] of [
+    ['bad JSON', '{"version": 1, "items": ['],
+    ['version 2', '{"version": 2, "items": [], "sessions": {}}'],
+    ['over 3 MiB', JSON.stringify({ version: 1, items: [], sessions: {}, pad: 'x'.repeat(3 * 1024 * 1024) })],
+    ['a malformed item', '{"version": 1, "items": [{"id": "x", "status": "answered"}], "sessions": {}}'],
+  ] as const) {
+    test(`a store that became unreadable (${name}): the press shows the error, the file byte-identical`, async ($, on) => {
+      const w = world(on)
+      await $.session.start(START_EVENT)
+      const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
+      const id = answerOf<{ id: string }>(added).id
+      w.seed(text)
+      const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+      await ui.press({ key: `${id}:approve` })
+      expect(await ui.find({ type: 'Text', text: /is unreadable/ })).toBeDefined()
+      expect(w.files.get(FILE)).toBe(text)
+      expect(w.submits).toEqual([])
+      await ui.unmount()
+    })
+  }
+
+  test('an answer over 10,000 characters is refused on the card, nothing written', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
-    const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
+    const added = await $.tool.call({ tool: ADD, type: 'question', header: 'Q', question: 'Name?' })
     const id = answerOf<{ id: string }>(added).id
-    w.seed('{"version": 9}')
+    const before = w.files.get(FILE)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:approve` })
-    expect(await ui.find({ type: 'Text', text: /is unreadable/ })).toBeDefined()
-    expect(w.files.get(FILE)).toBe('{"version": 9}')
-    expect(w.submits).toEqual([])
+    await ui.input({ key: `${id}:text`, text: 'a'.repeat(10_001) })
+    expect(await ui.find({ type: 'Text', text: 'An answer can be at most 10000 characters.' })).toBeDefined()
+    expect(w.files.get(FILE)).toBe(before)
+    await ui.input({ key: `${id}:text`, text: 'a'.repeat(10_000) })
     await ui.unmount()
+    expect(w.store().items[0]?.status).toBe('answered')
   })
 })

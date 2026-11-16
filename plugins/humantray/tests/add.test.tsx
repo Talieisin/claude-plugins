@@ -54,6 +54,7 @@ describe('validation', () => {
     ['options on a question', { type: 'question', header: 'X', question: 'Q', options: CHOICE.options }],
     ['options on an approve', { type: 'approve', header: 'X', question: 'Q', options: CHOICE.options }],
     ['multiSelect on a do', { type: 'do', header: 'X', question: 'Q', multiSelect: true }],
+    ['notify_on_done on a question', { type: 'question', header: 'X', question: 'Q', notify_on_done: true }],
     [
       'duplicate labels',
       { ...CHOICE, options: [{ label: 'Red', description: '' }, { label: 'red', description: '' }] },
@@ -129,7 +130,7 @@ describe('bumping', () => {
     const w = world(on)
     w.seed({
       version: 1,
-      items: [stored({ id: '01AAAAAAAAAAAAAAAAAAAANSWD', type: 'ack', key: 'same', status: 'acknowledged' })],
+      items: [stored({ id: '01AAAAAAAAAAAAAAAAAAAANSWD', type: 'ack', key: 'same', status: 'acknowledged', response: { acknowledged: true } })],
       sessions: {},
     })
     await $.session.start(START_EVENT)
@@ -163,7 +164,7 @@ describe('humantray_list', () => {
       items: [
         stored({ id: '01AAAAAAAAAAAAAAAAAAAAOPEN1', type: 'ack', updated: START - 3 * HOUR }),
         stored({ id: '01AAAAAAAAAAAAAAAAAAAAOPEN2', type: 'do', updated: START - 2 * HOUR }),
-        stored({ id: '01AAAAAAAAAAAAAAAAAAAADELVD', type: 'question', status: 'answered', delivered: true }),
+        stored({ id: '01AAAAAAAAAAAAAAAAAAAADELVD', type: 'question', status: 'answered', response: { text: 'y' }, delivered: true }),
         stored({
           id: '01AAAAAAAAAAAAAAAAAAAAWAITS',
           type: 'question',
@@ -236,41 +237,40 @@ describe('the store', () => {
 })
 
 describe('the lock', () => {
-  test('a lock held by a live holder: a clean error after 3 s, the file unchanged', async ($, on) => {
+  test('a lock held by a live holder: a clean error after 5 s, the file and the lock untouched', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
     await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
     const before = w.files.get(FILE)
-    w.dirs.set(LOCK, w.clock.now())
+    w.holdLock('alive')
     const pending = $.tool.call({ tool: ADD, type: 'ack', header: 'Y', question: 'Other' })
-    await w.clock.advance(1000)
-    w.dirs.set(LOCK, w.clock.now()) // the holder is alive: its lock stays fresh
-    await w.clock.advance(1000)
-    w.dirs.set(LOCK, w.clock.now())
-    await w.clock.advance(1100)
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1000)
+      w.holdLock('alive') // the holder is alive: its lock stays fresh
+    }
     const ran = await pending
-    expect(ran.deny).toBeDefined()
     expect(String(ran.deny)).toContain('the store is busy')
     expect(w.files.get(FILE)).toBe(before)
-    expect(w.dirs.has(LOCK)).toBe(true)
+    expect(w.files.get(`${LOCK}/owner`)).toBe('alive\n')
+    expect(w.lockRenames).toBe(0)
   })
 
-  test('a stale lock is broken by one rename, and the add goes through', async ($, on) => {
+  test('a lock left 4 s ago by a holder that died is broken by one rename, and the add goes through', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
-    w.dirs.set(LOCK, w.clock.now() - 3000)
+    w.holdLock('dead', w.clock.now() - 4000)
     const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
     expect(ran.deny).toBeUndefined()
     expect(w.lockRenames).toBe(1)
     expect(w.dirs.has(LOCK)).toBe(false)
-    expect([...w.dirs.keys()].some(dir => dir.startsWith(`${LOCK}.stale-`))).toBe(false)
+    expect([...w.dirs.keys(), ...w.files.keys()].filter(path => path.startsWith(`${LOCK}.`))).toEqual([])
     expect(w.store().items).toHaveLength(1)
   })
 
-  test('two callers finding one stale lock: exactly one rename wins, and both adds go through', async ($, on) => {
+  test('two callers finding one stale lock: exactly one rename, and both adds go through', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
-    w.dirs.set(LOCK, w.clock.now() - 3000)
+    w.holdLock('dead', w.clock.now() - 4000)
     const one = $.tool.call({ tool: ADD, type: 'ack', header: 'One', question: 'First' })
     const two = $.tool.call({ tool: ADD, type: 'ack', header: 'Two', question: 'Second' })
     await w.clock.advance(500)
@@ -280,6 +280,76 @@ describe('the lock', () => {
     expect(w.store().items.map(item => item.header).sort()).toEqual(['One', 'Two'])
   })
 
+  /** Fails the test if a write is committed while `holder` holds the lock. */
+  const guardCommits = (w: ReturnType<typeof world>, holder: string) => {
+    const seen: string[] = []
+    w.beforeMove = (from, to) => {
+      if (to === FILE) seen.push(w.files.get(`${LOCK}/owner`) ?? '')
+    }
+    return () => expect(seen.filter(owner => owner === `${holder}\n`)).toEqual([])
+  }
+
+  test('a new holder takes the lock between the stale check and the break: it is not broken', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    w.holdLock('dead', w.clock.now() - 4000)
+    let turned = false
+    w.afterStat = path => {
+      if (path === LOCK && !turned) {
+        turned = true
+        w.holdLock('fresh') // another session broke the dead lock and took it
+      }
+    }
+    const noCommitUnderFresh = guardCommits(w, 'fresh')
+    const pending = $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
+    await w.clock.advance(1000)
+    expect(w.files.get(`${LOCK}/owner`)).toBe('fresh\n')
+    expect(w.store().items).toHaveLength(0)
+    w.dropLock() // the fresh holder finishes
+    await w.clock.advance(1000)
+    const ran = await pending
+    expect(ran.deny).toBeUndefined()
+    expect(w.store().items).toHaveLength(1)
+    noCommitUnderFresh()
+  })
+
+  test('a new holder takes the path between the breaker\'s look and its rename: the lock is given back', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    w.holdLock('dead', w.clock.now() - 4000)
+    let turned = false
+    w.beforeMove = (from, to) => {
+      if (from === LOCK && to.includes('.stale-') && !turned) {
+        turned = true
+        w.holdLock('fresh')
+      }
+    }
+    const pending = $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
+    await w.clock.advance(1000)
+    expect(w.files.get(`${LOCK}/owner`)).toBe('fresh\n')
+    expect(w.store().items).toHaveLength(0)
+    const noCommitUnderFresh = guardCommits(w, 'fresh')
+    w.dropLock()
+    await w.clock.advance(1000)
+    const ran = await pending
+    expect(ran.deny).toBeUndefined()
+    expect(w.store().items).toHaveLength(1)
+    noCommitUnderFresh()
+  })
+
+  test('a holder whose lock was broken while it worked writes nothing, and leaves the new lock alone', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const before = w.files.get(FILE)
+    w.beforeWrite = path => {
+      if (path.includes('.tmp-')) w.holdLock('thief')
+    }
+    const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
+    expect(String(ran.deny)).toContain('lock was taken over')
+    expect(w.files.get(FILE)).toBe(before)
+    expect(w.files.get(`${LOCK}/owner`)).toBe('thief\n')
+  })
+
   test('a failed move mid-write: a clean error, no lock left, the old file byte-identical', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
@@ -287,10 +357,18 @@ describe('the lock', () => {
     const before = w.files.get(FILE)
     w.failMoveOfTemporary = true
     const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'Y', question: 'Other' })
-    expect(ran.deny).toBeDefined()
     expect(String(ran.deny)).toContain('could not write')
     expect(w.files.get(FILE)).toBe(before)
     expect(w.dirs.has(LOCK)).toBe(false)
     expect([...w.files.keys()].filter(path => path.startsWith(DIR) && path !== FILE)).toEqual([])
+  })
+
+  test('a directory that cannot be made is reported as such, not as busy', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    w.failMkdir = true
+    const ran = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q' })
+    expect(String(ran.deny)).toContain('could not create')
+    expect(String(ran.deny)).not.toContain('busy')
   })
 })

@@ -31,14 +31,14 @@ import {
   ulid,
   validateAdd,
 } from './items'
-import { mutate, peek } from './store'
+import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 
 const PANE = 'humantray'
 const TITLE = 'Humantray'
 const ADD = 'mcp__humantray__humantray_add'
 const LIST = 'mcp__humantray__humantray_list'
 
-const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-1' })
+const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-2' })
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 
 const token = (): string => {
@@ -49,7 +49,7 @@ const token = (): string => {
 
 /** This module instance: a claim it makes names it, so a reload's claims are known dead. */
 const INSTANCE = token()
-/** The session id this process last saw, to notice a /clear, /resume or /branch. */
+/** The session id this process last saw: the one a /clear or a /branch continues. */
 let lastSeen: string | undefined
 
 const ADD_SCHEMA = {
@@ -115,59 +115,104 @@ async function openPane($: EngineInterface) {
 }
 
 async function showTray($: EngineInterface, file: StoreFile | null, me: string) {
-  await update($, tray, () => (file === null ? null : { items: openItems(file), me }))
+  await update($, tray, () => {
+    if (file === null) return null
+    const items = openItems(file)
+    const mine = items.filter(item => resolveOwner(file.sessions, item.session_id) === me).map(item => item.id)
+    return { items, me, mine }
+  })
 }
 
-/** Settles one delivery: delivered on a submit that entered, released otherwise. */
-async function settle($: EngineInterface, id: string, entered: boolean) {
+/** The ids whose submit this module instance is waiting on. */
+const inFlight = new Set<string>()
+/** How each finished submit went, until that is written to the store. */
+const unsettled = new Map<string, boolean>()
+
+/** Applies a finished submit to the item, if the claim is still this instance's. */
+function applySettle(file: StoreFile, id: string, entered: boolean, now: number): boolean {
+  const item = file.items.find(one => one.id === id)
+  if (item === undefined || item.delivering_by !== INSTANCE) return false
+  if (entered) {
+    item.delivered = true
+    item.delivered_at = now
+  }
+  delete item.delivering_at
+  delete item.delivering_by
+  return true
+}
+
+/**
+ * Writes how a submit went: delivered when it entered, released otherwise.
+ * If the store cannot be written now, the outcome stays in `unsettled` and the
+ * next pass writes it.
+ */
+async function settle($: EngineInterface, id: string, where: Where) {
   for (let attempt = 0; attempt < 3; attempt++) {
+    const entered = unsettled.get(id)
+    if (entered === undefined) return
     const now = await $.clock.now()
-    const done = await mutate<null>($, file => {
-      const item = file.items.find(one => one.id === id)
-      if (item === undefined || item.delivering_by !== INSTANCE) return { result: null, write: false }
-      if (entered) {
-        item.delivered = true
-        item.delivered_at = now
-      }
-      delete item.delivering_at
-      delete item.delivering_by
-      return { result: null, write: true }
-    })
-    if (done.error === undefined) return
+    const done = await mutate<boolean>($, file => {
+      const changed = applySettle(file, id, entered, now)
+      return { result: changed, write: changed }
+    }, { where })
+    if (done.error === undefined) {
+      unsettled.delete(id)
+      return
+    }
   }
 }
 
 /** Submits one answer's line. No hook awaits this: it settles on its own. */
-function send($: EngineInterface, item: Item) {
-  void $.prompt.submit({ text: deliveryLine(item) }).then(
-    entered => settle($, item.id, entered.drop === undefined),
-    () => settle($, item.id, false),
-  )
+function send($: EngineInterface, item: Item, where: Where) {
+  inFlight.add(item.id)
+  void $.prompt
+    .submit({ text: deliveryLine(item) })
+    .then(
+      entered => entered.drop === undefined,
+      () => false,
+    )
+    .then(entered => {
+      inFlight.delete(item.id)
+      unsettled.set(item.id, entered)
+      return settle($, item.id, where)
+    })
+    .catch(() => undefined)
 }
 
 /**
- * Notes this session in the store, refreshes what the pane and band draw,
- * and, when `deliver`, claims this session's undelivered answers and sends
- * them. Only the claim waits on the lock; the sends are not awaited.
+ * Notes this session in the store, writes any outcome a settle could not,
+ * refreshes what the pane and band draw, and, when `deliver`, claims this
+ * session's undelivered answers and sends them. Only the claim waits on the
+ * lock; the sends are not awaited. `handoverFrom` is the session this one
+ * continues after a /clear or a /branch.
  */
-async function sync($: EngineInterface, deliver: boolean) {
+async function sync($: EngineInterface, deliver: boolean, handoverFrom?: string) {
   const me = await $.session.id()
-  const previous = lastSeen
   const now = await $.clock.now()
+  const applied: string[] = []
   const done = await mutate<Item[]>($, file => {
-    noteSession(file, me, previous, now)
+    noteSession(file, me, now, handoverFrom)
+    for (const [id, entered] of unsettled) {
+      applySettle(file, id, entered, now)
+      applied.push(id)
+    }
     const claims: Item[] = []
     if (deliver) {
       for (const item of file.items) {
         if (item.status === 'open' || item.delivered) continue
-        if (!isMineToDeliver(file, item, me, now)) continue
+        if (!isMineToDeliver(file, item, me)) continue
         if (item.type === 'ack' && item.notify_on_done !== true) {
           item.delivered = true
           continue
         }
         if (item.delivering_at !== undefined) {
-          if (item.delivering_by === INSTANCE) continue
-          if (now - item.delivering_at <= CLAIM_STALE_MS) continue
+          if (item.delivering_by === INSTANCE) {
+            // This instance's own claim: leave it while its submit is in
+            // flight; otherwise its settle was lost, so claim it again.
+            if (inFlight.has(item.id)) continue
+          } else if (now - item.delivering_at <= CLAIM_STALE_MS) {
+            continue
+          }
         }
         item.delivering_at = now
         item.delivering_by = INSTANCE
@@ -177,13 +222,14 @@ async function sync($: EngineInterface, deliver: boolean) {
     return { result: claims, write: true }
   })
   if (done.error !== undefined) {
-    if (/not in a git repository|could not be run/.test(done.error)) await showTray($, null, me)
+    if (/not in a git repository|could not be run/.test(done.error)) await showTray($, null, me).catch(() => undefined)
     return
   }
+  for (const id of applied) unsettled.delete(id)
   lastSeen = me
-  await showTray($, done.ok.file, me)
   const claims = [...done.ok.result].sort((a, b) => (a.response_at ?? 0) - (b.response_at ?? 0))
-  for (const item of claims) send($, item)
+  for (const item of claims) send($, item, done.ok.where)
+  await showTray($, done.ok.file, me).catch(() => undefined)
 }
 
 async function setDraft($: EngineInterface, id: string, change: (draft: Draft) => Partial<Draft>) {
@@ -258,10 +304,14 @@ export const register: Register = on => {
   })
 
   // After a /clear, /resume or /branch no session.start runs and $.state is
-  // back to its defaults: rebuild from the file, and hand over to the new id.
+  // back to its defaults: rebuild from the file. Only a /clear or a /branch
+  // continues this process's conversation, so only they hand its items over to
+  // the new id; a /resume, a compaction or an unknown source hands over nothing.
   on('classic.SessionStart', async ($, e, next) => {
     const ran = await next(e)
-    await sync($, true).catch(() => undefined)
+    const source: unknown = e.source
+    const handoverFrom = source === 'clear' || source === 'fork' ? lastSeen : undefined
+    await sync($, true, handoverFrom).catch(() => undefined)
     return ran
   }).catch(($, e, next) => next(e))
 
@@ -269,7 +319,7 @@ export const register: Register = on => {
     const ran = await next(e)
     await sync($, true).catch(() => undefined)
     const shown = await read($, tray)
-    if (shown !== null && shown.items.length > 0) void $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+    if (shown !== null && shown.items.length > 0) await openPane($).catch(() => undefined)
     return ran
   })
 
@@ -284,13 +334,12 @@ export const register: Register = on => {
     const checked = validateAdd(e as unknown as Record<string, unknown>)
     if (checked.error !== undefined) return fail(`humantray: ${checked.error}`)
     const me = await $.session.id()
-    const previous = lastSeen
     const now = await $.clock.now()
     const random = new Uint8Array(16)
     crypto.getRandomValues(random)
     const id = ulid(now, random)
     const done = await mutate<AddOutcome>($, (file, where) => {
-      noteSession(file, me, previous, now)
+      noteSession(file, me, now)
       const added = addOrBump(file, checked.ok, {
         repo: normaliseRepo(where.remote, where.root),
         session_id: me,
@@ -299,15 +348,21 @@ export const register: Register = on => {
       })
       if (added.error !== undefined) return { error: `humantray: ${added.error}` }
       return { result: added.ok, write: true }
-    })
+    }, { limit: WRITE_LIMIT })
     if (done.error !== undefined) return fail(done.error)
     lastSeen = me
     const { item, bumped } = done.ok.result
-    await showTray($, done.ok.file, me)
-    await toast($, `Humantray: ${bumped ? 'bumped' : 'added'} ${item.short} (${item.header})`)
-    await openPane($)
+    // The item is written: what follows only shows it, and never turns the
+    // add into a failure.
+    try {
+      await showTray($, done.ok.file, me)
+      await toast($, `Humantray: ${bumped ? 'bumped' : 'added'} ${item.short} (${item.header})`)
+      await openPane($)
+    } catch {
+      // Drawing is best effort.
+    }
     return { result: JSON.stringify({ id: item.id, short: item.short, bumped }) }
-  }).catch(() => fail('humantray: humantray_add failed unexpectedly; nothing was added'))
+  }).catch(() => fail('humantray: humantray_add failed before writing; nothing was added'))
 
   on('tool.call', { tool: LIST }, async $ => {
     const me = await $.session.id()
@@ -331,7 +386,7 @@ export const register: Register = on => {
     const seen = await peek($)
     const me = await $.session.id()
     await showTray($, seen.error === undefined ? seen.ok.file : null, me)
-    await $.ui.open({ id: PANE, title: TITLE })
+    await openPane($).catch(() => undefined)
     return {
       text: seen.error === undefined ? 'Humantray pane opened.' : seen.error,
       isTextDisplayOnly: true as const,
@@ -446,7 +501,7 @@ export const register: Register = on => {
         controls.push(<Button key={`${id}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />)
       }
 
-      const from = item.session_id === shown.me ? '' : ' · another session'
+      const from = shown.mine.includes(id) ? '' : ' · another session'
       const bumped = item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
       cards.push(
         <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>

@@ -67,8 +67,11 @@ export type StoreFile = {
   sessions: Record<string, SessionRecord>
 }
 
-/** What the pane and band draw from: the open items, newest first. */
-export type Tray = { items: Item[]; me: string }
+/**
+ * What the pane and band draw from: the open items, newest first; this
+ * session's id; and the ids of the items this session owns or inherited.
+ */
+export type Tray = { items: Item[]; me: string; mine: string[] }
 
 /** A card's answer while it is being made. Losing it costs a retype only. */
 export type Draft = {
