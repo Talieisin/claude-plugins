@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 26 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 27 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -23,7 +23,7 @@ These skills come from two plugins: the roles from `cloud`, and the pull-request
 
 A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows both `cloud@talieisin` and `github@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it lacks either, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
-A child you create names the versions of its skill and of the `github:pull-request` skill in its first comment, and again when it reports its pull request or its findings. If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
+A child you create names the versions of its skill and of the `github:pull-request` skill in its first comment, and again in its report to you of its pull request or its findings (the message; a short comment that only links the pull request need not repeat them). If neither names them, the child does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault (a session gets the plugin as its environment last installed it, which may be a release behind yours): note them in the run log and your report.
 
 ## 1. Plan the batch
 
