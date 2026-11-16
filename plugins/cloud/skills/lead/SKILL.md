@@ -30,7 +30,7 @@ A child you create names the versions of its skill and of the `github:pull-reque
 A second review is one more independent look, beyond the ordinary reader, at a plan or at a pull request. Two settings govern it. Read both before you plan, and name them in your first comment.
 
 - **Routes: what this environment can reach.** The environment variable `CLOUD_SECOND_REVIEW` lists them, separated by spaces: `claude` (a second reader session on a stronger model), `codex-github` (a comment on the pull request that asks the Codex GitHub app), `codex-clean` (not yet usable from a cloud session). Unset or empty means there is none, and then no second review is ever due.
-- **Policy: when one is due.** The first of these that exists decides: a line beginning `Second reviews:` under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_SECOND_REVIEW_POLICY`; otherwise `on-request`.
+- **Policy: when one is due.** The first of these that exists decides: a line beginning `Second reviews:` (a list marker before it does not matter) under "Defaults the owner has chosen" in `AGENTS.md`; the environment variable `CLOUD_SECOND_REVIEW_POLICY`; otherwise `on-request`.
   - `on-request`: for a lane with an issue that carries `review:deep` or `needs:codex-review` (the owner sets these; you do not), or that you plan-gated: its plan, if it has one, and its pull request.
   - `plans-and-code`: every plan, before you approve it; and every pull request whose change is non-trivial, as well as those `on-request` names. A change is non-trivial when it adds or removes behaviour, changes an interface, or refactors code that other code depends on. A change to documentation, to the facts, or to tests alone is not.
 
