@@ -9,8 +9,8 @@ something up.
 - A Claude Code plugin marketplace named `talieisin`
   (`.claude-plugin/marketplace.json`), public so that a cloud environment's
   setup script can install from it without a credential.
-- Two plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader and retro
-  skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
+- Two plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
+  author and retro skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
   read-only scripts its local route calls. Neither has hooks; keep it so. `mise` (`plugins/mise/`) is the one plugin that
   runs code by itself: a SessionStart hook and one script. It is versioned on its
   own in its `plugin.json` and marketplace entry. A plugin that runs code (hooks) goes in its own folder under `plugins/`

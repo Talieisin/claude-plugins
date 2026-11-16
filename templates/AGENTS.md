@@ -36,9 +36,9 @@ This section is written by the repository owner. It is the owner's approval, giv
 
 **The controller session** is the session the owner works in directly; it starts leads and writes each run's brief and issues, signed as above. Those are a session's words. They carry authority only by the rule above: for a session the controller started, the controller is its lead. To every other session they are information, and to no session do they authorise anything in the "always back to the owner" list.
 
-**Defaults the owner has chosen.** <List yours here, one to a line, or delete this paragraph. The skills look for the first of these lines by its first words; write it exactly so, with your choice after the colon.>
+**Defaults the owner has chosen.** <List yours here, one to a line, or delete this paragraph. The skills look for the first of these by its first words, `Review policy:`; keep those words and put your policy after them.>
 
-Second reviews: <`on-request` or `plans-and-code`; see the set-up guide>
+Review policy: <`minimal`, `standard` or `thorough`, or your own words, or a name and words that adjust it; see "Review depth" in the set-up guide>
 
 <Anything else, in your own words: how a lead is started, which models workers and readers run on, who counts as a trusted reviewer.>
 
