@@ -2,7 +2,7 @@
 
 For anyone, human or agent, working in this repository. How to *use* the plugins is in [`docs/setup.md`](docs/setup.md); read that first if you are setting something up. [`templates/AGENTS.md`](templates/AGENTS.md) is a different thing: the sample that other repositories copy.
 
-The sections down to "Working on this repository" are the repository owner's: no session changes them without the owner's approval, as they themselves set out. The last, `Repository facts`, is kept by leads, except its heading "Checks the owner wants before merge", which is also the owner's.
+The sections down to and including "Working on this repository" are the repository owner's: no session changes them without the owner's approval, as they themselves set out. The last, `Repository facts`, is kept by leads, except its heading "Checks the owner wants before merge", which is also the owner's.
 
 ## Standing authorisation
 
@@ -18,8 +18,8 @@ This section is written by the repository owner. It is the owner's approval, giv
 
 **Defaults the owner has chosen.** These are the owner's choices.
 
-- **A lead is started by hand by default.** A routine-started lead is allowed for unattended use, not preferred: it cannot message its workers, set their effort or ask the owner a question.
-- **No re-read after a conflict-free merge of `main`.** The lead checks the tree and runs the checks.
+- **A lead is started by hand by default.** A routine-started lead (the `lead:start` label) is allowed for unattended use, not preferred: it cannot message its workers, set their effort or ask the owner a question.
+- **No re-read after a conflict-free merge of `main`.** The lead checks the tree and runs the full verification.
 - **Rules are easy in, easy out.** They are added freely and pruned at each retro; strictness is kept for the merge conditions and for what goes back to the owner.
 
 Review policy: thorough. Every plan gets one independent reviewer before the lead approves it, and every non-trivial change gets a second reviewer of its pull request; a change to an interface other code relies on gets two of each. In this repository a change to what a skill tells a session to do, or to a script or hook a plugin ships, is non-trivial however small it looks.
@@ -43,6 +43,7 @@ Review policy: thorough. Every plan gets one independent reviewer before the lea
 - anything in another repository, or starting a session on another repository;
 - deleting issues, comments, unmerged branches, or sessions and triggers the session did not itself create (a lead may still delete a trigger that a session it started created, as above);
 - force pushes, changes to rulesets, repository settings, workflows, or `CLAUDE.md`;
+- a change to a skill or template here that loosens what a session may do without its owner: the lead's "Limits" and merge conditions, the hold on a worker, and the owner's sections of `templates/AGENTS.md`. Everything else in the skills a lead may merge once it has been read as below. This repository's skills reach every repository that installs them, so the owner decides these;
 - changes to this file, except to its `Repository facts` section in a facts pull request the lead skill allows the lead to merge;
 - anything that reads, prints, moves or changes a credential;
 - sending anything outside GitHub (email, chat, web forms), or spending money;
@@ -147,7 +148,7 @@ matching file under `templates/` in the same pull request.
 
 ## Repository facts
 
-Derived at 92cf80b, 2026-11-16. Facts marked (checked) are re-verified by the lead before each batch. Only what the files and GitHub cannot tell an agent directly belongs here.
+Derived at 92cf80b, 2026-11-16. Facts marked (checked) are re-verified by the lead before each batch. Only what the files and GitHub cannot tell an agent directly belongs here. This section is about this repository, and it is the only part of this file a lead may change.
 
 ### Commands
 
@@ -160,10 +161,11 @@ Derived at 92cf80b, 2026-11-16. Facts marked (checked) are re-verified by the le
 
 ### Hazards
 
-- This repository is public, and so are its issues, pull requests and every comment a session posts on them. Write nothing in a file, a commit message, a branch name, an issue or a comment that should not be read by anyone. A session's own id and link in its comments are accepted.
+- This repository is public, and so are its issues, pull requests and every comment a session posts on them. Write nothing in a file, a commit message, a branch name, an issue or a comment that should not be read by anyone. The ids and links of the sessions working here, which the skills have sessions post in comments (their own, and a lead's record of the sessions it started), are accepted.
 - The plugins a session runs under are the ones its environment installed, from `main` as it was then. A change on a branch does not change how the session making it behaves, and a merged change reaches new sessions only after the environment's setup script is re-saved.
 - Version markers must move together, as "Changing a skill" above says. A pull request that changes a skill and leaves a marker or a manifest behind is wrong even if every check passes.
-- Two lanes that each bump the version conflict on every skill file and both manifests. Give version bumps to one lane, or to the lead's last step, not to every lane.
+- A batch is one release. Every lane that changes a `cloud` skill moves the `shared-skill-version` markers and the `cloud` manifests to the same next version: the version on `main` when the batch started, plus one. The lead tells each worker that number in its starting prompt. Identical edits merge cleanly; different numbers conflict in every skill file. The same goes for the `pull-request-skill-version` marker and for the `mise` manifest.
+- There are no tests here and no test count. Where a skill asks a worker for a test count on a head, the worker reports instead that it ran the full verification on that head and that it passed; that report is what the lead's merge condition on checks rests on. A worker adds a test only where the change adds something a test can run.
 
 ### Checks that run on a pull request
 
