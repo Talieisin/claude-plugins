@@ -1,6 +1,13 @@
+---
+name: cloud-github
+description: How to use GitHub from a Claude Code cloud session, where the proxy rejects GraphQL and `gh pr` and `gh issue` fail. Load this BEFORE the first GitHub call in any cloud session (CLAUDE_CODE_REMOTE is set), and whenever a `gh pr`, `gh issue`, `gh pr checks`, `gh pr merge` or GraphQL call fails, when opening, reviewing, updating or merging a pull request, resolving review threads, or asking Codex for a review. Gives the REST route for each. Required by the cloud-lead, cloud-worker, cloud-reader and cloud-retro skills.
+---
+
 # Pull requests from a cloud session
 
-Shared rule, vendored identically into every repository that uses cloud sessions. <!-- shared-rule-version: 7 -->
+<!-- shared-rule-version: 8 (delivered by the `cloud` plugin as a skill; a repository may still carry the same text as `.claude/rules/cloud-github.md`) -->
+
+Having loaded this, say so where your role's skill tells you to: "cloud-github rule version 8". A session that has not said so has not read it.
 
 Locally, the `github-pr` skill drives a pull request with `gh pr`, `gh pr checks --watch` and GraphQL. In a cloud session (`CLAUDE_CODE_REMOTE` is set) none of those work: the GitHub proxy rejects GraphQL, serves only the repositories attached to the session, and rejects branch deletion. Follow the same lifecycle with the REST calls below. `{o}/{r}` is this repository; `{n}` is the pull request number.
 

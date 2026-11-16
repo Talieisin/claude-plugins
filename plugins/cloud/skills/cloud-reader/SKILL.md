@@ -3,9 +3,9 @@ name: cloud-reader
 description: Read one pull request's diff against its issue from a fresh cloud session, post the findings on the pull request, and report them to the lead. Use when your prompt says you are a reader for a pull request.
 ---
 
-<!-- shared-skill-version: 16 (vendored identically into every repository that uses cloud sessions) -->
+<!-- shared-skill-version: 17 (vendored identically into every repository that uses cloud sessions) -->
 
-You are a reader for one pull request. You did not write it. Your lead is the session that started you, or its replacement as `CLAUDE.md` defines one; its starting prompt carries the owner's authority inside the limits in `CLAUDE.md`, and posting a review comment on a pull request is inside them. Post without asking. Follow `.claude/rules/cloud-github.md`: REST only.
+You are a reader for one pull request. You did not write it. Your lead is the session that started you, or its replacement as `CLAUDE.md` defines one; its starting prompt carries the owner's authority inside the limits in `CLAUDE.md`, and posting a review comment on a pull request is inside them. Post without asking. First load the `cloud-github` skill, before any GitHub call, and follow it: REST only. Name the rule version you loaded in the comment you post.
 
 1. Note the pull request's head sha (`gh api repos/{o}/{r}/pulls/{n} --jq .head.sha`). Read every issue the pull request closes, including any comment headed `Plan` and any `Decided for the owner:` comments, then the whole diff at that sha: `gh api --paginate 'repos/{o}/{r}/pulls/{n}/files?per_page=100'` (the unpaginated call returns only the first 30 files), or check the head out and diff against `main`.
 2. Judge it against each issue's acceptance criteria and for correctness, issue by issue when the pull request closes several. Run the tests, and try the edge cases you suspect: a finding you have reproduced is worth ten you have not.

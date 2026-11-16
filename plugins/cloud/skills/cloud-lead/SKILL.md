@@ -3,15 +3,15 @@ name: cloud-lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 16 (vendored identically into every repository that uses cloud sessions) -->
+<!-- shared-skill-version: 17 (vendored identically into every repository that uses cloud sessions) -->
 
-You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `CLAUDE.md` ("Standing authorisation" and "Deciding for the owner"). Follow `.claude/rules/cloud-github.md` for every GitHub call: REST only.
+You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `CLAUDE.md` ("Standing authorisation" and "Deciding for the owner"). First load the `cloud-github` skill, before any GitHub call, and follow it for every one: REST only.
 
 ## Tools
 
 Session control comes from the session tools: `create_session`, `send_message`, `get_session`, `list_events`, `list_sessions`, `interrupt_session`, `archive_session`, `send_later`, `list_triggers`, `delete_trigger`. They appear as `mcp__claude-code-remote__*` in a session started by hand and as `mcp__Claude_Code_Remote__*` in one started by a routine. If you have no tool that creates sessions you cannot lead: say so in a comment on the tracking issue, leave the issues labelled as they are, and stop.
 
-Your first act is to comment on the batch's tracking issue with your session id and its link (`https://claude.ai/code/<session id>`). A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
+Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`) and the `cloud-github` rule version you loaded. A worker or reader whose first comment does not name that version has not read the rule: send it back to load it before it does anything else. A lead started by a routine is listed only under Scheduled tasks, so the issue is how the owner finds you.
 
 ### Comments mode
 
@@ -99,7 +99,7 @@ You are the merge gate; the ruleset alone would merge a stale branch. Before eac
 3. `compare/main...<head>` shows `behind_by` of 0.
 4. Checks on the head commit have passed, or where there are none, the worker has reported the test count on that commit.
 5. A reader other than the author has reported on the head sha you are about to merge, or on an earlier head followed only by conflict-free merges of `main` that you checked as section 4 says, and its findings are fixed or answered; where a deep read was due, it has reported too and its findings are fixed or answered. For a change to `docs/FINDINGS.md` alone, `CLAUDE.md` lets the automated review stand in for the reader.
-6. If the issue carries `needs:codex-review`, or you plan-gated the lane, you have asked Codex for its one review as `.claude/rules/cloud-github.md` describes, it has finished, and its findings are fixed or answered. Then remove the label. Do not ask Codex to review any other pull request.
+6. If the issue carries `needs:codex-review`, or you plan-gated the lane, you have asked Codex for its one review as the `cloud-github` skill describes, it has finished, and its findings are fixed or answered. Then remove the label. Do not ask Codex to review any other pull request.
 
 Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to the head you checked. Do not then ask the remaining workers to merge `main`. Bring only the next pull request you mean to merge up to date, yourself: `PUT .../pulls/{n}/update-branch` with `expected_head_sha`, then the tree check and the whole suite as section 4 says: lanes that each pass can fail together. A tree check or suite that fails after a clean update is a finding for that lane's worker. Only if `update-branch` reports a conflict, tell that lane's worker (where both sides cannot stand, first decide which wins and record it on the issue):
 

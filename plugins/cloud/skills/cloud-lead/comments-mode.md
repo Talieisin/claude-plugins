@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 16 (vendored identically into every repository that uses cloud sessions) -->
+<!-- shared-skill-version: 17 (vendored identically into every repository that uses cloud sessions) -->
 
 # Comments mode
 
