@@ -17,17 +17,22 @@ More plugins belong here as further folders under `plugins/`, each turned on
 separately. A plugin that runs code (hooks) is kept apart from text-only ones,
 so that turning it on is a deliberate choice.
 
-## The GitHub rule
+## How sessions get the skills
 
-A plugin cannot carry a `.claude/rules` file, so the rule is the skill
-`cloud-github`. Each role skill tells its session to load it before any GitHub
-call, and to name the rule version it loaded in its first comment, so that a
-lead can see it was read.
+- A cloud session started by hand gets the plugin from the account it is synced
+  to. That is the lead (and a retro).
+- A session created by another session does not get the plugin. So the lead
+  reads the worker or reader skill and the `cloud-github` rule from its own
+  copy and passes them to each session it starts, in that session's system
+  prompt. Each child names the versions it holds in its first comment.
+- A plugin cannot carry a `.claude/rules` file, so the GitHub rule is the skill
+  `cloud-github`.
 
-## Status
+## Source of truth
 
-A probe (run 11 of the cloud-sessions experiment). The source of truth for the
-role skills is still `Talieisin/cc-web-lab-alpha` until that run reports; the
-copies here differ from it only in pointing at the `cloud-github` skill. What
-stays in each repository whatever happens here: `CLAUDE.md` (the standing
-authorisation is the owner's, per repository), `AGENTS.md` and `mise.toml`.
+This repository is the source of truth for the `cloud` skills from version 18.
+Repositories do not carry copies. What stays in each repository: `CLAUDE.md`
+(the standing authorisation is the owner's, per repository), `AGENTS.md` and
+`mise.toml`. A change here is read by a session other than its author before
+it merges, as each repository's `CLAUDE.md` asks for changes to how sessions
+work.

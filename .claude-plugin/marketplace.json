@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "talieisin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Talieisin's shared Claude Code plugins",
   "owner": {
     "name": "Talieisin"
@@ -11,7 +11,7 @@
       "name": "cloud",
       "description": "Lead, worker, reader and retro skills for running batches of GitHub issues in Claude Code cloud sessions, with the GitHub rule as a skill. Text only: no hooks, no code.",
       "source": "./plugins/cloud",
-      "version": "0.17.0"
+      "version": "0.18.0"
     }
   ]
 }
