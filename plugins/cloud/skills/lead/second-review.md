@@ -6,15 +6,19 @@ Part of the `cloud:lead` skill, read when a second review is due (the section "S
 
 ## Which route
 
-Take the list for the kind of review (`CLOUD_PLAN_REVIEW` or `CLOUD_CODE_REVIEW`) and use the first entry that is usable; where an entry joins routes with `+`, use every usable route in it. Whether a route is usable is found by trying it:
+Take the list for the kind of review (`CLOUD_PLAN_REVIEW` or `CLOUD_CODE_REVIEW`) and work along it. An entry is one route, or several joined with `+`. Use the first entry in which at least one route is usable, use every usable route in that entry, and go on to the next entry only when none of an entry's routes is usable. Whether a route is usable is found by trying it:
 
 - **`claude`** is usable if `create_session` accepts the model. The model is the environment variable `CLOUD_REVIEW_MODEL`, or `claude-fable-5-2` if that is unset. If the model is refused, the route is not usable.
-- **`codex-github`** reviews pull requests only; for a plan it is not usable. For a pull request it is usable if the app answers: within five minutes of your request, `chatgpt-codex-connector[bot]` reacts to it or posts its summary comment. If nothing comes, the route is not usable in this repository: say so in the run log and do not try it again in this batch.
+- **`codex-github`** reviews pull requests only; for a plan it is not usable. For a pull request it is usable if the app answers: within five minutes of your request, `chatgpt-codex-connector[bot]` reacts to it or posts its summary comment, and within twenty minutes that summary reads Completed. If either limit passes, the route is not usable in this repository: say so in the run log and do not try it again in this batch.
 - **`codex-clean`** is not yet usable from a cloud session.
 
-When a route proves unusable, go on to the next entry. If the list runs out, say in the lanes comment and your report that the plan or pull request had no second review, and carry on: a second review that the policy asked for and the environment cannot give does not hold the batch.
+A `claude` reader that stalls or ends without reporting is replaced once; if the replacement fails too, the route is not usable for that plan or pull request.
 
-A label is different, because the owner asked by name. `review:deep` uses the `claude` route and `needs:codex-review` uses `codex-github`, whether or not the lists name them, and in addition to whatever the policy gives. If the route a label asks for is not usable, say so on the issue and escalate it as `AGENTS.md` says; hold that lane's merge for the owner's answer and keep the rest moving.
+When the entry you were using turns out to have no usable route, go on to the next. If the list runs out, say in the lanes comment and your report that the plan or pull request had no second review, and carry on: a second review that the policy asked for and the environment cannot give does not hold the batch, or the worker. Set a `send_later` for each time limit above so that you look when it passes.
+
+A label is different, because the owner asked by name. `review:deep` uses the `claude` route and `needs:codex-review` uses `codex-github`, whether or not the lists name them. Take the routes the policy gives and the routes the labels ask for together, and use each route once for a given plan or pull request: a lane that both would send to `claude` gets one `claude` review, not two.
+
+If a route that a label asks for is not usable, say so on the issue and escalate it as `AGENTS.md` says. Send the worker the findings you do have, so that it is not left waiting, and hold only that lane's merge. The owner's answer ends the hold in one of two ways: the owner makes the route usable (then make the review), or the owner says to go on without it. Record the answer as `AGENTS.md` says; a recorded answer to go on without it stands in for that review at merge condition 6.
 
 ## Of a plan
 
@@ -33,7 +37,7 @@ Add to the worker's starting prompt: "After you open the pull request and report
 
 When the ordinary reader and every route you used have all reported, and not before, send the worker one list: the findings you checked from each, with any automated reviewer's threads in it.
 
-**One recheck, for Codex only.** If the worker changed code to answer a finding from Codex, ask Codex once more on the head that carries those fixes, and treat what comes back the same way. That is the last time: there is no third round, whatever it says. The `claude` route has no recheck; later fixes are re-read by the ordinary reader.
+**One recheck, for Codex only.** If the worker changed anything in the pull request to answer a finding from Codex, ask Codex once more on the head that carries those fixes, and treat what comes back the same way. That is the last time: there is no third round, whatever it says. The same twenty-minute limit applies: a recheck that does not complete in time is noted in the run log and on the pull request, and does not hold the merge. The `claude` route has no recheck; later fixes are re-read by the ordinary reader.
 
 When it is all done, remove `needs:codex-review` from the issue if it carries it.
 

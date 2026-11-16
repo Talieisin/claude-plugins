@@ -36,7 +36,7 @@ Do not work on local `main`: it is an old snapshot. After `git fetch origin main
 
 ## A review from the Codex GitHub app
 
-Codex never reviews by itself here. It is asked, once, when a pull request calls for it.
+Codex never reviews by itself here. It is asked when a pull request calls for it: once, and at most once more to recheck the fixes to its own findings.
 
 **When to ask.** Only where the role you are working under says a review by this route is due (for a batch, the lead decides, and only the lead asks). Never for every pull request as a matter of course. Ask once per pull request, and at most once more as a recheck where that role says so, on the head that carries the fixes to its own findings. There is no further round.
 
