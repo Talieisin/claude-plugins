@@ -21,11 +21,12 @@ repository's config tells it to do on install, such as a `[hooks] postinstall`
 command. If your repositories have such hooks, expect them to run at the start
 of every session.
 
-Because of that, the script trusts a repository's mise config by itself only in
-a cloud session, which is a disposable machine holding a repository you chose
-to work in. On your own machine it installs nothing in a repository mise does
-not already trust: run `mise trust` there yourself first, or set
-`MISE_BOOTSTRAP_TRUST=1` if you want the cloud behaviour everywhere.
+Because of that, the script acts only in a cloud session, which is a disposable
+machine holding a repository you chose to work in. On your own machine it does
+nothing and prints nothing, even with the plugin installed: mise's own shell
+activation already gives you the pinned tools in repositories you trust. Set
+`MISE_BOOTSTRAP_TRUST=1` if you want the cloud behaviour on your own machine
+too, knowing that it lets any repository you open there run its mise hooks.
 
 Proven so far for Python and `uv`. Other tools (Node, Go, Rust, Terraform)
 should work the same way but have not been tried.
@@ -81,7 +82,8 @@ The first lines of a new session show one of:
   from `mise.toml` alone.
 - `mise-bootstrap: TOOLS NOT PINNED. ...` with the reason. The session carries
   on with whatever tools the image has, so do not rely on versions in it.
-- Nothing: the repository has neither `mise.toml` nor `.mise.toml`.
+- Nothing: the repository has neither `mise.toml` nor `.mise.toml`, or the
+  session is on your own machine and you have not opted in.
 
 ## If you use something other than mise
 
