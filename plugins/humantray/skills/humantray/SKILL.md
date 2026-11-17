@@ -49,7 +49,7 @@ A runbook is a sequence of steps for a person to carry out, often in lettered pa
   - the output to expect, fenced where it must match exactly;
   - each placeholder to fill in (`<DIGEST>`) and the step whose output gives it;
   - the stop conditions ("anything else: press Not done and paste what you saw"), and what Done means.
-- **Its closing questions are one item each** (`choice`, or `approve`), raised only by a session that may put questions to a person: a lead, within `cloud:lead`'s `humantray.md`, or a session the owner works in directly. A worker or a reader follows `AGENTS.md` "Questions" instead, and raises only the `do` items its lead's instruction names.
+- **Its closing questions are one item each** (`choice`, or `approve`), raised only by a session that may put questions to a person: a lead, within `cloud:lead`'s `humantray.md`, or a session the owner works in directly. A worker or a reader follows `AGENTS.md` "Questions" instead. A worker raises only the `ack` or `do` items its lead's instruction names, as "When it applies" says; a reader or a test author raises none.
 - **About 6,000 characters of Markdown a part at most**, which the viewer shows on its card before "Show in full"; split a longer part in two.
 - **When you raise it as items, nothing of it goes in chat.** Chat names the items in one line (`Part A: HT-ab12c, part B: HT-cd34e; questions: HT-ef56g`). Where nobody will see the items (see "When it applies"), give the runbook in chat as you did before.
 
