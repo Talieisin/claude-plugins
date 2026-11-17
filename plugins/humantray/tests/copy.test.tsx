@@ -123,7 +123,8 @@ describe('the copy buttons', () => {
     // A language is shown only when it is on the list the drawn fence keeps (decided for the owner on #51).
     expect(copyLabel({ text: 'ls', lang: 'a'.repeat(41), unsafe: false }, 2)).toBe('Copy 2 · ls')
     expect(copyLabel({ text: 'ls', lang: 'x<b>', unsafe: false }, 2)).toBe('Copy 2 · ls')
-    expect(copyLabel({ text: 'ls', lang: 'mermaid', unsafe: false }, 2)).toBe('Copy 2 · ls')
+    expect(copyLabel({ text: 'ls', lang: 'svg', unsafe: false }, 2)).toBe('Copy 2 · ls')
+    expect(copyLabel({ text: 'graph TD', lang: 'mermaid', unsafe: false }, 2)).toBe('Copy 2 · mermaid · graph TD')
     expect(copyLabel({ text: 'ls', lang: 'Bash', unsafe: false }, 2)).toBe('Copy 2 · bash · ls')
   })
 })

@@ -109,16 +109,18 @@ export type Placed = { block: CodeBlock; start: number; end: number; cut: number
 /**
  * The languages a drawn fence keeps, and a copy label shows (decided for the
  * owner on #51): plain programming, shell and data languages, which every
- * surface draws as code. Any other (mermaid, math, latex, svg, html, xml,
- * markdown, dot, plantuml, or anything unknown) is dropped, since a surface
- * may draw such a fence as something other than code, and its content is no
- * longer rewritten.
+ * surface draws as code; and, by the owner's answer on #51, `mermaid` and
+ * `math`, so that a surface may draw them as a diagram or an equation. Any
+ * other (latex, svg, html, xml, markdown, dot, plantuml, or anything unknown)
+ * is dropped, since a surface may draw such a fence as something other than
+ * code, and its content is no longer rewritten. The one place to change it.
  */
 export const LANGUAGES: ReadonlySet<string> = new Set([
   'bash', 'sh', 'zsh', 'shell', 'console', 'json', 'yaml', 'yml', 'toml', 'ini',
   'python', 'py', 'js', 'javascript', 'ts', 'typescript', 'jsx', 'tsx', 'go', 'rust',
   'java', 'kotlin', 'c', 'cpp', 'csharp', 'ruby', 'php', 'sql', 'diff', 'text', 'txt',
   'hcl', 'terraform', 'powershell', 'dockerfile', 'makefile',
+  'mermaid', 'math',
 ])
 
 /** A fence's language as it may be drawn or shown: on LANGUAGES (in any case), in lower case; else none. */

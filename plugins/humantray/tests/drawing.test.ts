@@ -242,13 +242,13 @@ describe('splitDrawn: every piece its own Markdown element (#51)', () => {
 })
 
 describe('the languages a drawn fence keeps (decided for the owner on #51)', () => {
-  test('listed languages are kept, in lower case; any other is dropped from the drawing and from the copy label', () => {
-    for (const lang of ['bash', 'sh', 'json', 'yaml', 'python', 'ts', 'diff', 'powershell', 'dockerfile', 'makefile']) {
+  test('listed languages (mermaid and math among them, by the owner\'s answer) are kept, in lower case; any other is dropped from the drawing and from the copy label', () => {
+    for (const lang of ['bash', 'sh', 'json', 'yaml', 'python', 'ts', 'diff', 'powershell', 'dockerfile', 'makefile', 'mermaid', 'math']) {
       expect(LANGUAGES.has(lang)).toBe(true)
       expect(forDrawing(`\`\`\`${lang}\nx\n\`\`\``)).toBe(`*Code 1*\n\n\`\`\`${lang}\nx\n\`\`\``)
     }
     expect(listedLang('BASH')).toBe('bash')
-    for (const lang of ['mermaid', 'math', 'latex', 'svg', 'html', 'xml', 'markdown', 'md', 'dot', 'plantuml', 'graphviz', 'katex', 'unknown', 'a'.repeat(40)]) {
+    for (const lang of ['latex', 'tex', 'svg', 'html', 'xml', 'markdown', 'md', 'dot', 'plantuml', 'graphviz', 'katex', 'unknown', 'a'.repeat(40)]) {
       expect(listedLang(lang)).toBe('')
       expect(forDrawing(`\`\`\`${lang}\nx\n\`\`\``)).toBe('*Code 1*\n\n```\nx\n```')
     }
