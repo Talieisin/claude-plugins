@@ -47,7 +47,7 @@ import {
   addOrBump,
   applySettle,
   buildResponse,
-  clipBlocks,
+  clipDrawn,
   deliveryText,
   forDrawing,
   fullOf,
@@ -1041,7 +1041,7 @@ export const register: Register = on => {
         const item = rowToItem(row, '', card.url, card.version)
         const held = await $.state.get({ ...drafts, id: viewerDraftId(row.id) })
         const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
-        const body = clipBlocks(forDrawing(row.body_md), VIEWER_BODY)
+        const body = clipDrawn(forDrawing(row.body_md), VIEWER_BODY)
         const lines = []
         if (card.state === 'answerable') {
           if (card.reason !== undefined) {

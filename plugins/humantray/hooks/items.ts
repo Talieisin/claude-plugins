@@ -17,7 +17,7 @@ import type {
   StoreFile,
 } from '../types'
 import { owesPush } from './row-shape'
-import { UNSAFE, codeBlocksOf, cutColumns, listedLang, placedBlocksOf, splitLines } from './code'
+import { UNSAFE, codeBlocksOf, listedLang, placedBlocksOf, splitLines } from './code'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -744,7 +744,7 @@ export const forDrawing = (md: string, labelled = true): string => {
   // the indentation that container gave it, so that, now at the top level, it
   // stays prose and a list, never an indented code block.
   const text = (from: number, to: number, dedent: number) => {
-    const lines = raw.slice(from, to).map(line => (dedent > 0 ? cutColumns(line, 0, dedent) : line))
+    const lines = raw.slice(from, to).map(line => (dedent > 0 ? dedentLine(line, dedent) : line))
     while (lines.length > 0 && (lines[0] ?? '').trim() === '') lines.shift()
     while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') lines.pop()
     if (lines.length > 0) pieces.push(breakFences(forDisplay(lines.join('\n'))))
@@ -807,6 +807,36 @@ export const splitDrawn = (drawn: string): string[] => {
   return pieces
 }
 
+/**
+ * A line less up to `columns` columns of what a list item or a quote puts
+ * before its content: spaces, tabs (to their stop) and quote marks, never
+ * anything else. A tab cut through leaves its remaining columns as spaces.
+ */
+const dedentLine = (line: string, columns: number): string => {
+  let col = 0
+  let i = 0
+  while (i < line.length && col < columns) {
+    const ch = line[i]
+    if (ch !== ' ' && ch !== '\t' && ch !== '>') break
+    const width = ch === '\t' ? 4 - (col % 4) : 1
+    i++
+    if (col + width > columns) return ' '.repeat(col + width - columns) + line.slice(i)
+    col += width
+  }
+  return line.slice(i)
+}
+
+/**
+ * Drawn Markdown cut to at most `max` characters between blocks
+ * (`clipBlocks`), never leaving a `Code n` label without its fence: a label
+ * the cut left last is dropped (#51).
+ */
+export const clipDrawn = (drawn: string, max: number): { text: string; clipped: boolean } => {
+  const cut = clipBlocks(drawn, max)
+  if (!cut.clipped) return cut
+  return { text: cut.text.replace(/(?:^|\n\n)\*Code \d+\*$/, ''), clipped: true }
+}
+
 /** Every run of three or more backticks or tildes, broken after its first character: no fence opens. */
 const breakFences = (md: string): string => md.replace(/(`{3,}|~{3,})/g, run => `${run[0] as string}${BREAK}${run.slice(1)}`)
 
@@ -846,7 +876,7 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       const question = clip(oneLine(item.question), HISTORY_CLIP.question)
       // Cut what is drawn (forDisplay can lengthen it), so a page's size is bounded whatever was typed.
       const parts = partsOf(item).map(part => {
-        const cut = clipBlocks(forDrawing(part.text, false), HISTORY_CLIP.part)
+        const cut = clipDrawn(forDrawing(part.text, false), HISTORY_CLIP.part)
         return { label: part.label, text: cut.text, length: part.text.length, clipped: cut.clipped }
       })
       return {
@@ -885,7 +915,7 @@ export const fullOf = (item: Item): HistoryFull => {
   let left = FULL_BUDGET
   // Only the body's blocks have copy buttons, so only the body's are labelled `Code n`.
   const cut = (text: string, labelled: boolean) => {
-    const drawn = clipBlocks(forDrawing(text, labelled), left)
+    const drawn = clipDrawn(forDrawing(text, labelled), left)
     left = Math.max(0, left - drawn.text.length)
     return { text: drawn.text, length: text.length, clipped: drawn.clipped }
   }

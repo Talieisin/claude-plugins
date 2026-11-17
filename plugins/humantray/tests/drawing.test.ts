@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { LANGUAGES, UNSAFE, codeBlocksOf, listedLang } from '../hooks/code'
-import { blocksOf, clipBlocks, forDisplay, forDrawing, plain, splitDrawn } from '../hooks/items'
+import { blocksOf, clipBlocks, clipDrawn, forDisplay, forDrawing, plain, splitDrawn } from '../hooks/items'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 
 const ZWSP = '\u200b'
@@ -155,6 +155,11 @@ describe('forDrawing', () => {
       ['- Step', '  - sub', '', `    ${F}`, '    echo nested', `    ${F}`, '', '    After text', '', '    - deeper', '', '- Next step'].join('\n'),
       `- Step\n  - sub\n\n*Code 1*\n\n${F}\necho nested\n${F}\n\nAfter text\n\n- deeper\n\n- Next step`,
     ],
+    [
+      'a 10th step inside a quote (the quote marks are taken off too)',
+      ['> 10. Build:', '>', `>     ${F}sh`, '>     echo 10', `>     ${F}`, '>', '>     Expect <DIGEST>', '>', '> 11. Next.'].join('\n'),
+      `> 10. Build:\n>\n\n*Code 1*\n\n${F}sh\necho 10\n${F}\n\nExpect <\u200bDIGEST>\n\n11. Next.`,
+    ],
   ]
   for (const [name, md, expected] of DEDENTED) {
     test(`the text after a block in a list item is not drawn as code: ${name}`, () => {
@@ -247,5 +252,26 @@ describe('the languages a drawn fence keeps (decided for the owner on #51)', () 
       expect(listedLang(lang)).toBe('')
       expect(forDrawing(`\`\`\`${lang}\nx\n\`\`\``)).toBe('*Code 1*\n\n```\nx\n```')
     }
+  })
+})
+
+describe('clipDrawn: a cut never leaves a Code label without its fence (#51)', () => {
+  test('cut anywhere, a label is always followed by its fence, and the text is a prefix of the drawn', () => {
+    const body = Array.from({ length: 40 }, (_, k) => `Step ${String(k)}: ${'words '.repeat(8)}\n\n` + '```sh\n' + `echo ${String(k)}\n` + '```').join('\n\n')
+    const drawn = forDrawing(body)
+    for (let max = 20; max < drawn.length; max += 37) {
+      const cut = clipDrawn(drawn, max)
+      // A prefix, or (when even the first paragraph does not fit) that paragraph cut at a word, as #45 cuts it.
+      expect(drawn.startsWith(cut.text) || (cut.text.endsWith('…') && drawn.startsWith(cut.text.slice(0, -1)))).toBe(true)
+      expect(/\*Code \d+\*$/.test(cut.text)).toBe(false)
+      const lines = cut.text.split('\n')
+      lines.forEach((line, k) => {
+        if (/^\*Code \d+\*$/.test(line)) expect(/^`{3,}/.test(lines[k + 2] ?? '')).toBe(true)
+      })
+    }
+    // The reader's case: at 3,000 characters clipBlocks alone ends on a label.
+    const plainCut = clipBlocks(drawn, 3_000).text
+    expect(/\*Code \d+\*$/.test(plainCut) || !/\*Code \d+\*$/.test(clipDrawn(drawn, 3_000).text)).toBe(true)
+    expect(clipDrawn(drawn, drawn.length)).toEqual({ text: drawn, clipped: false })
   })
 })
