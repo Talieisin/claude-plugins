@@ -583,11 +583,13 @@ describe('/humantray-page republishes over an existing page on its first run (#5
     expect(a.doc(URL_A, 'meta/page')).toMatchObject({ version: 3, data: { page_version: PAGE_VERSION, note: 'rewritten' } })
   })
 
-  test('a take-over whose artifact reads as gone when looked at again: it stops, publishing nothing more', async ($, on) => {
+  test('a take-over whose artifact reads as gone and is no longer listed with this title when looked at again: it stops, publishing nothing more', async ($, on) => {
     const { a } = cloud(on)
-    a.add(URL_A, TITLE, { ownerOnly: false })
+    const art = a.add(URL_A, TITLE, { ownerOnly: false })
     a.readFails = true
     a.beforePublish = () => {
+      a.publishElsewhere(URL_A)
+      art.title = 'Something else'
       a.emptyReadsGone = true
     }
     await $.session.start(START_EVENT)
@@ -596,6 +598,31 @@ describe('/humantray-page republishes over an existing page on its first run (#5
     expect(attempts(a)).toHaveLength(1)
     expect(metaWrites(a)).toEqual([])
     expect(probes(a)).toEqual([])
+  })
+
+  test('the bare take-over of a never-written database (it reads as gone) with a read that fails: still listed, it is taken over on the retry', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE, { ownerOnly: false })
+    a.emptyReadsGone = true
+    a.readFails = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/took over/)
+    expect(attempts(a)).toHaveLength(2)
+    expect(a.artifacts.find(x => x.url === URL_A)?.ownerOnly).toBe(true)
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO, page_version: PAGE_VERSION })
+  })
+
+  test('a take-over by link of a listed page with this title whose database reads as gone, with a read that fails: taken over on the retry', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE, { ownerOnly: false })
+    a.emptyReadsGone = true
+    a.readFails = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(attempts(a).map(c => c.input.url)).toEqual([URL_B, URL_B])
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO, page_version: PAGE_VERSION })
   })
 
   test('no read where nothing is published: a page already current, and a link the #54 guard refuses', async ($, on) => {

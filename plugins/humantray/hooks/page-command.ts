@@ -190,12 +190,20 @@ async function adoptPage(
       // A version this session had not seen was there: someone may have
       // published since the read (#58). Look at meta/page again, and publish
       // once more only if it is still ours and behind, or, for a take-over,
-      // still unmarked (a page that is now gone stops). Never a third time.
+      // still unmarked. A take-over's artifact that reads as gone (as a
+      // never-written database does) counts as unmarked only while it is
+      // still listed with this repository's title, as the #54 guard took it;
+      // one no longer listed stops. Never a third time.
       // meta/page is the only evidence: a newer page published but not yet
       // marked (its publisher raises meta/page last) is not seen, so two runs
       // of different versions at once can still leave the older page; #60
       // tracks that race.
-      const again = await ownerOf($, url, repo)
+      let again = await ownerOf($, url, repo)
+      if (owner.kind === 'nobody' && again.kind === 'gone') {
+        const listed = await markedByTitle($, url, repo, again)
+        if ('error' in listed) return { error: CHANGED }
+        again = listed
+      }
       if (again.kind === 'ours' && again.meta.page_version >= PAGE_VERSION) {
         // Brought up to date by another run in the meantime: link it, publish nothing.
         return { url }
