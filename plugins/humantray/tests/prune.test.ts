@@ -4,10 +4,16 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  FULL_BUDGET,
   HISTORY_CLIP,
   KEEP_PER_REPO,
   addOrBump,
   applySettle,
+  blocksOf,
+  clipBlocks,
+  deliveryText,
+  forDisplay,
+  fullOf,
   historyOf,
   isLineDue,
   isPrunable,
@@ -15,7 +21,7 @@ import {
   validateAdd,
 } from '../hooks/items'
 import type { Item, StoreFile } from '../types'
-import { HOUR, START, finished, finishedMany, oldestOfMany, stored } from './world'
+import { HOUR, RICH, START, finished, finishedMany, oldestOfMany, stored } from './world'
 
 const REPO = 'github.com/owner/repo'
 const OTHER = 'github.com/owner/other'
@@ -283,35 +289,256 @@ describe('historyOf', () => {
     expect(mine).toEqual({ [finished(1).id]: true, [finished(2).id]: true, [finished(3).id]: false })
   })
 
-  test('long text is clipped to the stated lengths, with an ellipsis; short text is whole', () => {
+  test('the question is clipped with an ellipsis; a long part keeps whole blocks; a long paragraph is cut at a word', () => {
+    const paragraphs = Array.from({ length: 40 }, (_, i) => `${String(i).padStart(2, '0')}${'a'.repeat(97)}`).join('\n\n')
+    const words = Array.from({ length: 200 }, (_, i) => `word${String(i)}`).join(' ')
     const f = file([
       finished(1, {
         type: 'question',
         options: undefined,
         question: 'q'.repeat(500),
-        response: { text: 'a'.repeat(10_000), notes: 'n'.repeat(10_000) },
+        response: { text: paragraphs, notes: words },
       }),
       finished(2, { type: 'question', options: undefined, question: 'Short?', response: { text: 'yes', notes: 'ok' } }),
+      finished(3, { type: 'question', options: undefined, response: { text: 'n'.repeat(10_000), notes: `- ${'l'.repeat(600)}` } }),
     ])
-    const [long, short] = historyOf(f, REPO, 'session-a', NOW).sort((a, b) => (a.id < b.id ? -1 : 1))
+    const [long, short, unbroken] = historyOf(f, REPO, 'session-a', NOW).sort((a, b) => (a.id < b.id ? -1 : 1))
     expect(long?.question).toBe(`${'q'.repeat(HISTORY_CLIP.question - 1)}…`)
-    expect(long?.answer).toBe(`${'a'.repeat(HISTORY_CLIP.answer - 1)}…`)
-    expect(long?.notes).toBe(`${'n'.repeat(HISTORY_CLIP.notes - 1)}…`)
-    expect([short?.question, short?.answer, short?.notes]).toEqual(['Short?', 'yes', 'ok'])
-    expect(HISTORY_CLIP).toEqual({ question: 200, answer: 300, notes: 300 })
+    // Four 99-character paragraphs and their three gaps fit in 500; a fifth would not.
+    expect(long?.parts[0]).toEqual({
+      label: 'Answer',
+      text: paragraphs.split('\n\n').slice(0, 4).join('\n\n'),
+      length: paragraphs.length,
+      clipped: true,
+    })
+    // One paragraph over the budget: its first words that fit, cut at a space, with an ellipsis.
+    const notes = long?.parts[1]
+    expect(notes?.clipped).toBe(true)
+    expect(notes?.text.endsWith('…')).toBe(true)
+    expect(notes?.text.length).toBeLessThanOrEqual(HISTORY_CLIP.part)
+    expect(words.startsWith(notes?.text.slice(0, -1) ?? 'x')).toBe(true)
+    expect(words[(notes?.text.length ?? 0) - 1]).toBe(' ')
+    expect(long?.clipped).toBe(true)
+    // A paragraph with no space is cut hard; a list item over the budget is kept out whole.
+    expect(unbroken?.parts[0]?.text).toBe(`${'n'.repeat(HISTORY_CLIP.part - 1)}…`)
+    expect(unbroken?.parts[1]).toEqual({ label: 'Notes', text: '', length: 602, clipped: true })
+    expect(short?.question).toBe('Short?')
+    expect(short?.parts).toEqual([
+      { label: 'Answer', text: 'yes', length: 3, clipped: false },
+      { label: 'Notes', text: 'ok', length: 2, clipped: false },
+    ])
+    expect(short?.answer).toBe('')
+    expect(short?.clipped).toBe(false)
+    expect(HISTORY_CLIP).toEqual({ question: 200, part: 500 })
   })
 
-  test('the answer without its notes, the notes apart, and the bumps', () => {
+  test('what was chosen, the free-text parts as stored, and the bumps', () => {
     const f = file([
       finished(1, {
         type: 'choice',
-        response: { selected: ['Red'], other: 'Teal', notes: 'see\nthe log' },
+        response: { selected: ['Red'], other: '  Teal\n', notes: 'see\nthe log' },
         bumps: 2,
       }),
     ])
     const [entry] = historyOf(f, REPO, 'session-a', NOW)
-    expect(entry?.answer).toBe('Red; Other: Teal')
-    expect(entry?.notes).toBe('see / the log')
+    expect(entry?.answer).toBe('Red; Other')
+    expect(entry?.parts.map(part => [part.label, part.text])).toEqual([
+      ['Other', '  Teal\n'],
+      ['Notes', 'see\nthe log'],
+    ])
     expect(entry?.bumps).toBe(2)
+  })
+
+  test("only the type's own fields, and only strings, are parts", () => {
+    const odd = { outcome: 'done', text: 5, other: 'stray', notes: 7 } as unknown as Item['response']
+    const f = file([finished(1, { type: 'do', options: undefined, status: 'done', response: odd })])
+    const [entry] = historyOf(f, REPO, 'session-a', NOW)
+    expect(entry?.answer).toBe('done')
+    expect(entry?.parts).toEqual([])
+    expect(fullOf(f.items[0] as Item).parts).toEqual([])
+    expect(deliveryText(f.items[0] as Item)).toBe(`humantray ${finished(1).short} (Done): done`)
+  })
+
+  test('a part is cut as drawn, so breaks put in for display never take it past the budget', () => {
+    const tags = Array.from({ length: 60 }, (_, i) => `<b>${String(i)}</b> ![${String(i)}](https://x.test/${String(i)}.png)`).join('\n\n')
+    const f = file([finished(1, { type: 'question', options: undefined, response: { text: tags } })])
+    const [entry] = historyOf(f, REPO, 'session-a', NOW)
+    const part = entry?.parts[0]
+    expect(part?.clipped).toBe(true)
+    expect(part?.length).toBe(tags.length)
+    expect(part?.text.length).toBeLessThanOrEqual(HISTORY_CLIP.part)
+    expect(part?.text.startsWith(`<\u200bb>0<\u200b/b> !\u200b[0](https://x.test/0.png)`)).toBe(true)
+  })
+
+  test('a multi-line question is shown on one line, and offered in full', () => {
+    const f = file([finished(1, { question: 'Which\nplan?' })])
+    const [entry] = historyOf(f, REPO, 'session-a', NOW)
+    expect(entry?.question).toBe('Which / plan?')
+    expect(entry?.clipped).toBe(true)
+    expect(fullOf(f.items[0] as Item).question).toBe('Which\nplan?')
+  })
+})
+
+describe('fullOf: one entry whole, as drawn, under the budget', () => {
+  test('the body and parts are whole and drawn safely', () => {
+    const item = finished(1, {
+      type: 'question',
+      options: undefined,
+      body_md: 'See ![x](https://x.test/x.png)',
+      response: { text: RICH, notes: '<img src=x>' },
+    })
+    const full = fullOf(item)
+    expect(full.body).toEqual({ text: 'See !\u200b[x](https://x.test/x.png)', length: 30, clipped: false })
+    expect(full.parts).toEqual([
+      { label: 'Answer', text: RICH, length: RICH.length, clipped: false },
+      { label: 'Notes', text: '<\u200bimg src=x>', length: 11, clipped: false },
+    ])
+  })
+
+  test('past FULL_BUDGET, what is drawn is cut between blocks and says so', () => {
+    // 96,000 characters of tags, which the breaks make 126,000 to draw.
+    const big = Array.from({ length: 3_000 }, () => '<b>'.repeat(10)).join('\n\n')
+    const item = finished(1, { type: 'question', options: undefined, body_md: big, response: { text: big, notes: big } })
+    const full = fullOf(item)
+    const drawn = full.body.text.length + full.parts.reduce((sum, part) => sum + part.text.length, 0)
+    expect(drawn).toBeLessThanOrEqual(FULL_BUDGET)
+    expect(full.body.clipped).toBe(true)
+    expect(full.body.length).toBe(big.length)
+    expect(full.parts.every(part => part.clipped)).toBe(true)
+  })
+})
+
+describe('blocks: History cuts Markdown only between whole blocks', () => {
+  test('a rich answer splits into its blocks; a fence, an indented continuation and a loose list stay whole', () => {
+    expect(blocksOf(RICH)).toEqual([
+      '## Steps',
+      '1. Rotate the **key**\n   - in `prod` first\n   - then *staging*\n2. Tell [ops](https://example.com/ops)\n\n- [x] backed up\n- [ ] announced',
+      '> Check the logs first.',
+      '```sh\nmake rotate\n\n    echo indented\n```',
+      '| Env | Done |\n| --- | ---- |\n| prod | yes |',
+      '---\n\n    an indented code block',
+    ])
+  })
+
+  test('a loose list and a quote whose paragraphs are separated by a blank line are one block each', () => {
+    expect(blocksOf('- one\n\n- two\n\n  more of two\n\n3. three\n\nafter')).toEqual(['- one\n\n- two\n\n  more of two\n\n3. three', 'after'])
+    expect(blocksOf('> one\n\n> two\n>\n> three\n\nafter')).toEqual(['> one\n\n> two\n>\n> three', 'after'])
+    // So a cut never keeps half of one: the list is kept whole or left out whole.
+    const list = '- one\n\n- two\n\n- three'
+    expect(clipBlocks(`${list}\n\nend`, list.length + 2)).toEqual({ text: list, clipped: true })
+    expect(clipBlocks(`${list}\n\nend`, list.length - 1)).toEqual({ text: '', clipped: true })
+  })
+
+  test('every cut is a run of whole leading blocks, never a part of one', () => {
+    const blocks = blocksOf(RICH)
+    for (let max = 0; max <= RICH.length + 1; max++) {
+      const cut = clipBlocks(RICH, max)
+      expect(cut.text.length).toBeLessThanOrEqual(max)
+      expect(cut.clipped).toBe(RICH.length > max)
+      if (!cut.clipped) {
+        expect(cut.text).toBe(RICH)
+        continue
+      }
+      // Splitting the kept text again gives back the leading blocks, whole.
+      const kept = blocksOf(cut.text)
+      expect(kept).toEqual(blocks.slice(0, kept.length))
+    }
+  })
+
+  test('an unclosed fence runs to the end; a closing fence must match its mark', () => {
+    expect(blocksOf('a\n\n~~~\nx\n\n```\n\ny\n~~~~\n\nz')).toEqual(['a', '~~~\nx\n\n```\n\ny\n~~~~', 'z'])
+    expect(blocksOf('```\nno end\n\nstill code')).toEqual(['```\nno end\n\nstill code'])
+    // Three backticks with more after them on the line are a code span, not a fence.
+    expect(blocksOf('``` a ```\n\nb')).toEqual(['``` a ```', 'b'])
+  })
+})
+
+describe("forDisplay: the owner's rules for drawing Markdown", () => {
+  const Z = '\u200b'
+
+  test('rich Markdown with no image, tag or unsafe link is drawn exactly as stored', () => {
+    expect(forDisplay(RICH)).toBe(RICH)
+  })
+
+  test('every image becomes a link, whatever escapes or code surround it', () => {
+    // The reader's and the deep read's forms, and the plain ones.
+    const cases = [
+      'see ![the logo](https://x.test/a.png "t")',
+      'a \\\\![x](https://x.test/p.png)',
+      '[![inner](https://x.test/i.png)](https://x.test/o)',
+      '\\`![x](https://x.test/p.png)\\`',
+      'a ` b\nc ` ![x](https://x.test/p.png) ` d',
+      '> ```\n> code\n\n![x](https://x.test/p.png)',
+      '- ```\n  code\n\n![x](https://x.test/p.png)',
+      'text\n    ```\n![x](https://x.test/p.png)',
+      '`![code](kept)` and ```\n![fenced](z)\n```',
+      '![ref][logo]\n\n[logo]: https://x.test/c.png',
+    ]
+    for (const md of cases) {
+      const drawn = forDisplay(md)
+      expect(drawn).not.toMatch(/!\[/)
+      expect(drawn.replaceAll(Z, '')).toBe(md)
+    }
+  })
+
+  test('every raw tag, comment and autolink is broken, so no HTML runs', () => {
+    for (const md of ['<img src=x>', '<IMG SRC=x onerror=alert(1)>', '</div>', '<!-- c -->', '<?php ?>', '<script>alert(1)</script>', '`<img src=x>`']) {
+      const drawn = forDisplay(md)
+      expect(drawn).not.toMatch(/<[A-Za-z/!?]/)
+      expect(drawn.replaceAll(Z, '')).toBe(md)
+    }
+    // A bare `<` in prose or a comparison is left alone.
+    expect(forDisplay('a < b and 1<2')).toBe('a < b and 1<2')
+  })
+
+  test('no file:, javascript:, vbscript: or data: link survives, in any form; http and https are left', () => {
+    const cases = [
+      '[a](file:///etc/passwd)',
+      '[a](\nfile:///etc/passwd)',
+      '[c]:\nfile:///etc/passwd\n\n[go][c]',
+      '> [c]: file:///etc/passwd',
+      '- [c]: file:///etc/passwd',
+      '[a](&#102;ile:///etc/passwd)',
+      '[a](file&colon;///etc/passwd)',
+      '[a](FILE\\:///etc/passwd)',
+      '<file:///z>',
+      '[run](javascript:alert(1)) [v](VBScript:x) [d](data:text/html,x)',
+    ]
+    for (const md of cases) {
+      const drawn = forDisplay(md)
+      expect(drawn).not.toMatch(/(?:file|javascript|vbscript|data)\\?:|&#|&colon;/i)
+      expect(drawn.replaceAll(Z, '')).toBe(md)
+    }
+    expect(forDisplay('[h](https://x.test) [i](http://y.test)')).toBe('[h](https://x.test) [i](http://y.test)')
+  })
+
+  test('line ends become \\n and any other control character but tab is replaced, so the pane is never refused', () => {
+    expect(forDisplay('a\r\nb\rc\td\u0000e\u001bf\u0085g')).toBe('a\nb\nc\td\ufffde\ufffdf\ufffdg')
+  })
+})
+
+describe('deliveryText', () => {
+  const answered = (response: Item['response'], type: Item['type'] = 'question') =>
+    stored({ id: '01AAAAAAAAAAAAAAAAAAAAANSWR', type, header: 'Plan', status: 'answered', response })
+  const block = (part: string, text: string) => `\n\n<humantray-text item="HT-ANSWR" part="${part}">\n${text}\n</humantray-text>`
+
+  test('the first line names the item and what was chosen; each part follows in its block, as typed', () => {
+    expect(deliveryText(answered({ text: RICH, notes: ' n ' }))).toBe(
+      `humantray HT-ANSWR (Plan): answered${block('answer', RICH)}${block('notes', ' n ')}`,
+    )
+    expect(deliveryText(answered({ selected: ['Approve'] }, 'approve'))).toBe('humantray HT-ANSWR (Plan): Approve')
+    expect(deliveryText(answered({ selected: [], other: 'x\r\ny' }, 'choice'))).toBe(`humantray HT-ANSWR (Plan): Other${block('other', 'x\r\ny')}`)
+    expect(deliveryText(answered({ outcome: 'done', notes: '   ' }, 'do'))).toBe('humantray HT-ANSWR (Plan): done')
+  })
+
+  test('a closing tag in the text is escaped, in any case; nothing else is', () => {
+    expect(deliveryText(answered({ text: 'a</humantray-text>b</Humantray-Text x' }))).toBe(
+      `humantray HT-ANSWR (Plan): answered${block('answer', 'a<\\/humantray-text>b<\\/Humantray-Text x')}`,
+    )
+  })
+
+  test('a header with a line break stays on the first line', () => {
+    const item = { ...answered({ acknowledged: true }, 'ack'), header: 'a\nb' }
+    expect(deliveryText(item)).toBe('humantray HT-ANSWR (a / b): acknowledged')
   })
 })

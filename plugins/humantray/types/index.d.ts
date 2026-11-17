@@ -190,6 +190,16 @@ export type StoreFile = {
  */
 export type DeliveryMark = 'none' | 'delivered' | 'delivering' | 'not delivered'
 
+/** A free-text part of an answer, by the label it is given: the answer, Other, the feedback or the notes. */
+export type PartLabel = 'Answer' | 'Other' | 'Feedback' | 'Notes'
+
+/**
+ * One free-text part as History's list draws it: its leading Markdown blocks
+ * as drawn (`forDisplay`), as many as fit (all of it when `clipped` is false),
+ * and the stored text's whole length.
+ */
+export type HistoryPart = { label: PartLabel; text: string; length: number; clipped: boolean }
+
 /** One answered item as History draws it: no body, only what is shown. */
 export type HistoryEntry = {
   id: string
@@ -198,18 +208,35 @@ export type HistoryEntry = {
   repo: string
   type: ItemType
   header: string
-  /** The question, clipped. */
+  /** The question on one line, clipped. */
   question: string
   status: ItemStatus
-  /** The response on one line, without its notes, clipped. */
+  /** What was chosen, with no free text (`Red; Other`, `not done`); empty for a question. */
   answer: string
-  notes?: string
+  /** The free-text parts, as typed, each cut only between Markdown blocks. */
+  parts: HistoryPart[]
+  /** Whether anything above was shortened, so that "Show in full" is offered. */
+  clipped: boolean
   bumps: number
   /** The order key: when it was answered (or else last added or bumped). */
   at: number
   mark: DeliveryMark
   /** This session's, or inherited from the session it continues. */
   isMine: boolean
+}
+
+/** One answered item whole, as "Show in full" draws it: read from the store when asked for. */
+export type HistoryFull = {
+  id: string
+  short: string
+  header: string
+  question: string
+  /** The body as drawn: whole unless the entry passes the full view's budget. */
+  body: { text: string; length: number; clipped: boolean }
+  /** What was chosen, with no free text; empty for a question. */
+  answer: string
+  /** Each part as drawn, cut as the body is. */
+  parts: HistoryPart[]
 }
 
 /**
@@ -240,6 +267,8 @@ declare module 'claude-code' {
       view: TrayView
       /** The History page shown, from 0. */
       page: number
+      /** The History entry shown in full, or null for the list. */
+      expanded: Shaped<HistoryFull | null>
       drafts: StateFamily<Draft>
     }
   }

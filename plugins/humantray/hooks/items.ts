@@ -6,11 +6,13 @@ import type {
   DeliveryMark,
   Draft,
   HistoryEntry,
+  HistoryFull,
   Item,
   ItemOption,
   ItemResponse,
   ItemStatus,
   ItemType,
+  PartLabel,
   SessionRecord,
   StoreFile,
 } from '../types'
@@ -337,10 +339,12 @@ export type Action =
   | { kind: 'do'; outcome: 'done' | 'not_done' }
   | { kind: 'approve'; choice: 'Approve' | 'Reject' }
 
-const trimmed = (text: string): string | undefined => {
-  const t = text.trim()
-  return t === '' ? undefined : t
-}
+/**
+ * A free-text field as typed, or undefined when it holds nothing but space:
+ * never trimmed, so the person's Markdown (indented code, line breaks) is
+ * stored as they wrote it. The page does the same (page.ts, `typed`).
+ */
+const typed = (text: string): string | undefined => (text.trim() === '' ? undefined : text)
 
 const tooLong = (draft: Draft): boolean =>
   [draft.other, draft.text, draft.feedback, draft.notes].some(t => t.length > LIMITS.answer)
@@ -355,7 +359,7 @@ export const buildResponse = (
   action: Action,
 ): Checked<{ response: ItemResponse; status: ItemStatus }> => {
   if (tooLong(draft)) return { error: `An answer can be at most ${LIMITS.answer} characters.` }
-  const notes = item.notes === true ? trimmed(draft.notes) : undefined
+  const notes = item.notes === true ? typed(draft.notes) : undefined
   const withNotes = <R extends ItemResponse>(r: R): R => (notes === undefined ? r : { ...r, notes })
 
   switch (item.type) {
@@ -364,7 +368,7 @@ export const buildResponse = (
       return { ok: { response: withNotes({ acknowledged: true }), status: 'acknowledged' } }
     case 'do': {
       if (action.kind !== 'do') return { error: 'Press Done or Not done.' }
-      const feedback = trimmed(draft.feedback)
+      const feedback = typed(draft.feedback)
       const response: ItemResponse = { outcome: action.outcome }
       if (feedback !== undefined) response.feedback = feedback
       return { ok: { response: withNotes(response), status: 'done' } }
@@ -374,7 +378,7 @@ export const buildResponse = (
       return { ok: { response: withNotes({ selected: [action.choice] }), status: 'answered' } }
     case 'question': {
       if (action.kind !== 'submit') return { error: 'Press Submit.' }
-      const text = trimmed(draft.text)
+      const text = typed(draft.text)
       if (text === undefined) return { error: 'Type an answer.' }
       return { ok: { response: withNotes({ text }), status: 'answered' } }
     }
@@ -382,7 +386,7 @@ export const buildResponse = (
       if (action.kind !== 'submit') return { error: 'Press Submit.' }
       const labels = new Set((item.options ?? []).map(o => o.label))
       let selected = draft.selected.filter(label => labels.has(label))
-      const other = trimmed(draft.other)
+      const other = typed(draft.other)
       if (item.multiSelect !== true) {
         if (other !== undefined) selected = []
         else selected = selected.slice(0, 1)
@@ -400,36 +404,80 @@ export const buildResponse = (
 /** One line: every line break and the space around it becomes ` / `. */
 const oneLine = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, ' / ').trim()
 
-/** The answer in a few words, without its notes. */
-const rawAnswer = (item: Item): string => {
-  const r = item.response
+const isText = (v: unknown): v is string => typeof v === 'string'
+
+/**
+ * What was chosen, in a few words and with no free text: `acknowledged`,
+ * `done` or `not done`, the options picked (and `Other` when it was filled
+ * in), or `answered` for a question, whose text follows as a part. Read by the
+ * item's type, from that type's own fields only, so a stray or wrongly typed
+ * field (an adopted row may carry one) changes nothing.
+ */
+export const choiceOf = (item: Item): string => {
+  const r = item.response as Record<string, unknown> | undefined
   if (r === undefined) return ''
-  if ('acknowledged' in r) return 'acknowledged'
-  if ('outcome' in r) {
-    const outcome = r.outcome === 'done' ? 'done' : 'not done'
-    return r.feedback === undefined ? outcome : `${outcome}: ${r.feedback}`
+  switch (item.type) {
+    case 'ack':
+      return 'acknowledged'
+    case 'do':
+      return r.outcome === 'done' ? 'done' : 'not done'
+    case 'question':
+      return 'answered'
+    default: {
+      const picked = Array.isArray(r.selected) ? r.selected.filter(isText) : []
+      if (isText(r.other) && r.other.trim() !== '') picked.push('Other')
+      return picked.join('; ')
+    }
   }
-  if ('text' in r) return r.text
-  const parts = [...r.selected]
-  if (r.other !== undefined) parts.push(`Other: ${r.other}`)
-  return parts.join('; ')
 }
 
-/** The answer in a few words, on one line, without its notes (History shows them apart). */
-export const answerText = (item: Item): string => oneLine(rawAnswer(item))
-
-/** The answer in a few words, for the delivery line. */
-export const summaryOf = (item: Item): string => {
-  const r = item.response
-  if (r === undefined) return ''
-  let summary = rawAnswer(item)
-  if (r.notes !== undefined) summary += ` | notes: ${r.notes}`
-  return oneLine(summary)
+/** Each free-text field a type's response has, with the label it is shown under. */
+const FIELDS: Record<ItemType, Array<{ field: 'text' | 'other' | 'feedback'; label: PartLabel }>> = {
+  ack: [],
+  question: [{ field: 'text', label: 'Answer' }],
+  choice: [{ field: 'other', label: 'Other' }],
+  approve: [{ field: 'other', label: 'Other' }],
+  do: [{ field: 'feedback', label: 'Feedback' }],
 }
 
-/** The line a session receives: `humantray HT-xxxxx (<header>): <summary>`. */
-export const deliveryLine = (item: Item): string =>
-  `humantray ${item.short} (${oneLine(item.header)}): ${summaryOf(item)}`
+/**
+ * The free-text parts of a response, exactly as stored, in a fixed order: the
+ * answer, Other or the feedback first, then the notes. Only the fields the
+ * item's type has, and only strings, are read; blank parts are left out.
+ */
+export const partsOf = (item: Item): Array<{ label: PartLabel; text: string }> => {
+  const r = item.response as Record<string, unknown> | undefined
+  if (r === undefined) return []
+  const parts: Array<{ label: PartLabel; text: string }> = []
+  const add = (label: PartLabel, text: unknown) => {
+    if (isText(text) && text.trim() !== '') parts.push({ label, text })
+  }
+  for (const { field, label } of FIELDS[item.type] ?? []) add(label, r[field])
+  add('Notes', r.notes)
+  return parts
+}
+
+/** The name each part's block carries in the delivered answer. */
+const PART_NAMES: Record<PartLabel, string> = { Answer: 'answer', Other: 'other', Feedback: 'feedback', Notes: 'notes' }
+
+/**
+ * What a session receives, in one submit. The first line is always
+ * `humantray HT-xxxxx (<header>): <what was chosen>`, and it alone names the
+ * item. Each free-text part follows after a blank line, inside its own block,
+ * `<humantray-text item="HT-xxxxx" part="answer|other|feedback|notes">` to
+ * `</humantray-text>`, so that nothing a person types can read as a second
+ * `humantray HT-` line or as one of the mod's own labels. Inside a block the
+ * text is exactly as typed, except that a closing tag in it is escaped
+ * (`<\/humantray-text`), so a block always ends where the mod ended it.
+ */
+export const deliveryText = (item: Item): string => {
+  const first = `humantray ${item.short} (${oneLine(item.header)}): ${oneLine(choiceOf(item))}`
+  const blocks = partsOf(item).map(part => {
+    const text = part.text.replace(/<\/(humantray-text)/gi, '<\\/$1')
+    return `\n\n<humantray-text item="${item.short}" part="${PART_NAMES[part.label]}">\n${text}\n</humantray-text>`
+  })
+  return [first, ...blocks].join('')
+}
 
 /**
  * Whether an answered item owes its session a line. Every answered item does,
@@ -507,17 +555,159 @@ export const deliveryMark = (item: Item, now: number): DeliveryMark => {
 /** History entries drawn per page: 50 clipped entries stay well inside what a surface draws. */
 export const HISTORY_PAGE = 50
 
-/** The most characters of each text a History entry keeps; the store keeps the whole. */
-export const HISTORY_CLIP = { question: 200, answer: 300, notes: 300 } as const
+/**
+ * The most characters History draws of an entry's question, and of each of its
+ * free-text parts, in the list. The question (plain text) is cut with an
+ * ellipsis; a part is cut only between Markdown blocks (`clipBlocks`). The
+ * store keeps the whole, and "Show in full" draws it.
+ */
+export const HISTORY_CLIP = { question: 200, part: 500 } as const
 
 /** Text cut to `max` characters, ending in an ellipsis when cut. */
 export const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`)
 
 /**
+ * The mark of a line that opens a fenced code block (in a list or a quote
+ * too), or undefined. A backtick fence's info string holds no backtick, so
+ * three backticks with text and more backticks after are a code span.
+ */
+const opens = (line: string): string | undefined => {
+  const found = /^[ \t>]*(?:(`{3,})[^`]*|(~{3,}).*)$/.exec(line)
+  return found?.[1] ?? found?.[2]
+}
+
+/** Whether `line` closes the fence `opened`: the same mark, at least as long, and nothing after it. */
+const closes = (line: string, opened: string): boolean => {
+  const mark = /^[ \t>]*(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1]
+  return mark !== undefined && mark[0] === opened[0] && mark.length >= opened.length
+}
+
+/** A list item's first line: a bullet or a number, then a space or the line's end. */
+const LIST_ITEM = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)/
+/** A quoted line. */
+const QUOTE = /^ {0,3}>/
+
+/**
+ * Markdown split into its top-level blocks: runs of lines separated by blank
+ * lines. A fenced code block (blank lines and all) stays inside one block; so
+ * does an indented line after a blank (a list item's next paragraph, or an
+ * indented code block); so does a loose list (an item after a blank, in a
+ * block that began as a list) and a quote (a quoted line after a blank, in a
+ * block that began as a quote). Blocks are returned without the blank lines
+ * between them.
+ */
+export const blocksOf = (md: string): string[] => {
+  const lines = md.split('\n')
+  const blocks: string[] = []
+  let current: string[] = []
+  let gap: string[] = []
+  let fence: string | undefined
+  for (const line of lines) {
+    if (fence !== undefined) {
+      current.push(line)
+      if (closes(line, fence)) fence = undefined
+      continue
+    }
+    if (line.trim() === '') {
+      if (current.length > 0) gap.push(line)
+      continue
+    }
+    const head = current[0] ?? ''
+    const continues =
+      gap.length > 0 &&
+      (/^(?: {2,}|\t)/.test(line) || (LIST_ITEM.test(line) && LIST_ITEM.test(head)) || (QUOTE.test(line) && QUOTE.test(head)))
+    if (gap.length > 0 && !continues) {
+      blocks.push(current.join('\n'))
+      current = []
+      gap = []
+    } else if (gap.length > 0) {
+      current.push(...gap)
+      gap = []
+    }
+    current.push(line)
+    fence = opens(line)
+  }
+  if (current.length > 0) blocks.push(current.join('\n'))
+  return blocks
+}
+
+/** Whether a block is a plain paragraph: no list, quote, heading, table, fence, rule, tag or indented code. */
+const isParagraph = (block: string): boolean =>
+  !LIST_ITEM.test(block) &&
+  !QUOTE.test(block) &&
+  !/^ {0,3}(?:#{1,6}(?:[ \t]|$)|\||<|(?:[-*_][ \t]*){3,}$)/.test(block) &&
+  !/^(?: {4}|\t)/.test(block) &&
+  opens(block.split('\n')[0] ?? '') === undefined &&
+  !/\n[ \t]*\|?[ \t]*:?-{3,}/.test(block)
+
+/**
+ * Markdown cut to at most `max` characters, only between whole blocks, never
+ * inside a list, a table, a quote or a code block: as many leading blocks as
+ * fit. When even the first block does not fit, a plain paragraph is cut at
+ * the last word boundary that fits, with an ellipsis (decided on #40); any
+ * other block is kept out whole (`text` is empty). `clipped` says whether
+ * anything was left out.
+ */
+export const clipBlocks = (md: string, max: number): { text: string; clipped: boolean } => {
+  if (md.length <= max) return { text: md, clipped: false }
+  const kept: string[] = []
+  let length = 0
+  const blocks = blocksOf(md)
+  for (const block of blocks) {
+    const added = (kept.length === 0 ? 0 : 2) + block.length
+    if (length + added > max) break
+    kept.push(block)
+    length += added
+  }
+  const first = blocks[0]
+  if (kept.length === 0 && first !== undefined && isParagraph(first) && max > 1) {
+    const room = first.slice(0, max - 1)
+    const space = room.search(/\s\S*$/)
+    const cut = (space > 0 ? room.slice(0, space) : room).trimEnd()
+    return { text: `${cut}…`, clipped: true }
+  }
+  return { text: kept.join('\n\n'), clipped: true }
+}
+
+/**
+ * Text as a surface may draw it: line ends made `\n`, and every other control
+ * character but tab replaced with U+FFFD, since one would make the surface
+ * refuse the whole pane. For drawing only; the store is never changed.
+ */
+export const plain = (text: string): string =>
+  text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '\ufffd')
+
+/** An invisible break: it splits a piece of syntax without changing what shows. */
+const BREAK = '\u200b'
+
+/**
+ * Markdown as the pane draws it, under the owner's rules (answer on #33,
+ * decided again on #40): no image is loaded, no raw HTML runs, and links are
+ * http and https only. Over the whole text, code included (finding code by
+ * hand proved bypassable), an invisible U+200B is put
+ * - after every `!` that starts `![`, so an image is drawn as a link to it;
+ * - after every `<` that could start a tag, a comment or an autolink;
+ * - inside every `file:`, `javascript:`, `vbscript:` and `data:` (also
+ *   written `file\:`), so no such link is made (the engine draws any other
+ *   scheme but http and https as text by itself);
+ * - after every `&` that starts `&#` or `&colon;`, so no entity can spell one.
+ * What shows looks the same. Control characters are replaced (`plain`). For
+ * drawing only: the stored and the delivered text never change.
+ */
+export const forDisplay = (md: string): string =>
+  plain(md)
+    .replace(/!\[/g, `!${BREAK}[`)
+    .replace(/<(?=[A-Za-z/!?])/g, `<${BREAK}`)
+    .replace(/(file|javascript|vbscript|data)(\\?:)/gi, (_, word: string, colon: string) => `${word.slice(0, -1)}${BREAK}${word.slice(-1)}${colon}`)
+    .replace(/&(?=#|colon;)/gi, `&${BREAK}`)
+
+/**
  * The answered items of every `repo` value in the store, from every session,
  * as History draws them: the current repository's first, then each other
  * value by name; within each, newest first. An item is this session's when
- * its owner chain ends at `me`. Long text is clipped (HISTORY_CLIP).
+ * its owner chain ends at `me`. The question is cut to one clipped line, and
+ * each free-text part, as drawn (`forDisplay`), to whole Markdown blocks
+ * (HISTORY_CLIP).
  */
 export const historyOf = (file: StoreFile, repo: string, me: string, now: number): HistoryEntry[] =>
   file.items
@@ -531,24 +721,61 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       return compareAge(b, a)
     })
     .map(item => {
-      const entry: HistoryEntry = {
+      const question = clip(oneLine(item.question), HISTORY_CLIP.question)
+      // Cut what is drawn (forDisplay can lengthen it), so a page's size is bounded whatever was typed.
+      const parts = partsOf(item).map(part => {
+        const cut = clipBlocks(forDisplay(part.text), HISTORY_CLIP.part)
+        return { label: part.label, text: cut.text, length: part.text.length, clipped: cut.clipped }
+      })
+      return {
         id: item.id,
         short: item.short,
         repo: item.repo,
         type: item.type,
         header: item.header,
-        question: clip(oneLine(item.question), HISTORY_CLIP.question),
+        question,
         status: item.status,
-        answer: clip(answerText(item), HISTORY_CLIP.answer),
+        answer: item.type === 'question' ? '' : choiceOf(item),
+        parts,
+        clipped: question !== item.question || parts.some(part => part.clipped),
         bumps: item.bumps,
         at: orderKey(item),
         mark: deliveryMark(item, now),
         isMine: resolveOwner(file.sessions, item.session_id) === me,
       }
-      const notes = item.response?.notes
-      if (notes !== undefined) entry.notes = clip(oneLine(notes), HISTORY_CLIP.notes)
-      return entry
     })
+
+/**
+ * The most characters "Show in full" draws of one entry's body and parts
+ * together, as drawn. At the stored limits (a 20,000-character body, two
+ * 10,000-character parts) even text whose every character `forDisplay`
+ * doubles stays under it; it is a guard, under the 100,000 a surface draws.
+ */
+export const FULL_BUDGET = 90_000
+
+/**
+ * One answered item whole, as "Show in full" draws it: the question, the body
+ * and each part as drawn (`forDisplay`), nothing cut unless the whole would
+ * pass FULL_BUDGET, and then only between blocks, with the length kept.
+ */
+export const fullOf = (item: Item): HistoryFull => {
+  let left = FULL_BUDGET
+  const cut = (text: string) => {
+    const drawn = clipBlocks(forDisplay(text), left)
+    left = Math.max(0, left - drawn.text.length)
+    return { text: drawn.text, length: text.length, clipped: drawn.clipped }
+  }
+  const body = cut(item.body_md)
+  return {
+    id: item.id,
+    short: item.short,
+    header: item.header,
+    question: item.question,
+    body,
+    answer: item.type === 'question' ? '' : choiceOf(item),
+    parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text) })),
+  }
+}
 
 /**
  * Applies a finished submit to the item, only while the item still carries
