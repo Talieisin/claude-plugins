@@ -78,11 +78,14 @@ export type DeliveryMark = 'none' | 'delivered' | 'delivering' | 'not delivered'
 export type HistoryEntry = {
   id: string
   short: string
+  /** The item's repository: History groups by it, the current one first. */
+  repo: string
   type: ItemType
   header: string
+  /** The question, clipped. */
   question: string
   status: ItemStatus
-  /** The response on one line, without its notes. */
+  /** The response on one line, without its notes, clipped. */
   answer: string
   notes?: string
   bumps: number
@@ -95,10 +98,11 @@ export type HistoryEntry = {
 
 /**
  * What the pane and band draw from: the open items, newest first; this
- * session's id; the ids of the items this session owns or inherited; and
- * this repository's answered items, newest first, for History.
+ * session's id; the ids of the items this session owns or inherited; the
+ * answered items for History, the current repository's first; and that
+ * repository's `repo` value.
  */
-export type Tray = { items: Item[]; me: string; mine: string[]; history: HistoryEntry[] }
+export type Tray = { items: Item[]; me: string; mine: string[]; history: HistoryEntry[]; repo: string }
 
 /** Which list the pane shows. */
 export type TrayView = 'open' | 'history'
@@ -118,6 +122,8 @@ declare module 'claude-code' {
     humantray: {
       tray: Shaped<Tray | null>
       view: TrayView
+      /** The History page shown, from 0. */
+      page: number
       drafts: StateFamily<Draft>
     }
   }

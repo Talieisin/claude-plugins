@@ -425,8 +425,10 @@ export const isLineDue = (item: Item): boolean =>
 /**
  * The one test of whether an item may be pruned. It may when it is finished:
  * answered, carrying no claim, and either delivered or owing no line. Such an
- * item is in a terminal state: no code path changes it again, nor its order
- * key, so a prune decided on any read is still right when it is written.
+ * item stays prunable and its order key never moves: no code path makes it
+ * open, owed or claimed again. One write still reaches it: the owner's pass
+ * flags an acknowledged `ack` that owes no line as `delivered`, which leaves
+ * it prunable. So a prune decided on any read is still right when written.
  */
 export const isPrunable = (item: Item): boolean =>
   item.status !== 'open' &&
@@ -458,14 +460,16 @@ export const prune = (file: StoreFile, keep: number = KEEP_PER_REPO): string[] =
     if (group === undefined) groups.set(item.repo, [item])
     else group.push(item)
   }
-  const removed = new Set<string>()
+  // The chosen records themselves, not their ids: two records sharing an id
+  // (a hand-edited or merged store) must not take a protected one with them.
+  const removed = new Set<Item>()
   for (const group of groups.values()) {
     if (group.length <= keep) continue
     group.sort(compareAge)
-    for (const item of group.slice(0, group.length - keep)) removed.add(item.id)
+    for (const item of group.slice(0, group.length - keep)) removed.add(item)
   }
-  if (removed.size > 0) file.items = file.items.filter(item => !removed.has(item.id))
-  return [...removed]
+  if (removed.size > 0) file.items = file.items.filter(item => !removed.has(item))
+  return [...removed].map(item => item.id)
 }
 
 /**
@@ -476,34 +480,53 @@ export const prune = (file: StoreFile, keep: number = KEEP_PER_REPO): string[] =
 export const deliveryMark = (item: Item, now: number): DeliveryMark => {
   if (!isLineDue(item)) return 'none'
   if (item.delivered) return 'delivered'
-  if (item.delivering_at !== undefined && now - item.delivering_at < CLAIM_STALE_MS) return 'delivering'
+  if (item.delivering_at !== undefined && now - item.delivering_at <= CLAIM_STALE_MS) return 'delivering'
   return 'not delivered'
 }
 
+/** History entries drawn per page: 50 clipped entries stay well inside what a surface draws. */
+export const HISTORY_PAGE = 50
+
+/** The most characters of each text a History entry keeps; the store keeps the whole. */
+export const HISTORY_CLIP = { question: 200, answer: 300, notes: 300 } as const
+
+/** Text cut to `max` characters, ending in an ellipsis when cut. */
+export const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`)
+
 /**
- * The answered items of `repo`, from every session, newest first, as History
- * draws them. An item is this session's when its owner chain ends at `me`.
+ * The answered items of every `repo` value in the store, from every session,
+ * as History draws them: the current repository's first, then each other
+ * value by name; within each, newest first. An item is this session's when
+ * its owner chain ends at `me`. Long text is clipped (HISTORY_CLIP).
  */
 export const historyOf = (file: StoreFile, repo: string, me: string, now: number): HistoryEntry[] =>
   file.items
-    .filter(item => item.status !== 'open' && item.repo === repo)
-    .sort((a, b) => compareAge(b, a))
+    .filter(item => item.status !== 'open')
+    .sort((a, b) => {
+      if (a.repo !== b.repo) {
+        if (a.repo === repo) return -1
+        if (b.repo === repo) return 1
+        return a.repo < b.repo ? -1 : 1
+      }
+      return compareAge(b, a)
+    })
     .map(item => {
       const entry: HistoryEntry = {
         id: item.id,
         short: item.short,
+        repo: item.repo,
         type: item.type,
         header: item.header,
-        question: item.question,
+        question: clip(oneLine(item.question), HISTORY_CLIP.question),
         status: item.status,
-        answer: answerText(item),
+        answer: clip(answerText(item), HISTORY_CLIP.answer),
         bumps: item.bumps,
         at: orderKey(item),
         mark: deliveryMark(item, now),
         isMine: resolveOwner(file.sessions, item.session_id) === me,
       }
       const notes = item.response?.notes
-      if (notes !== undefined) entry.notes = oneLine(notes)
+      if (notes !== undefined) entry.notes = clip(oneLine(notes), HISTORY_CLIP.notes)
       return entry
     })
 

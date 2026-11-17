@@ -10,8 +10,8 @@
 // the submit resolves without a drop. A drop or a rejection releases the
 // claim for the next pass. Nothing about items enters the system prompt.
 //
-// The pane shows the open items, or History: this repository's answered
-// items, read only. Every change also prunes finished items (answered,
+// The pane shows the open items, or History: the store's answered items,
+// grouped by repository (this one first), a page at a time, read only. Every change also prunes finished items (answered,
 // delivered or owing no line, unclaimed) past the last 200 per repository
 // (items.ts, `prune`); nothing still owed or in flight is ever pruned.
 
@@ -24,6 +24,7 @@ import {
   type AddOutcome,
   CLAIM_STALE_MS,
   EMPTY_DRAFT,
+  HISTORY_PAGE,
   addOrBump,
   applySettle,
   buildResponse,
@@ -51,6 +52,7 @@ const LIST = 'mcp__humantray__humantray_list'
 // reads as null and is rebuilt from the file at the next pass.
 const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-3' })
 const view = atom({ plugin: 'humantray', key: 'view' } as const, 'open')
+const page = atom({ plugin: 'humantray', key: 'page' } as const, 0)
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 
 const token = (): string => {
@@ -119,8 +121,14 @@ const LIST_DESCRIPTION =
 // refused call is a deny, which the model reads as an error result.
 const fail = (message: string) => ({ deny: message })
 
-/** When an answer was given, as UTC to the minute. */
-const when = (at: number): string => new Date(at).toISOString().slice(0, 16).replace('T', ' ')
+/**
+ * When an answer was given, as UTC to the minute. A time no Date can hold
+ * (another writer's bad value) reads as a placeholder, never throws.
+ */
+const when = (at: number): string => {
+  const date = new Date(at)
+  return Number.isFinite(date.getTime()) ? `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'at an unknown time'
+}
 
 async function hasSurface($: EngineInterface): Promise<boolean> {
   try {
@@ -140,10 +148,10 @@ async function openPane($: EngineInterface) {
 
 /**
  * Rebuilds what the pane and band draw from the file as read or written, or
- * clears it (null) when there is no store. History holds only this
- * repository's items, and its marks are as of `now`: a claim that goes stale
- * while nothing writes still reads `delivering` until the next rebuild (any
- * pass, add, answer or settle).
+ * clears it (null) when there is no store. History holds every answered
+ * item, this repository's first, and its marks are as of `now`: a claim
+ * that goes stale while nothing writes still reads `delivering` until the
+ * next rebuild (any pass, add, answer or settle).
  */
 async function showTray($: EngineInterface, seen: { file: StoreFile; where: Where } | null, me: string) {
   const now = seen === null ? 0 : await $.clock.now()
@@ -152,8 +160,9 @@ async function showTray($: EngineInterface, seen: { file: StoreFile; where: Wher
     const { file, where } = seen
     const items = openItems(file)
     const mine = items.filter(item => resolveOwner(file.sessions, item.session_id) === me).map(item => item.id)
-    const history = historyOf(file, normaliseRepo(where.remote, where.root), me, now)
-    return { items, me, mine, history }
+    const repo = normaliseRepo(where.remote, where.root)
+    const history = historyOf(file, repo, me, now)
+    return { items, me, mine, history, repo }
   })
 }
 
@@ -453,7 +462,7 @@ export const register: Register = on => {
         </Text>
         <Text dimColor>
           {entry.short}
-          {entry.isMine ? '' : ' · another session'} · answered {when(entry.at)} UTC · bumps: {String(entry.bumps)}
+          {entry.isMine ? '' : ' · another session'} · answered {when(entry.at)} · bumps: {String(entry.bumps)}
           {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
         </Text>
         <Text>{entry.answer}</Text>
@@ -464,18 +473,55 @@ export const register: Register = on => {
       <Button
         key="humantray:view"
         label={showing === 'history' ? `Open items (${shown.items.length})` : `History (${shown.history.length})`}
-        onPress={() => update($, view, current => (current === 'history' ? 'open' : 'history'))}
+        onPress={async () => {
+          await update($, page, () => 0)
+          await update($, view, current => (current === 'history' ? 'open' : 'history'))
+        }}
       />
     )
     if (showing === 'history') {
+      if (shown.history.length === 0) {
+        return (
+          <Box flexDirection="column" gap={1}>
+            {toggle}
+            <Text dimColor>No answered items yet.</Text>
+          </Box>
+        )
+      }
+      // A page at a time: a surface draws only so much of one tree.
+      const pages = Math.ceil(shown.history.length / HISTORY_PAGE)
+      const at = Math.min(Math.max(0, await read($, page)), pages - 1)
+      const entries = shown.history.slice(at * HISTORY_PAGE, (at + 1) * HISTORY_PAGE)
+      // Headings only when History holds more than one repository.
+      const grouped = shown.history.some(entry => entry.repo !== shown.repo)
+      const rows = []
+      let heading: string | undefined
+      for (const entry of entries) {
+        if (grouped && entry.repo !== heading) {
+          heading = entry.repo
+          rows.push(
+            <Text key={`humantray:repo:${entry.repo}`} bold>
+              {entry.repo === shown.repo ? `${entry.repo} (this repository)` : entry.repo}
+            </Text>,
+          )
+        }
+        rows.push(historyCard(entry))
+      }
+      const paging =
+        pages > 1 ? (
+          <Box key="humantray:paging" flexDirection="row" gap={1}>
+            {at > 0 && <Button key="humantray:history:previous" label="Previous" onPress={() => update($, page, () => at - 1)} />}
+            <Text dimColor>
+              Page {String(at + 1)} of {String(pages)}
+            </Text>
+            {at < pages - 1 && <Button key="humantray:history:next" label="Next" onPress={() => update($, page, () => at + 1)} />}
+          </Box>
+        ) : null
       return (
         <Box flexDirection="column" gap={1}>
           {toggle}
-          {shown.history.length === 0 ? (
-            <Text dimColor>No answered items yet.</Text>
-          ) : (
-            shown.history.map(historyCard)
-          )}
+          {paging}
+          {rows}
         </Box>
       )
     }

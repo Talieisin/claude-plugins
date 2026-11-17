@@ -3,7 +3,7 @@
 // finished items per repository, inside the store's locked change, and never
 // a protected item.
 
-import { describe, expect, test } from 'claude-code/testing'
+import { type Mounted, describe, expect, test } from 'claude-code/testing'
 
 import type { Item, StoreFile } from '../types'
 import {
@@ -122,6 +122,8 @@ describe('History', () => {
         owed(3, { delivering_at: START - 61_000, delivering_by: 'gone/1' }),
         owed(4),
         owed(5, { type: 'ack', status: 'acknowledged', response: { acknowledged: true }, options: undefined }),
+        finished(6, { type: 'ack', status: 'acknowledged', response: { acknowledged: true }, options: undefined }),
+        finished(7, { type: 'ack', status: 'acknowledged', response: { acknowledged: true }, options: undefined, notify_on_done: true }),
       ]),
     )
     await $.session.start(START_EVENT)
@@ -133,22 +135,54 @@ describe('History', () => {
     expect(lines.get(finished(3).short)).toMatch(/ · not delivered$/)
     expect(lines.get(finished(4).short)).toMatch(/ · not delivered$/)
     expect(lines.get(finished(5).short)).toMatch(/bumps: 0$/)
+    // An FYI the owner's pass flagged delivered still owes no line: no mark.
+    expect(lines.get(finished(6).short)).toMatch(/bumps: 0$/)
+    expect(lines.get(finished(7).short)).toMatch(/ · delivered$/)
     await ui.unmount()
   })
 
-  test('only this repository: another repo value never shows in History or its count', async ($, on) => {
+  test('every repo value, under headings, this repository first; the count is the whole', async ($, on) => {
     const w = world(on)
     w.seed(file([...finishedMany(5, { repo: OTHER }), ...finishedMany(3, {}, 100)]))
     await $.session.start(START_EVENT)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (3)')
+    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (8)')
     await ui.press({ key: TOGGLE })
+    const headings = await ui.findAll({ type: 'Text', text: /^github\.com\// })
+    expect(headings.map(t => t.text)).toEqual(['github.com/owner/repo (this repository)', OTHER])
     const shorts = (await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => t.text?.slice(0, 8))
-    expect(shorts.sort()).toEqual(finishedMany(3, {}, 100).map(item => item.short).sort())
+    expect(shorts.slice(0, 3).sort()).toEqual(finishedMany(3, {}, 100).map(item => item.short).sort())
+    expect(shorts.slice(3).sort()).toEqual(finishedMany(5).map(item => item.short).sort())
     await ui.unmount()
   })
 
-  test('straight after a pruning pass the pruned ids are gone and the count matches what is shown', async ($, on) => {
+  test('one repository: no heading', async ($, on) => {
+    const w = world(on)
+    w.seed(file(finishedMany(3)))
+    await $.session.start(START_EVENT)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: TOGGLE })
+    expect(await ui.find({ type: 'Text', text: /^github\.com\// })).toBeUndefined()
+    expect(await ui.findAll({ type: 'Text', text: /^HT-/ })).toHaveLength(3)
+    await ui.unmount()
+  })
+
+  test('an item of another repo value, ticked in this pane, appears in History under its heading', async ($, on) => {
+    const w = world(on)
+    const theirs = stored({ id: '01THEIRS000000000000000000', type: 'approve', repo: OTHER, header: 'Elsewhere' })
+    w.seed(file([theirs]))
+    await $.session.start(START_EVENT)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${theirs.id}:approve` })
+    expect(await ui.find({ key: `${theirs.id}:approve` })).toBeUndefined()
+    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (1)')
+    await ui.press({ key: TOGGLE })
+    expect((await ui.findAll({ type: 'Text', text: /^github\.com\// })).map(t => t.text)).toEqual([OTHER])
+    expect(await ui.find({ type: 'Text', text: /^\[Elsewhere\]/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('straight after a pruning pass the pruned ids are gone and the count matches what the pages show', async ($, on) => {
     const w = world(on)
     w.seed(file(finishedMany(203)))
     await $.session.start(START_EVENT)
@@ -158,9 +192,66 @@ describe('History', () => {
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
     await ui.press({ key: TOGGLE })
-    const shown = (await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => t.text?.slice(0, 8))
-    expect(shown).toHaveLength(200)
-    for (const id of pruned) expect(shown).not.toContain(`HT-${id.slice(-5)}`)
+    const shown = await allPages(ui)
+    expect(shown.flat()).toHaveLength(200)
+    expect(new Set(shown.flat()).size).toBe(200)
+    for (const id of pruned) expect(shown.flat()).not.toContain(`HT-${id.slice(-5)}`)
+    await ui.unmount()
+  })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    test(`a 200-entry History of long text draws every entry across its pages, clipped, on ${surface}`, async ($, on) => {
+      const w = world(on, { surfaces: [surface] })
+      const long = finishedMany(200, {
+        type: 'question',
+        options: undefined,
+        question: `Q ${'q'.repeat(499)}`,
+        // Long enough to clip, and short enough for the store's 3 MiB read limit.
+        response: { text: 'a'.repeat(4_000), notes: 'n'.repeat(2_000) },
+      })
+      w.seed(file(long))
+      await $.session.start(START_EVENT)
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
+      await ui.press({ key: TOGGLE })
+      const answer = await ui.find({ type: 'Text', text: /^a+…$/ })
+      expect(answer?.text).toHaveLength(300)
+      expect((await ui.find({ type: 'Text', text: /^Notes: n+…$/ }))?.text).toHaveLength('Notes: '.length + 300)
+      expect((await ui.find({ type: 'Text', text: /^\[Done\] Q q+…$/ }))?.text).toHaveLength('[Done] '.length + 200)
+      const shown = await allPages(ui)
+      expect(shown.map(one => one.length)).toEqual([50, 50, 50, 50])
+      expect(new Set(shown.flat())).toEqual(new Set(long.map(item => item.short)))
+      // And back: Previous from the last page shows the third.
+      await ui.press({ key: 'humantray:history:previous' })
+      expect(await ui.find({ type: 'Text', text: 'Page 3 of 4' })).toBeDefined()
+      await ui.unmount()
+    })
+  }
+})
+
+/** Reads every History page from the first, pressing Next: the shorts on each page. */
+async function allPages(ui: Pick<Mounted<'terminal' | 'desktop', 'Pane'>, 'find' | 'findAll' | 'press'>): Promise<string[][]> {
+  const pages: string[][] = []
+  for (;;) {
+    pages.push((await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => t.text?.slice(0, 8) ?? ''))
+    if ((await ui.find({ key: 'humantray:history:next' })) === undefined) return pages
+    await ui.press({ key: 'humantray:history:next' })
+  }
+}
+
+describe('a time no Date can hold', () => {
+  test('response_at 1e20: History draws with a placeholder, every other entry too, and the toggle still works', async ($, on) => {
+    const w = world(on)
+    w.seed(file([finished(1, { response_at: 1e20 }), finished(2), stored({ id: '01OPEN00000000000000000000', type: 'ack', header: 'Open' })]))
+    await $.session.start(START_EVENT)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: TOGGLE })
+    const lines = (await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => t.text ?? '')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toMatch(new RegExp(`^${finished(1).short} · answered at an unknown time · `))
+    expect(lines[1]).toMatch(/ · answered \d{4}-\d\d-\d\d \d\d:\d\d UTC · /)
+    await ui.press({ key: TOGGLE })
+    expect(await ui.find({ type: 'Text', text: /^\[Open\]/ })).toBeDefined()
     await ui.unmount()
   })
 })

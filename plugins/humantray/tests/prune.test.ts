@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  HISTORY_CLIP,
   KEEP_PER_REPO,
   addOrBump,
   applySettle,
@@ -112,6 +113,26 @@ describe('prune: the last 200 finished items per repository', () => {
     expect(f.items).toHaveLength(260)
   })
 
+  test('protected items newer than every finished one do not push finished ones out', () => {
+    const done = finishedMany(201)
+    const newer = Array.from({ length: 6 }, (_, i) =>
+      finished(1_000 + i, { session_id: 'session-z', delivered: false, delivered_at: undefined, response_at: START + HOUR + i }),
+    )
+    const f = file([...newer, ...done])
+    expect(prune(f)).toEqual(oldestOfMany(201, 1))
+    expect(f.items).toHaveLength(206)
+  })
+
+  test('two records sharing an id: pruning the finished one keeps the protected one', () => {
+    const twinId = finished(900).id
+    const old = finished(900, { response_at: START - 90 * HOUR })
+    const owedTwin = finished(900, { delivered: false, delivered_at: undefined, response_at: START - 90 * HOUR })
+    const f = file([owedTwin, ...finishedMany(200), old])
+    expect(prune(f)).toEqual([twinId])
+    expect(f.items).toHaveLength(201)
+    expect(f.items.filter(item => item.id === twinId)).toEqual([owedTwin])
+  })
+
   test('an ack with no line due counts and can go, though not flagged delivered', () => {
     const ack = stored({
       id: '01ACK000000000000000000000',
@@ -202,7 +223,7 @@ describe('a finished item never changes again', () => {
 describe('historyOf', () => {
   const NOW = START
 
-  test('answered items of this repository only, newest first, ties by id; open items left out', () => {
+  test('every repo value, the current one first, each newest first, ties by id; open items left out', () => {
     const f = file([
       finished(3, { response_at: NOW - 3_000 }),
       finished(1, { response_at: NOW - 1_000 }),
@@ -216,8 +237,15 @@ describe('historyOf', () => {
       finished(1).id,
       finished(4).id,
       finished(3).id,
+      finished(9).id,
     ])
-    expect(historyOf(f, OTHER, 'session-a', NOW).map(e => e.id)).toEqual([finished(9).id])
+    expect(historyOf(f, OTHER, 'session-a', NOW).map(e => e.id)).toEqual([
+      finished(9).id,
+      finished(5).id,
+      finished(1).id,
+      finished(4).id,
+      finished(3).id,
+    ])
   })
 
   test('the delivery marks', () => {
@@ -228,6 +256,8 @@ describe('historyOf', () => {
       finished(4, { delivered: false, delivered_at: undefined }),
       finished(5, { type: 'ack', response: { acknowledged: true }, status: 'acknowledged', options: undefined, delivered: false, delivered_at: undefined }),
       finished(6, { type: 'ack', response: { acknowledged: true }, status: 'acknowledged', options: undefined, notify_on_done: true }),
+      finished(7, { type: 'ack', response: { acknowledged: true }, status: 'acknowledged', options: undefined }),
+      finished(8, { delivered: false, delivered_at: undefined, delivering_at: NOW - 60_000, delivering_by: 'x/1' }),
     ])
     const marks = Object.fromEntries(historyOf(f, REPO, 'session-a', NOW).map(e => [e.id, e.mark]))
     expect(marks).toEqual({
@@ -237,6 +267,10 @@ describe('historyOf', () => {
       [finished(4).id]: 'not delivered',
       [finished(5).id]: 'none',
       [finished(6).id]: 'delivered',
+      // Owes no line, flagged delivered by its owner's pass: still no mark.
+      [finished(7).id]: 'none',
+      // At exactly the stale bound a claim is still fresh, as the pass treats it.
+      [finished(8).id]: 'delivering',
     })
   })
 
@@ -247,6 +281,24 @@ describe('historyOf', () => {
     )
     const mine = Object.fromEntries(historyOf(f, REPO, 'session-a', NOW).map(e => [e.id, e.isMine]))
     expect(mine).toEqual({ [finished(1).id]: true, [finished(2).id]: true, [finished(3).id]: false })
+  })
+
+  test('long text is clipped to the stated lengths, with an ellipsis; short text is whole', () => {
+    const f = file([
+      finished(1, {
+        type: 'question',
+        options: undefined,
+        question: 'q'.repeat(500),
+        response: { text: 'a'.repeat(10_000), notes: 'n'.repeat(10_000) },
+      }),
+      finished(2, { type: 'question', options: undefined, question: 'Short?', response: { text: 'yes', notes: 'ok' } }),
+    ])
+    const [long, short] = historyOf(f, REPO, 'session-a', NOW).sort((a, b) => (a.id < b.id ? -1 : 1))
+    expect(long?.question).toBe(`${'q'.repeat(HISTORY_CLIP.question - 1)}…`)
+    expect(long?.answer).toBe(`${'a'.repeat(HISTORY_CLIP.answer - 1)}…`)
+    expect(long?.notes).toBe(`${'n'.repeat(HISTORY_CLIP.notes - 1)}…`)
+    expect([short?.question, short?.answer, short?.notes]).toEqual(['Short?', 'yes', 'ok'])
+    expect(HISTORY_CLIP).toEqual({ question: 200, answer: 300, notes: 300 })
   })
 
   test('the answer without its notes, the notes apart, and the bumps', () => {
