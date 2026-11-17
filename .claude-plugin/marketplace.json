@@ -27,7 +27,7 @@
     },
     {
       "name": "humantray",
-      "description": "A tray of things a session needs from a person: FYIs, choices, questions, to-dos and approvals, answered whenever the person chooses and delivered to the session that asked. Runs a hooks module (TypeScript) in every session where it is installed. Items are kept under the repository's .git directory and never go into git; in a cloud session they are also copied to a private claude.ai page per repository (/humantray-page). The pane opens with /humantray-open; /humantray-viewer shows every repository's page on a computer that stays on.",
+      "description": "A tray of things a session needs from a person: FYIs, choices, questions, to-dos and approvals, answered whenever the person chooses and delivered to the session that asked. Runs a hooks module (TypeScript) in every session where it is installed. Items are kept in the repository's git common directory (humantray/items.json) and never go into git; in a cloud session they are also copied to a private claude.ai page per repository (/humantray-page). The pane opens with /humantray-open; /humantray-viewer shows the repositories' pages in one pane on a computer that stays on.",
       "source": "./plugins/humantray",
       "version": "0.1.0"
     }

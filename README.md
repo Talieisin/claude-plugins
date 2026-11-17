@@ -44,7 +44,7 @@ answer goes back to the session that asked, once.
   above the prompt.
 - **In cloud sessions** the items are also copied to a private page on your
   claude.ai account, one per repository, once you have made it. A local session on a computer that
-  stays on can show every repository's page in its pane (`/humantray-viewer`).
+  stays on can show those pages in its pane (`/humantray-viewer`).
 
 It runs code: a hooks module, loaded in every session where the plugin is
 installed. Items never go into git. How to turn it on, and its limits, are in

@@ -214,9 +214,12 @@ two places that read the same store:
   computer, with the plugin installed, start Claude Code with
   `claude --remote-control` (or
   `claude --plugin-dir <checkout>/plugins/humantray --remote-control`), then
-  run `/humantray-viewer`. Its pane shows the open items of every repository's
-  page, grouped by repository, then lead, then the session that asked, and reads
-  them again about every 20 seconds. An answer you give there is sent as a
+  run `/humantray-viewer`. It finds the humantray pages on your account and says
+  which repositories it found; if it says the list could not be read, name the
+  repositories (`/humantray-viewer <owner>/<repo>`) or a page's link instead.
+  Its pane shows the open items of those pages, grouped by repository, then
+  lead, then the session that asked, and reads them again about every 20
+  seconds. An answer you give there is sent as a
   message to the session that asked. One viewer runs per computer;
   `/humantray-viewer off` stops it. This is the main way to follow cloud
   sessions; the page is the fallback when the viewer is not running.
@@ -230,14 +233,16 @@ question in the lead's session.
 
 **Limits.**
 
-- **Items never go into git, public repository or private.** On your computer
-  they are kept in `.git/humantray/items.json` in the repository (shared by its
-  worktrees), which git never commits or pushes. In a cloud session with a
+- **Items never go into git, in a public or private repository.** On your
+  computer they are kept in `humantray/items.json` under the repository's git
+  common directory (`.git/` in an ordinary clone; `git rev-parse
+  --git-common-dir` names it), shared by all its worktrees. Git never commits or
+  pushes that file. In a cloud session with a
   page, each item's text and your answers are also copied to that private page
   on your claude.ai account, for a public repository as for a private one.
   Nothing is posted to GitHub, except in comments mode below. There is no copy
   in git for private repositories either.
-- **Items are plain text,** in `.git/humantray/` and on the page. Put nothing
+- **Items are plain text,** in that file and on the page. Put nothing
   secret in an item. In a public repository an item may quote text that anyone
   wrote in an issue or a pull request. The page draws Markdown but never runs
   HTML or scripts from an item, and shows images as links without loading them.
