@@ -9,8 +9,8 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { UNSAFE, codeBlocksOf } from '../hooks/code'
-import { blocksOf, clipBlocks, forDisplay, forDrawing, plain } from '../hooks/items'
+import { LANGUAGES, UNSAFE, codeBlocksOf, listedLang } from '../hooks/code'
+import { blocksOf, clipBlocks, forDisplay, forDrawing, plain, splitDrawn } from '../hooks/items'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 
 const ZWSP = '\u200b'
@@ -182,5 +182,70 @@ describe('forDrawing', () => {
   test('control characters are replaced in code too, since a surface refuses them', () => {
     const { fences } = split(forDrawing('```\na\u0007b\n```'))
     expect(fences).toEqual(['a\ufffdb'])
+  })
+})
+
+describe('splitDrawn: every piece its own Markdown element (#51)', () => {
+  // The deep read's bodies on PR #56: a link definition whose title is left
+  // open runs, in some parsers, across the blank line and swallows the next
+  // fence's opening line. Drawn apart, the fence is a piece of its own, and
+  // nothing in the definition's piece can reach it.
+  const PAYLOAD = '![x](https://tracker.test/p.png) <img src=https://tracker.test/q.png> [f](file:///etc/passwd)'
+  const OPEN_TITLES: Array<[string, string, string]> = [
+    ['a double-quoted title left open', ['[a]: https://example.test "', '', '```sh', 'echo "', PAYLOAD, '```'].join('\n'), `echo "\n${PAYLOAD}`],
+    ['a title in brackets left open', ['[a]: https://example.test (', '', '```sh', `echo ${PAYLOAD} )`, '```'].join('\n'), `echo ${PAYLOAD} )`],
+    ['a title on the line after the address', ['[a]: https://example.test', '"', '', '```sh', 'echo "', PAYLOAD, '```'].join('\n'), `echo "\n${PAYLOAD}`],
+    [
+      'a definition after an earlier code block',
+      ['```', 'first', '```', '', '[a]: https://example.test "', '', '```sh', 'echo "', PAYLOAD, '```'].join('\n'),
+      `echo "\n${PAYLOAD}`,
+    ],
+  ]
+  for (const [name, md, code] of OPEN_TITLES) {
+    test(`the code stays code, apart from the text before it: ${name}`, () => {
+      const pieces = splitDrawn(forDrawing(md))
+      const fence = pieces.find(piece => piece.includes(code))
+      // The code's piece holds its label and its fence, and nothing else.
+      expect(fence).toMatch(/^\*Code \d+\*\n\n(`{3,})sh\n[\s\S]*\n\1$/)
+      expect(fence?.split('\n').slice(3, -1).join('\n')).toBe(code)
+      // Every other piece is inert, and holds no part of the code.
+      for (const piece of pieces) {
+        if (piece === fence || /^\*Code \d+\*\n\n`{3,}/.test(piece)) continue
+        inert(piece)
+        expect(piece.includes('echo')).toBe(false)
+      }
+    })
+  }
+
+  test('joined with a blank line, the pieces are the drawn text; only a drawn fence holds three backticks', () => {
+    for (const md of [...CODE_CASES.map(each => each.md), RUNBOOK, ...OPEN_TITLES.map(([, body]) => body)]) {
+      for (const drawn of [forDrawing(md), forDrawing(md, false), clipBlocks(forDrawing(md), 700).text]) {
+        const pieces = splitDrawn(drawn)
+        expect(pieces.join('\n\n')).toBe(drawn)
+        for (const piece of pieces) {
+          if (/`{3}/.test(piece)) expect(piece).toMatch(/^(\*Code \d+\*\n\n)?(`{3,})[A-Za-z0-9_+.#-]*\n[\s\S]*\2$/)
+        }
+      }
+    }
+  })
+
+  test('the runbook draws as text and fence pieces, one fence a piece', () => {
+    const pieces = splitDrawn(forDrawing(RUNBOOK))
+    expect(pieces.filter(piece => piece.startsWith('*Code '))).toHaveLength(12)
+    expect(pieces.length).toBeGreaterThan(12)
+  })
+})
+
+describe('the languages a drawn fence keeps (decided for the owner on #51)', () => {
+  test('listed languages are kept, in lower case; any other is dropped from the drawing and from the copy label', () => {
+    for (const lang of ['bash', 'sh', 'json', 'yaml', 'python', 'ts', 'diff', 'powershell', 'dockerfile', 'makefile']) {
+      expect(LANGUAGES.has(lang)).toBe(true)
+      expect(forDrawing(`\`\`\`${lang}\nx\n\`\`\``)).toBe(`*Code 1*\n\n\`\`\`${lang}\nx\n\`\`\``)
+    }
+    expect(listedLang('BASH')).toBe('bash')
+    for (const lang of ['mermaid', 'math', 'latex', 'svg', 'html', 'xml', 'markdown', 'md', 'dot', 'plantuml', 'graphviz', 'katex', 'unknown', 'a'.repeat(40)]) {
+      expect(listedLang(lang)).toBe('')
+      expect(forDrawing(`\`\`\`${lang}\nx\n\`\`\``)).toBe('*Code 1*\n\n```\nx\n```')
+    }
   })
 })

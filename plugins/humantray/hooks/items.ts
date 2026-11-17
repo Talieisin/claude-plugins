@@ -17,7 +17,7 @@ import type {
   StoreFile,
 } from '../types'
 import { owesPush } from './row-shape'
-import { UNSAFE, codeBlocksOf, cutColumns, placedBlocksOf, plainLang, splitLines } from './code'
+import { UNSAFE, codeBlocksOf, cutColumns, listedLang, placedBlocksOf, splitLines } from './code'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -735,7 +735,7 @@ export const forDisplay = (md: string): string =>
  * its copy button is numbered. Control characters are still replaced
  * (`plain`), in code too, since a surface refuses them.
  */
-export const forDrawing = (md: string): string => {
+export const forDrawing = (md: string, labelled = true): string => {
   const placed = placedBlocksOf(md)
   if (placed.length === 0) return breakFences(forDisplay(md))
   const raw = splitLines(md)
@@ -753,13 +753,58 @@ export const forDrawing = (md: string): string => {
   let dedent = 0
   placed.forEach((each, k) => {
     text(at, each.start, dedent)
-    pieces.push(`*Code ${String(k + 1)}*`)
+    if (labelled) pieces.push(`*Code ${String(k + 1)}*`)
     pieces.push(fenced(each.block.text, each.block.lang))
     at = each.end + 1
     dedent = each.cut
   })
   text(at, raw.length, dedent)
   return pieces.join('\n\n')
+}
+
+/**
+ * Drawn Markdown (`forDrawing`, then perhaps cut by blocks) split into the
+ * pieces the pane draws as separate Markdown elements: each text piece, and
+ * each fence drawn here with its `Code n` label. Apart, nothing in one piece
+ * can reach into the next in any surface's parser (a link title left open
+ * runs across blank lines in some), so the guarantee needs no agreement
+ * between parsers (#51). Only a fence drawn here holds a run of three or more
+ * backticks: `breakFences` broke every other. Joined with a blank line, the
+ * pieces are the drawn text again.
+ */
+export const splitDrawn = (drawn: string): string[] => {
+  const lines = drawn.split('\n')
+  const pieces: string[] = []
+  let text: string[] = []
+  const flush = () => {
+    while (text.length > 0 && text[0] === '') text.shift()
+    while (text.length > 0 && text[text.length - 1] === '') text.pop()
+    if (text.length > 0) pieces.push(text.join('\n'))
+    text = []
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^(`{3,})[A-Za-z0-9_+.#-]*$/.exec(lines[i] ?? '')
+    if (open === null) {
+      text.push(lines[i] ?? '')
+      continue
+    }
+    // Its label, when the line before the blank one is `*Code n*`, goes with it.
+    let label: string[] = []
+    if (text.length >= 2 && text[text.length - 1] === '' && /^\*Code \d+\*$/.test(text[text.length - 2] ?? '')) {
+      label = [text[text.length - 2] ?? '', '']
+      text = text.slice(0, -2)
+    }
+    flush()
+    const ticks = open[1] ?? ''
+    const fence = [lines[i] ?? '']
+    for (i++; i < lines.length; i++) {
+      fence.push(lines[i] ?? '')
+      if (lines[i] === ticks) break
+    }
+    pieces.push([...label, ...fence].join('\n'))
+  }
+  flush()
+  return pieces
 }
 
 /** Every run of three or more backticks or tildes, broken after its first character: no fence opens. */
@@ -775,7 +820,7 @@ const fenced = (code: string, lang: string): string => {
   const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map(run => run.length))
   const ticks = '`'.repeat(Math.max(3, longest + 1))
   const shown = plain(code).replace(new RegExp(UNSAFE.source, 'g'), REPLACEMENT)
-  return `${ticks}${plainLang(lang)}\n${code === '' ? '' : `${shown}\n`}${ticks}`
+  return `${ticks}${listedLang(lang)}\n${code === '' ? '' : `${shown}\n`}${ticks}`
 }
 
 /**
@@ -801,7 +846,7 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       const question = clip(oneLine(item.question), HISTORY_CLIP.question)
       // Cut what is drawn (forDisplay can lengthen it), so a page's size is bounded whatever was typed.
       const parts = partsOf(item).map(part => {
-        const cut = clipBlocks(forDrawing(part.text), HISTORY_CLIP.part)
+        const cut = clipBlocks(forDrawing(part.text, false), HISTORY_CLIP.part)
         return { label: part.label, text: cut.text, length: part.text.length, clipped: cut.clipped }
       })
       return {
@@ -838,12 +883,13 @@ export const FULL_BUDGET = 90_000
  */
 export const fullOf = (item: Item): HistoryFull => {
   let left = FULL_BUDGET
-  const cut = (text: string) => {
-    const drawn = clipBlocks(forDrawing(text), left)
+  // Only the body's blocks have copy buttons, so only the body's are labelled `Code n`.
+  const cut = (text: string, labelled: boolean) => {
+    const drawn = clipBlocks(forDrawing(text, labelled), left)
     left = Math.max(0, left - drawn.text.length)
     return { text: drawn.text, length: text.length, clipped: drawn.clipped }
   }
-  const body = cut(item.body_md)
+  const body = cut(item.body_md, true)
   return {
     id: item.id,
     short: item.short,
@@ -851,7 +897,7 @@ export const fullOf = (item: Item): HistoryFull => {
     question: item.question,
     body,
     answer: item.type === 'question' ? '' : choiceOf(item),
-    parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text) })),
+    parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text, false) })),
     copy: codeBlocksOf(item.body_md),
   }
 }

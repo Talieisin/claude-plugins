@@ -561,3 +561,21 @@ export const RICH = [
   '',
   '    an indented code block',
 ].join('\n')
+
+/**
+ * The Markdown a pane draws under `key`, as one text: one element, or the
+ * pieces `splitDrawn` gave (`key:0`, `key:1`, …) joined by a blank line (#51).
+ */
+export async function drawnText(
+  ui: { find: (q: { key: string }) => Promise<unknown>; findAll: (q: { type: string }) => Promise<unknown[]> },
+  key: string,
+): Promise<string | undefined> {
+  const one = (await ui.find({ key })) as { type?: string; props?: { text?: string } } | undefined
+  if (one === undefined) return undefined
+  if (one.type === 'Markdown') return one.props?.text
+  const pieces = ((await ui.findAll({ type: 'Markdown' })) as Array<{ key?: string; props?: { text?: string } }>)
+    .map(node => ({ n: new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:(\\d+)$`).exec(node.key ?? '')?.[1], text: node.props?.text ?? '' }))
+    .filter(piece => piece.n !== undefined)
+    .sort((a, b) => Number(a.n) - Number(b.n))
+  return pieces.map(piece => piece.text).join('\n\n')
+}

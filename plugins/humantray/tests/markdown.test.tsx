@@ -7,7 +7,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { forDrawing } from '../hooks/items'
 
-import { ADD, FILE, PANE, RICH, START_EVENT, answerOf, answerOne, world } from './world'
+import { ADD, FILE, PANE, RICH, START_EVENT, answerOf, answerOne, drawnText, world } from './world'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const TOGGLE = 'humantray:view'
@@ -26,14 +26,14 @@ describe('a rich Markdown body and a rich Markdown answer keep their structure',
         await $.tool.call({ tool: ADD, type: 'question', header: 'Plan', question: 'How?', body_md: RICH, notes: true }),
       ).id
       const ui = await $.ui.mount({ ...PANE, surface })
-      const body = await ui.find({ key: `${id}:body` })
-      expect(body?.type).toBe('Markdown')
-      // Drawn as stored but for its code, which is drawn as fences of its own (#51).
-      expect(body?.props.text).toBe(forDrawing(RICH))
+      // Drawn as stored but for its code, which is drawn as fences of its own, each piece its own Markdown element (#51).
+      const body = await drawnText(ui, `${id}:body`)
+      expect((await ui.find({ key: `${id}:body:0` }))?.type).toBe('Markdown')
+      expect(body).toBe(forDrawing(RICH))
       for (const kept of ['## Steps', '1. Rotate the **key**', '   - in `prod` first', '> Check the logs first.', '| prod | yes |']) {
-        expect(String(body?.props.text)).toContain(kept)
+        expect(String(body)).toContain(kept)
       }
-      expect(String(body?.props.text)).toContain('```sh\nmake rotate\n\n    echo indented\n```')
+      expect(String(body)).toContain('```sh\nmake rotate\n\n    echo indented\n```')
       // The answer and notes boxes are several lines tall.
       expect((await ui.find({ key: `${id}:text` }))?.props.rows).toBe(3)
       expect((await ui.find({ key: `${id}:notes` }))?.props.rows).toBe(3)
@@ -44,9 +44,9 @@ describe('a rich Markdown body and a rich Markdown answer keep their structure',
       expect(w.store().items[0]?.response).toEqual({ text: RICH, notes })
 
       await ui.press({ key: TOGGLE })
-      const answer = await ui.find({ key: `${id}:Answer` })
-      expect(answer?.type).toBe('Markdown')
-      expect(answer?.props.text).toBe(forDrawing(RICH))
+      // Its code drawn apart: the pieces are Markdown elements.
+      expect((await ui.find({ key: `${id}:Answer:0` }))?.type).toBe('Markdown')
+      expect(await drawnText(ui, `${id}:Answer`)).toBe(forDrawing(RICH, false))
       expect((await ui.find({ key: `${id}:Notes` }))?.props.text).toBe(notes)
       expect(await ui.find({ type: 'Text', text: 'Answer:' })).toBeDefined()
       // Nothing was shortened, so nothing offers "Show in full".
@@ -124,16 +124,16 @@ describe('show in full', () => {
       ])
       const ui = await $.ui.mount({ ...PANE, surface })
       await ui.press({ key: TOGGLE })
-      const clipped = (await ui.find({ key: `${item.id}:Answer` }))?.props.text
+      const clipped = await drawnText(ui, `${item.id}:Answer`)
       expect(typeof clipped).toBe('string')
-      expect(forDrawing(long).startsWith(String(clipped))).toBe(true)
+      expect(forDrawing(long, false).startsWith(String(clipped))).toBe(true)
       expect(String(clipped).length).toBeLessThanOrEqual(500)
       // Every fence it opens, it closes.
       expect((String(clipped).match(/^```/gm) ?? []).length % 2).toBe(0)
 
       await ui.press({ key: `${item.id}:full` })
-      expect((await ui.find({ key: `${item.id}:full:Answer` }))?.props.text).toBe(forDrawing(long))
-      expect((await ui.find({ key: `${item.id}:full:body` }))?.props.text).toBe(forDrawing(RICH))
+      expect(await drawnText(ui, `${item.id}:full:Answer`)).toBe(forDrawing(long, false))
+      expect(await drawnText(ui, `${item.id}:full:body`)).toBe(forDrawing(RICH))
       // The toggle leaves the full view, and coming back shows the list.
       await ui.press({ key: TOGGLE })
       await ui.press({ key: TOGGLE })

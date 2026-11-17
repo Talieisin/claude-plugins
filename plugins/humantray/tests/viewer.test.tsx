@@ -12,7 +12,7 @@ import { FIND_MS, GIVE_UP_MS, LEASE_MS, MAX_LISTED, TICK_MS, isGivenUp, lastActi
 import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
 import { codeBlocksOf } from '../hooks/code'
 import { RUNBOOK } from './code-fixtures'
-import { ADD, COMMAND, LIST, PANE, START, START_EVENT, answerOf, stored, world } from './world'
+import { ADD, COMMAND, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
 
 type On = Parameters<typeof world>[0]
 
@@ -1120,7 +1120,7 @@ describe('copying code from a viewer card (#51)', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: `${'Lead-in words. '.repeat(450)}\n\n${RUNBOOK}` }))
     await turnOn($, w)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    expect((await ui.find({ key: `v:${ID1}:body` }))?.props.text).not.toContain('docker build')
+    expect(await drawnText(ui, `v:${ID1}:body`)).not.toContain('docker build')
     await ui.press({ key: `v:${ID1}:copy:1` })
     expect(copies.at(-1)).toBe(blocks[0]?.text)
     expect(copies.at(-1)).toContain('\tEOF')
@@ -1139,7 +1139,7 @@ describe('copying code from a viewer card (#51)', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: RUNBOOK }))
     await turnOn($, w)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-    expect((await ui.find({ key: `v:${ID1}:body` }))?.props.text).toContain('step6')
+    expect(await drawnText(ui, `v:${ID1}:body`)).toContain('step6')
     expect(await ui.find({ key: `v:${ID1}:full` })).toBeUndefined()
   })
 

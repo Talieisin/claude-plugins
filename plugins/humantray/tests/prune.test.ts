@@ -391,7 +391,7 @@ describe('fullOf: one entry whole, as drawn, under the budget', () => {
     const full = fullOf(item)
     expect(full.body).toEqual({ text: 'See !\u200b[x](https://x.test/x.png)', length: 30, clipped: false })
     expect(full.parts).toEqual([
-      { label: 'Answer', text: forDrawing(RICH), length: RICH.length, clipped: false },
+      { label: 'Answer', text: forDrawing(RICH, false), length: RICH.length, clipped: false },
       { label: 'Notes', text: '<\u200bimg src=x>', length: 11, clipped: false },
     ])
   })

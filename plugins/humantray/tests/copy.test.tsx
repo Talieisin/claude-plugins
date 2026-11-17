@@ -10,7 +10,7 @@ import { type Engine, describe, expect, test } from 'claude-code/testing'
 import { codeBlocksOf } from '../hooks/code'
 import { COPY_PAGE, clipboardTools, copyLabel } from '../hooks/copy'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
-import { ADD, PANE, START_EVENT, answerOf, world } from './world'
+import { ADD, PANE, START_EVENT, answerOf, drawnText, world } from './world'
 
 type Copied = { text: string; surface?: string }
 type Ran = { argv: string[]; stdin?: string; env?: Record<string, string> }
@@ -85,7 +85,7 @@ describe('the copy buttons', () => {
         expect(copies.at(-1)?.text.includes('\u200b')).toBe(false)
       }
       // The drawn body holds each block as stored too, so a surface's own copy is exact (#51).
-      const body = (await ui.find({ key: `${id}:body` }))?.props.text as string
+      const body = (await drawnText(ui, `${id}:body`)) as string
       for (const [k, text] of each.blocks.entries()) {
         if (text !== '' && !(each.unsafe ?? []).includes(k)) expect(body).toContain(text)
       }
@@ -120,10 +120,26 @@ describe('the copy buttons', () => {
   test('a label: number, language, first line cut; never the display rewrite', () => {
     expect(copyLabel({ text: '\n  cat <<EOF > /tmp/x\nEOF', lang: 'bash', unsafe: false }, 3)).toBe('Copy 3 · bash · cat <<EOF > /tmp/x')
     expect(copyLabel({ text: 'x'.repeat(60), lang: '', unsafe: false }, 1)).toBe(`Copy 1 · ${'x'.repeat(35)}…`)
-    // A language is shown only when it is plain and at most 40 characters, as the drawn fence keeps it.
+    // A language is shown only when it is on the list the drawn fence keeps (decided for the owner on #51).
     expect(copyLabel({ text: 'ls', lang: 'a'.repeat(41), unsafe: false }, 2)).toBe('Copy 2 · ls')
     expect(copyLabel({ text: 'ls', lang: 'x<b>', unsafe: false }, 2)).toBe('Copy 2 · ls')
-    expect(copyLabel({ text: 'ls', lang: 'a'.repeat(40), unsafe: false }, 2)).toBe(`Copy 2 · ${'a'.repeat(40)} · ls`)
+    expect(copyLabel({ text: 'ls', lang: 'mermaid', unsafe: false }, 2)).toBe('Copy 2 · ls')
+    expect(copyLabel({ text: 'ls', lang: 'Bash', unsafe: false }, 2)).toBe('Copy 2 · bash · ls')
+  })
+})
+
+describe('the pane draws each code block as a Markdown element of its own (#51)', () => {
+  test('a link definition whose title is left open cannot reach the fence after it', async ($, on) => {
+    const { copies } = copyWorld(on)
+    await $.session.start(START_EVENT)
+    const md = ['[a]: https://example.test "', '', '```sh', 'echo "', '**if this is bold, the code left its fence**', '```'].join('\n')
+    const { id } = await addDo($, md)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await ui.find({ key: `${id}:body` }))?.type).toBe('Box')
+    expect((await ui.find({ key: `${id}:body:0` }))?.props.text).toBe('[a]: https://example.test "')
+    expect((await ui.find({ key: `${id}:body:1` }))?.props.text).toBe('*Code 1*\n\n```sh\necho "\n**if this is bold, the code left its fence**\n```')
+    await ui.press({ key: `${id}:copy:1` })
+    expect(copies.at(-1)?.text).toBe('echo "\n**if this is bold, the code left its fence**')
   })
 })
 

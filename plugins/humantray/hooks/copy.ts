@@ -15,7 +15,7 @@
 
 import type { EngineInterface, RenderSurface } from 'claude-code'
 
-import { type CodeBlock, plainLang } from './code'
+import { type CodeBlock, listedLang } from './code'
 import { clip, plain } from './items'
 import { isCloud } from './store-pass'
 
@@ -29,7 +29,7 @@ export type CopyOutcome = { ok: true; via: 'surface' | 'tool' } | { ok: false; w
 export const copyLabel = (block: CodeBlock, n: number): string => {
   const first = block.text.split('\n').find(line => line.trim() !== '') ?? ''
   const shown = clip(plain(first.trim()).replace(/\t/g, ' '), 36)
-  const lang = plainLang(block.lang)
+  const lang = listedLang(block.lang)
   return [`Copy ${String(n)}`, ...(lang === '' ? [] : [lang]), ...(shown === '' ? [] : [shown])].join(' · ')
 }
 

@@ -49,7 +49,6 @@ import {
   buildResponse,
   clipBlocks,
   deliveryText,
-  forDisplay,
   forDrawing,
   fullOf,
   historyOf,
@@ -62,6 +61,7 @@ import {
   prune,
   resolveOwner,
   shortOf,
+  splitDrawn,
   ulid,
   validateAdd,
 } from './items'
@@ -686,6 +686,20 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Input, Link, Markdown, Text } = $.ui.resolve(e)
+    // Drawn Markdown (forDrawing's), one element a piece (#51): each text piece
+    // and each fence drawn here apart, so nothing in one can reach into the
+    // next in any surface's parser. One piece keeps the single element.
+    const drawn = (key: string, text: string) => {
+      const pieces = splitDrawn(text)
+      if (pieces.length <= 1) return <Markdown key={key} text={text} />
+      return (
+        <Box key={key} flexDirection="column" gap={1}>
+          {pieces.map((piece, n) => (
+            <Markdown key={`${key}:${String(n)}`} text={piece} />
+          ))}
+        </Box>
+      )
+    }
     // A card's code blocks, one copy button each (#51): the stored text, never
     // the drawn. At most COPY_PAGE at once, so a card full of fences stays
     // small; a button pages through the rest. `draftId` keeps the page shown.
@@ -888,7 +902,7 @@ export const register: Register = on => {
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
               <Text dimColor>{full.short}</Text>
-              {full.body.text !== '' && <Markdown key={`v:${full.id}:full:body`} text={full.body.text} />}
+              {full.body.text !== '' && drawn(`v:${full.id}:full:body`, full.body.text)}
               {full.body.clipped && (
                 <Text key={`v:${full.id}:full:more`} dimColor>
                   {`(… cut short: ${String(full.body.length)} characters in all)`}
@@ -930,7 +944,7 @@ export const register: Register = on => {
                     {part.label}:
                   </Text>,
                 ]
-                if (part.text !== '') nodes.push(<Markdown key={`v:${entry.id}:${part.label}`} text={part.text} />)
+                if (part.text !== '') nodes.push(drawn(`v:${entry.id}:${part.label}`, part.text))
                 if (part.clipped) {
                   nodes.push(
                     <Text key={`v:${entry.id}:${part.label}:more`} dimColor>
@@ -1070,7 +1084,7 @@ export const register: Register = on => {
               {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
               {card.old ? ' · old' : ''}
             </Text>
-            {body.text !== '' && <Markdown key={`${key}:body`} text={body.text} />}
+            {body.text !== '' && drawn(`${key}:body`, body.text)}
             {body.clipped && (
               <Button key={`${key}:full`} label="Show in full" onPress={() => update($, viewerExpanded, () => fullOf(item))} />
             )}
@@ -1109,7 +1123,7 @@ export const register: Register = on => {
                 [{plain(item.header)}] {plain(item.question)}
               </Text>
               <Text dimColor>{item.short}</Text>
-              {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDrawing(item.body_md)} />}
+              {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md))}
               {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
               {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
               {draft.error !== '' && <Text color="error">{draft.error}</Text>}
@@ -1133,7 +1147,7 @@ export const register: Register = on => {
       return <Text dimColor>No humantray here: not in a git repository, or the store could not be read.</Text>
     }
     const showing = await read($, view)
-    // Text already made safe to draw (forDisplay, then cut): History's list
+    // Text already made safe to draw (forDrawing, then cut): History's list
     // parts (historyOf), and a full entry's body and parts (fullOf).
     type Drawn = { text: string; length: number; clipped: boolean }
     const more = (key: string, part: Drawn) => (
@@ -1152,7 +1166,7 @@ export const register: Register = on => {
             {part.label}:
           </Text>,
         )
-        if (part.text !== '') nodes.push(<Markdown key={`${id}:${part.label}`} text={part.text} />)
+        if (part.text !== '') nodes.push(drawn(`${id}:${part.label}`, part.text))
         if (part.clipped) nodes.push(more(`${id}:${part.label}:more`, part))
         return nodes
       })
@@ -1211,7 +1225,7 @@ export const register: Register = on => {
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
               <Text dimColor>{full.short}</Text>
-              {full.body.text !== '' && <Markdown key={`${full.id}:full:body`} text={full.body.text} />}
+              {full.body.text !== '' && drawn(`${full.id}:full:body`, full.body.text)}
               {full.body.clipped && more(`${full.id}:full:body:more`, full.body)}
               {await copyList(`${full.id}:full`, `full:${full.id}`, full.short, full.copy ?? [])}
               {full.answer !== '' && <Text>{plain(full.answer)}</Text>}
@@ -1294,7 +1308,7 @@ export const register: Register = on => {
             {from}
             {bumped}
           </Text>
-          {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDrawing(item.body_md)} />}
+          {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md))}
           {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
           {controls}
           {draft.error !== '' && <Text color="error">{draft.error}</Text>}
