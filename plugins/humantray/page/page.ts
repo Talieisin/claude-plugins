@@ -59,8 +59,6 @@ main, .group, .asker { display: flex; flex-direction: column; gap: 12px; min-wid
 .chip.warn { color: var(--warn); background: transparent; border: 1px solid var(--line); }
 .card h2 { font-size: 15px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .body { min-width: 0; overflow-wrap: anywhere; }
-.body p { margin: 0 0 6px; }
-.body ul, .body ol { margin: 0 0 6px; padding-left: 20px; }
 code { font-family: var(--mono); font-size: 12.5px; background: var(--chip); border-radius: 4px; padding: 0 4px; }
 pre { background: var(--chip); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 0 0 6px; }
 pre code { padding: 0; background: none; }
@@ -76,7 +74,27 @@ pre code { padding: 0; background: none; }
 .btn:disabled { opacity: .5; cursor: default; }
 .status { font-size: 13px; color: var(--muted); }
 .status.bad { color: var(--bad); }
-.ans { font-size: 13px; border-left: 2px solid var(--line); padding-left: 10px; color: var(--muted); overflow-wrap: anywhere; }
+.ans { font-size: 13px; border-left: 2px solid var(--line); padding-left: 10px; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ans-when, .ans-label { color: var(--muted); font-size: 12px; }
+.md { min-width: 0; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 6px; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 10px 0 6px; line-height: 1.3; font-weight: 600; text-wrap: balance; }
+.md h1 { font-size: 17px; } .md h2 { font-size: 16px; } .md h3 { font-size: 15px; } .md h4, .md h5, .md h6 { font-size: 14px; }
+.md ul, .md ol { margin: 0 0 6px; padding-left: 22px; }
+.md li > ul, .md li > ol { margin: 2px 0; }
+.md li.task { list-style: none; margin-left: -20px; }
+.md li.task > input { margin: 0 6px 0 0; vertical-align: -1px; }
+.md blockquote { margin: 0 0 6px; padding: 2px 0 2px 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md .table { overflow-x: auto; margin: 0 0 6px; }
+.md table { border-collapse: collapse; font-size: 13px; }
+.md th, .md td { border: 1px solid var(--line); padding: 4px 8px; vertical-align: top; }
+.md th { background: var(--chip); font-weight: 600; }
+.md del { color: var(--muted); }
+.md .img-link::before { content: "▣ "; }
+.opt.other { cursor: default; }
 .ok { color: var(--ok); }
 .empty { color: var(--muted); text-align: center; padding: 24px; }
 details.card summary { cursor: pointer; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; list-style: none; }
@@ -169,66 +187,353 @@ details.card[open] summary { margin-bottom: 10px; }
     return Math.round(h / 24) + " days ago";
   }
 
-  /* Markdown, a small part of it, built as DOM nodes: no HTML is ever parsed. */
-  var INLINE = /(\x60[^\x60\n]+\x60)|(\*\*[^*\n]+\*\*)|(\*[^*\s][^*\n]*\*)|(\[[^\]\n]+\]\([^)\s]+\))/;
+  /*
+   * Markdown, as much of it as can be drawn safely (GitHub's flavour): headings,
+   * emphasis and strikethrough, nested and task lists, block quotes, inline and
+   * fenced code, tables, horizontal rules, links and autolinks. Every node is
+   * built here and every string set as text: no HTML is ever parsed, raw HTML
+   * shows as the text it is, links are http and https only, and an image is
+   * shown as a link to it, never loaded. The stored text is never changed.
+   */
   function safeUrl(href) {
     try {
       var url = new URL(href);
       return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
     } catch (e) { return null; }
   }
-  function inline(text, parent) {
-    var rest = text;
-    while (rest.length > 0) {
-      var m = INLINE.exec(rest);
-      if (!m) { parent.appendChild(document.createTextNode(rest)); return; }
-      if (m.index > 0) parent.appendChild(document.createTextNode(rest.slice(0, m.index)));
-      var token = m[0];
-      if (m[1]) parent.appendChild(el("code", { text: token.slice(1, -1) }));
-      else if (m[2]) { var b = el("strong"); inline(token.slice(2, -2), b); parent.appendChild(b); }
-      else if (m[3]) { var i = el("em"); inline(token.slice(1, -1), i); parent.appendChild(i); }
-      else {
-        var close = token.indexOf("](");
-        var label = token.slice(1, close);
-        var href = safeUrl(token.slice(close + 2, -1));
-        if (href) parent.appendChild(el("a", { href: href, target: "_blank", rel: "noopener noreferrer", text: label }));
-        else parent.appendChild(document.createTextNode(token));
-      }
-      rest = rest.slice(m.index + token.length);
-    }
+  function link(href, fill, parent, title) {
+    var url = safeUrl(href);
+    if (!url) return false;
+    var a = el("a", { href: url, target: "_blank", rel: "noopener noreferrer" });
+    if (title) a.setAttribute("title", title);
+    fill(a);
+    parent.appendChild(a);
+    return true;
   }
-  function markdown(source, parent) {
-    var lines = String(source).replace(/\r\n?/g, "\n").split("\n");
+  var PUNCT = /[!-\/:-@\[-\x60{-~]/;
+  /* [label](href "title"), from the [ at i: the parts and where it ends, or null. */
+  function bracketLink(text, i) {
+    var depth = 0;
+    var j = i;
+    for (; j < text.length; j++) {
+      var ch = text.charAt(j);
+      if (ch === "\\") { j++; continue; }
+      if (ch === "[") depth++;
+      else if (ch === "]") { depth--; if (depth === 0) break; }
+    }
+    if (depth !== 0 || text.charAt(j + 1) !== "(") return null;
+    var m = /^\(\s*(<[^<>\n]*>|[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+("[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/.exec(text.slice(j + 1));
+    if (!m) return null;
+    var href = m[1].charAt(0) === "<" ? m[1].slice(1, -1) : m[1];
+    return { label: text.slice(i + 1, j), href: href, title: m[2] ? m[2].slice(1, -1) : "", end: j + 1 + m[0].length };
+  }
+  /* **strong**, *em*, __strong__, _em_ or ~~del~~ from the delimiter at i, or null. */
+  function emphasis(text, i) {
+    var ch = text.charAt(i);
+    var run = /^(\*+|_+|~+)/.exec(text.slice(i))[0];
+    if (ch === "~" && run.length !== 2) return null;
+    var size = ch === "~" || run.length >= 2 ? 2 : 1;
+    var after = text.charAt(i + size);
+    if (after === "" || /\s/.test(after)) return null;
+    if (ch === "_" && i > 0 && /[A-Za-z0-9]/.test(text.charAt(i - 1))) return null;
+    var delim = size === 2 ? ch + ch : ch;
+    var start = i + size;
+    for (var j = start + 1; j <= text.length - size; j++) {
+      if (text.substr(j, size) !== delim) continue;
+      if (text.charAt(j - 1) === "\\" || /\s/.test(text.charAt(j - 1))) continue;
+      if (size === 1 && text.charAt(j + 1) === ch) { j++; continue; }
+      while (size === 2 && text.charAt(j + size) === ch) j++;
+      if (ch === "_" && /[A-Za-z0-9]/.test(text.charAt(j + size))) continue;
+      return { tag: ch === "~" ? "del" : size === 2 ? "strong" : "em", inner: text.slice(start, j), end: j + size };
+    }
+    return null;
+  }
+  function inline(text, parent) {
+    var buf = "";
+    function flushText() { if (buf) { parent.appendChild(document.createTextNode(buf)); buf = ""; } }
+    var i = 0;
+    while (i < text.length) {
+      var c = text.charAt(i);
+      var rest = text.slice(i);
+      var m;
+      if (c === "\\") {
+        var next = text.charAt(i + 1);
+        if (next === "\n") { flushText(); parent.appendChild(el("br")); i += 2; continue; }
+        if (next && PUNCT.test(next)) { buf += next; i += 2; continue; }
+        buf += c; i++; continue;
+      }
+      if (c === "\n") {
+        if (/ {2,}$/.test(buf)) { buf = buf.replace(/ +$/, ""); flushText(); parent.appendChild(el("br")); }
+        else buf = buf.replace(/ +$/, "") + "\n";
+        i++; continue;
+      }
+      if (c === "\x60") {
+        m = /^(\x60+)([\s\S]*?[^\x60])\1(?!\x60)/.exec(rest);
+        if (m) {
+          flushText();
+          var code = m[2].replace(/\n/g, " ");
+          if (/^ [\s\S]* $/.test(code) && code.trim() !== "") code = code.slice(1, -1);
+          parent.appendChild(el("code", { text: code }));
+          i += m[0].length; continue;
+        }
+        m = /^\x60+/.exec(rest);
+        buf += m[0]; i += m[0].length; continue;
+      }
+      if (c === "<") {
+        m = /^<(https?:\/\/[^\s<>]+)>/i.exec(rest);
+        if (m && safeUrl(m[1])) {
+          var auto = m[1];
+          flushText();
+          link(auto, function (a) { a.textContent = auto; }, parent);
+          i += m[0].length; continue;
+        }
+        buf += c; i++; continue;
+      }
+      if (c === "!" && text.charAt(i + 1) === "[") {
+        var image = bracketLink(text, i + 1);
+        if (image) {
+          var shown = image.label.trim() === "" ? image.href : image.label;
+          flushText();
+          if (!link(image.href, function (a) { a.className = "img-link"; a.textContent = "Image: " + shown; }, parent, image.title)) {
+            parent.appendChild(document.createTextNode(text.slice(i, image.end)));
+          }
+          i = image.end; continue;
+        }
+      }
+      if (c === "[") {
+        var found = bracketLink(text, i);
+        if (found) {
+          flushText();
+          if (!link(found.href, function (a) { inline(found.label, a); }, parent, found.title)) inline(found.label, parent);
+          i = found.end; continue;
+        }
+      }
+      if ((c === "h" || c === "H") && (i === 0 || /[\s(*_~]/.test(text.charAt(i - 1)))) {
+        m = /^https?:\/\/[^\s<]+/i.exec(rest);
+        if (m) {
+          var bare = m[0].replace(/[.,;:!?'")\]*_~]+$/, "");
+          if (safeUrl(bare)) {
+            flushText();
+            link(bare, function (a) { a.textContent = bare; }, parent);
+            i += bare.length; continue;
+          }
+        }
+      }
+      if (c === "*" || c === "_" || c === "~") {
+        var span = emphasis(text, i);
+        if (span) {
+          flushText();
+          var node = el(span.tag);
+          inline(span.inner, node);
+          parent.appendChild(node);
+          i = span.end; continue;
+        }
+        m = /^(\*+|_+|~+)/.exec(rest);
+        buf += m[0]; i += m[0].length; continue;
+      }
+      buf += c; i++;
+    }
+    flushText();
+  }
+
+  var FENCE = /^ {0,3}(\x60{3,}|~{3,})[ \t]*([^\x60]*)$/;
+  var HR = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+  var ATX = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
+  var QUOTE = /^ {0,3}> ?(.*)$/;
+  var ITEM = /^( {0,3})([-*+]|\d{1,9}[.)])(?:([ \t]+)(.*)|[ \t]*)$/;
+  var DELIMS = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+  var BLANK = /^\s*$/;
+  function startsBlock(line) {
+    return FENCE.test(line) || HR.test(line) || ATX.test(line) || QUOTE.test(line) || ITEM.test(line);
+  }
+  function cells(line) {
+    var s = line.trim();
+    if (s.charAt(0) === "|") s = s.slice(1);
+    if (s.charAt(s.length - 1) === "|" && s.charAt(s.length - 2) !== "\\") s = s.slice(0, -1);
+    var out = [];
+    var cur = "";
+    for (var k = 0; k < s.length; k++) {
+      var ch = s.charAt(k);
+      if (ch === "\\" && s.charAt(k + 1) === "|") { cur += "|"; k++; continue; }
+      if (ch === "|") { out.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+  function table(lines, i, head, delims, parent) {
+    var align = delims.map(function (d) {
+      var left = d.charAt(0) === ":";
+      var right = d.charAt(d.length - 1) === ":";
+      return left && right ? "center" : right ? "right" : left ? "left" : "";
+    });
+    var row = function (values, tag) {
+      var tr = el("tr");
+      for (var k = 0; k < head.length; k++) {
+        var cell = el(tag);
+        if (align[k]) cell.style.textAlign = align[k];
+        inline(values[k] || "", cell);
+        tr.appendChild(cell);
+      }
+      return tr;
+    };
+    var body = el("tbody");
+    i += 2;
+    while (i < lines.length && !BLANK.test(lines[i]) && lines[i].indexOf("|") >= 0 && !startsBlock(lines[i])) {
+      body.appendChild(row(cells(lines[i]), "td"));
+      i++;
+    }
+    parent.appendChild(el("div", { className: "table" }, [el("table", null, [el("thead", null, [row(head, "th")]), body])]));
+    return i;
+  }
+  function list(lines, i, parent, depth) {
+    var first = ITEM.exec(lines[i]);
+    var ordered = /\d/.test(first[2]);
+    var marker = ordered ? first[2].slice(-1) : first[2];
+    var node = el(ordered ? "ol" : "ul");
+    if (ordered && parseInt(first[2], 10) !== 1) node.setAttribute("start", String(parseInt(first[2], 10)));
+    var items = [];
+    var loose = false;
+    while (i < lines.length) {
+      var m = ITEM.exec(lines[i]);
+      if (!m) break;
+      if (ordered ? !/\d/.test(m[2]) || m[2].slice(-1) !== marker : m[2] !== marker) break;
+      var pad = m[3] ? m[3].length : 1;
+      var width = m[1].length + m[2].length + (pad > 4 ? 1 : pad);
+      var body = [m[4] !== undefined ? m[4] : ""];
+      var blank = false;
+      i++;
+      while (i < lines.length) {
+        var line = lines[i];
+        if (BLANK.test(line)) { body.push(""); blank = true; i++; continue; }
+        var indent = /^ */.exec(line)[0].length;
+        if (indent >= width) { body.push(line.slice(width)); blank = false; i++; continue; }
+        if (!blank && !startsBlock(line)) { body.push(line.trim()); i++; continue; }
+        break;
+      }
+      var trailing = 0;
+      while (body.length > 1 && body[body.length - 1] === "") { body.pop(); trailing++; }
+      if (trailing > 0 && i < lines.length && ITEM.test(lines[i])) loose = true;
+      items.push(body);
+    }
+    items.forEach(function (body) {
+      var li = el("li");
+      var task = /^\[([ xX])\][ \t]+/.exec(body[0]);
+      if (task) {
+        body[0] = body[0].slice(task[0].length);
+        var box = el("input", { type: "checkbox", disabled: "", "aria-label": task[1] === " " ? "not done" : "done" });
+        box.checked = task[1] !== " ";
+        li.className = "task";
+        li.appendChild(box);
+      }
+      var holder = el("div");
+      blocks(body, holder, depth + 1);
+      while (holder.firstChild) {
+        var child = holder.firstChild;
+        if (!loose && child.nodeName === "P") {
+          while (child.firstChild) li.appendChild(child.firstChild);
+          holder.removeChild(child);
+        } else li.appendChild(child);
+      }
+      node.appendChild(li);
+    });
+    parent.appendChild(node);
+    return i;
+  }
+  function blocks(lines, parent, depth) {
+    if (depth > 12) { parent.appendChild(el("p", { text: lines.join("\n") })); return; }
     var para = [];
     function flush() {
       if (para.length === 0) return;
-      var p = el("p"); inline(para.join(" "), p); parent.appendChild(p); para = [];
+      var p = el("p");
+      inline(para.join("\n").replace(/^\s+|\s+$/g, ""), p);
+      parent.appendChild(p);
+      para = [];
     }
-    for (var i = 0; i < lines.length; i++) {
+    var i = 0;
+    while (i < lines.length) {
       var line = lines[i];
-      if (/^\s*\x60\x60\x60/.test(line)) {
+      var m;
+      if (BLANK.test(line)) { flush(); i++; continue; }
+      if ((m = FENCE.exec(line))) {
         flush();
+        var fence = m[1];
+        var lead = /^ */.exec(line)[0].length;
+        var closing = new RegExp("^ {0,3}" + (fence.charAt(0) === "~" ? "~" : "\\x60") + "{" + fence.length + ",}[ \\t]*$");
         var code = [];
-        for (i = i + 1; i < lines.length && !/^\s*\x60\x60\x60/.test(lines[i]); i++) code.push(lines[i]);
-        parent.appendChild(el("pre", null, [el("code", { text: code.join("\n") })]));
-        continue;
-      }
-      var bullet = /^\s*([-*]|\d+\.)\s+(.*)$/.exec(line);
-      if (bullet) {
-        flush();
-        var ordered = /\d/.test(bullet[1]);
-        var list = el(ordered ? "ol" : "ul");
-        for (; i < lines.length; i++) {
-          var each = /^\s*([-*]|\d+\.)\s+(.*)$/.exec(lines[i]);
-          if (!each || /\d/.test(each[1]) !== ordered) { i--; break; }
-          var li = el("li"); inline(each[2], li); list.appendChild(li);
+        i++;
+        while (i < lines.length && !closing.test(lines[i])) {
+          code.push(lines[i].replace(new RegExp("^ {0," + lead + "}"), ""));
+          i++;
         }
-        parent.appendChild(list);
+        i++;
+        var pre = el("pre", null, [el("code", { text: code.join("\n") })]);
+        var lang = m[2].trim().split(/\s+/)[0];
+        if (lang) pre.setAttribute("data-lang", lang);
+        parent.appendChild(pre);
         continue;
       }
-      if (line.trim() === "") flush(); else para.push(line.trim());
+      if (para.length > 0 && /^ {0,3}(=+|-+)[ \t]*$/.test(line)) {
+        var setext = el(line.trim().charAt(0) === "=" ? "h1" : "h2");
+        inline(para.join("\n").trim(), setext);
+        parent.appendChild(setext);
+        para = [];
+        i++; continue;
+      }
+      if (HR.test(line)) { flush(); parent.appendChild(el("hr")); i++; continue; }
+      if ((m = ATX.exec(line))) {
+        flush();
+        var heading = el("h" + m[1].length);
+        inline(m[2] || "", heading);
+        parent.appendChild(heading);
+        i++; continue;
+      }
+      if (QUOTE.test(line)) {
+        flush();
+        var quoted = [];
+        while (i < lines.length) {
+          var q = QUOTE.exec(lines[i]);
+          if (q) quoted.push(q[1]);
+          else if (!BLANK.test(lines[i]) && !BLANK.test(quoted[quoted.length - 1]) && !startsBlock(lines[i])) quoted.push(lines[i]);
+          else break;
+          i++;
+        }
+        var quote = el("blockquote");
+        blocks(quoted, quote, depth + 1);
+        parent.appendChild(quote);
+        continue;
+      }
+      if ((m = ITEM.exec(line)) && (para.length === 0 || (m[4] !== undefined && (!/\d/.test(m[2]) || /^1[.)]$/.test(m[2]))))) {
+        flush();
+        i = list(lines, i, parent, depth);
+        continue;
+      }
+      if (line.indexOf("|") >= 0 && i + 1 < lines.length && DELIMS.test(lines[i + 1])) {
+        var head = cells(line);
+        var delims = cells(lines[i + 1]);
+        if (head.length === delims.length) {
+          flush();
+          i = table(lines, i, head, delims, parent);
+          continue;
+        }
+      }
+      if (para.length === 0 && /^ {4}/.test(line)) {
+        var indented = [];
+        while (i < lines.length && (/^ {4}/.test(lines[i]) || BLANK.test(lines[i]))) { indented.push(lines[i].replace(/^ {4}/, "")); i++; }
+        while (indented.length > 0 && BLANK.test(indented[indented.length - 1])) indented.pop();
+        parent.appendChild(el("pre", null, [el("code", { text: indented.join("\n") })]));
+        continue;
+      }
+      para.push(line);
+      i++;
     }
     flush();
+  }
+  /* Draws Markdown into a new block; the text itself is never changed. */
+  function markdown(source) {
+    var box = el("div", { className: "md" });
+    blocks(String(source).replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n"), box, 0);
+    return box;
   }
   function sessionLink(id, label) {
     if (str(id) && SESSION_ID.test(id)) {
@@ -242,12 +547,13 @@ details.card[open] summary { margin-bottom: 10px; }
     crypto.getRandomValues(bytes);
     return Array.prototype.map.call(bytes, function (b) { return ("0" + b.toString(16)).slice(-2); }).join("");
   }
-  function trimmed(v) { var t = String(v || "").trim(); return t === "" ? undefined : t; }
+  /* A free-text field as typed, or undefined when it holds nothing but space: never trimmed. */
+  function typed(v) { var t = String(v || ""); return t.trim() === "" ? undefined : t; }
 
   /* What the card's controls hold, as the pane would store it (buildResponse), or why not. */
   function responseFrom(item, card, action) {
     var value = function (name) { var f = card.querySelector('[data-field="' + name + '"]'); return f ? f.value : ""; };
-    var notes = item.notes === true ? trimmed(value("notes")) : undefined;
+    var notes = item.notes === true ? typed(value("notes")) : undefined;
     var withNotes = function (r) { if (notes !== undefined) r.notes = notes; return r; };
     var texts = ["notes", "text", "feedback", "other"].map(value);
     if (texts.some(function (t) { return t.length > LIMIT; })) return { error: "An answer can be at most " + LIMIT + " characters." };
@@ -255,20 +561,20 @@ details.card[open] summary { margin-bottom: 10px; }
       case "ack": return { response: withNotes({ acknowledged: true }) };
       case "do": {
         var r = { outcome: action };
-        var feedback = trimmed(value("feedback"));
+        var feedback = typed(value("feedback"));
         if (feedback !== undefined) r.feedback = feedback;
         return { response: withNotes(r) };
       }
       case "approve": return { response: withNotes({ selected: [action] }) };
       case "question": {
-        var text = trimmed(value("text"));
+        var text = typed(value("text"));
         if (text === undefined) return { error: "Type an answer." };
         return { response: withNotes({ text: text }) };
       }
       case "choice": {
         var picked = Array.prototype.filter.call(card.querySelectorAll('input[data-option]'), function (x) { return x.checked; })
           .map(function (x) { return x.getAttribute("data-option"); });
-        var other = trimmed(value("other"));
+        var other = typed(value("other"));
         if (item.multiSelect !== true) picked = other !== undefined ? [] : picked.slice(0, 1);
         if (picked.length === 0 && other === undefined) return { error: "Pick an option or fill in Other." };
         var c = { selected: picked };
@@ -349,7 +655,7 @@ details.card[open] summary { margin-bottom: 10px; }
     var busy = state.busy[item.id] === true;
     card.appendChild(chips(item));
     card.appendChild(el("h2", { text: item.question }));
-    if (item.body_md !== "") { var body = el("div", { className: "body" }); markdown(item.body_md, body); card.appendChild(body); }
+    if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md)]));
     if (rec(item.response_refused) && str(item.response_refused.reason)) {
       card.appendChild(el("div", { className: "note bad", text: "Your last answer was not taken: " + item.response_refused.reason }));
     }
@@ -360,11 +666,11 @@ details.card[open] summary { margin-bottom: 10px; }
       actions.appendChild(button("Approve", true, press("Approve"), busy));
       actions.appendChild(button("Reject", false, press("Reject"), busy));
     } else if (item.type === "do") {
-      card.appendChild(textField(item, "feedback", "Feedback (optional)", true));
+      card.appendChild(textField(item, "feedback", "Feedback (optional, Markdown)", true));
       actions.appendChild(button("Done", true, press("done"), busy));
       actions.appendChild(button("Not done", false, press("not_done"), busy));
     } else if (item.type === "question") {
-      card.appendChild(textField(item, "text", "Your answer", true));
+      card.appendChild(textField(item, "text", "Your answer (Markdown)", true));
       actions.appendChild(button("Submit", true, press("submit"), busy));
     } else {
       var opts = el("div", { className: "opts" });
@@ -375,11 +681,11 @@ details.card[open] summary { margin-bottom: 10px; }
           input, el("span", { text: option.label }, [el("small", { text: option.description })])
         ]));
       });
-      opts.appendChild(el("label", { className: "opt" }, [textField(item, "other", "Other…", false)]));
+      opts.appendChild(el("div", { className: "opt other" }, [textField(item, "other", "Other… (Markdown)", true)]));
       card.appendChild(opts);
       actions.appendChild(button("Submit", true, press("submit"), busy));
     }
-    if (item.notes === true) card.appendChild(textField(item, "notes", "Notes (optional)", true));
+    if (item.notes === true) card.appendChild(textField(item, "notes", "Notes (optional, Markdown)", true));
     var result = state.results[item.id];
     if (result) actions.appendChild(el("span", { className: result.bad ? "status bad" : "status", text: result.text, role: "status" }));
     card.appendChild(actions);
@@ -387,20 +693,29 @@ details.card[open] summary { margin-bottom: 10px; }
     return card;
   }
 
-  function answerText(r) {
-    if (!rec(r)) return "";
-    if (r.acknowledged === true) return "Acknowledged";
-    if (r.outcome === "done" || r.outcome === "not_done") return (r.outcome === "done" ? "Done" : "Not done") + (str(r.feedback) ? ": " + r.feedback : "");
-    if (str(r.text)) return r.text;
-    var parts = Array.isArray(r.selected) ? r.selected.filter(str) : [];
-    if (str(r.other)) parts.push("Other: " + r.other);
-    return parts.join("; ");
+  /* An answer as the person gave it: each free-text field drawn as Markdown. */
+  function answerNode(r, when) {
+    var box = el("div", { className: "ans" });
+    box.appendChild(el("div", { className: "ans-when", text: when }));
+    if (!rec(r)) return box;
+    if (r.acknowledged === true) box.appendChild(el("p", { text: "Acknowledged" }));
+    else if (r.outcome === "done" || r.outcome === "not_done") {
+      box.appendChild(el("p", { text: r.outcome === "done" ? "Done" : "Not done" }));
+      if (str(r.feedback)) box.appendChild(markdown(r.feedback));
+    } else if (str(r.text)) box.appendChild(markdown(r.text));
+    else {
+      var picked = Array.isArray(r.selected) ? r.selected.filter(str) : [];
+      if (picked.length > 0) box.appendChild(el("p", { text: picked.join("; ") }));
+      if (str(r.other)) { box.appendChild(el("div", { className: "ans-label", text: "Other" })); box.appendChild(markdown(r.other)); }
+    }
+    if (str(r.notes)) { box.appendChild(el("div", { className: "ans-label", text: "Notes" })); box.appendChild(markdown(r.notes)); }
+    return box;
   }
   function waitingCard(item, answer) {
     var card = el("section", { className: "card" });
     card.appendChild(chips(item));
     card.appendChild(el("h2", { text: item.question }));
-    card.appendChild(el("div", { className: "ans", text: "Answered " + ago(answer.answered_at) + ": " + answerText(answer.response) }));
+    card.appendChild(answerNode(answer.response, "Answered " + ago(answer.answered_at)));
     var result = state.results[item.id];
     if (result) card.appendChild(el("span", { className: result.bad ? "status bad" : "status", text: result.text, role: "status" }));
     card.appendChild(metaLine(item, "not picked up yet"));
@@ -410,9 +725,8 @@ details.card[open] summary { margin-bottom: 10px; }
     var card = el("details", { className: "card" });
     var summary = el("summary", null, [chips(item), el("strong", { text: item.question })]);
     card.appendChild(summary);
-    if (item.body_md !== "") { var body = el("div", { className: "body" }); markdown(item.body_md, body); card.appendChild(body); }
-    card.appendChild(el("div", { className: "ans", text: "Answered " + ago(item.response_at) + ": " + answerText(item.response) }));
-    if (rec(item.response) && str(item.response.notes)) card.appendChild(el("div", { className: "ans", text: "Notes: " + item.response.notes }));
+    if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md)]));
+    card.appendChild(answerNode(item.response, "Answered " + ago(item.response_at)));
     var owesLine = !(item.type === "ack" && item.notify_on_done !== true);
     card.appendChild(metaLine(item, !owesLine ? "" : item.delivered ? "delivered" : "not picked up yet"));
     return card;

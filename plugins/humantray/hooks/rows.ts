@@ -204,9 +204,9 @@ export type Verdict = { apply: { response: ItemResponse; status: ItemStatus } } 
 /**
  * Rule 5: whether the asker takes a store answer for its item. It refuses an
  * answer of another type's shape or status, one given before the item's last
- * bump, and any the pane would refuse; otherwise it takes the answer as the
- * pane would have stored it (`buildResponse`), so the page cannot store what
- * the pane would not.
+ * bump, and any the pane would refuse; otherwise it takes what the pane would
+ * have kept (`buildResponse`), so the page cannot store what the pane would
+ * not, with each kept free-text field exactly as the answerer typed it.
  */
 export function refusalOf(item: Item, row: ResponseRow): Verdict {
   if (row.id !== item.id) return { refuse: 'The answer is for another item.' }
@@ -220,6 +220,14 @@ export function refusalOf(item: Item, row: ResponseRow): Verdict {
   if (pane === undefined) return { refuse: `The answer does not fit a ${item.type} item.` }
   const built = buildResponse(item, pane.draft, pane.action)
   if (built.error !== undefined) return { refuse: built.error }
+  // Stored exactly as typed: the pane's rules decide what is kept, and each
+  // free-text field it keeps is the answerer's own text, untrimmed, so its
+  // Markdown survives whole.
+  const typed = row.response as unknown as Record<string, unknown>
+  const kept = built.ok.response as unknown as Record<string, unknown>
+  for (const field of ['text', 'other', 'feedback', 'notes'] as const) {
+    if (field in kept && typeof typed[field] === 'string') kept[field] = typed[field]
+  }
   return { apply: built.ok }
 }
 

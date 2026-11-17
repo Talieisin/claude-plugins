@@ -166,6 +166,17 @@ describe('refusalOf: the asker takes only what the pane would store', () => {
     expect('refuse' in refusalOf(question, row({ response: { text: '   ' } }))).toBe(true)
   })
 
+  test('free text is kept exactly as typed, Markdown and surrounding space included', () => {
+    const question = { ...stored({ id: ID, type: 'question' }), notes: true }
+    const text = '  # Plan\n\n- [x] one\n  - nested\n\n| a | b |\n|---|---|\n| 1 | 2 |\n'
+    expect(refusalOf(question, row({ response: { text, notes: '> quoted\n' } }))).toEqual({
+      apply: { response: { text, notes: '> quoted\n' }, status: 'answered' },
+    })
+    expect(refusalOf(choice, row({ response: { selected: [], other: '**bold** other  ' } }))).toEqual({
+      apply: { response: { selected: [], other: '**bold** other  ' }, status: 'answered' },
+    })
+  })
+
   test('a do item takes its outcome and feedback; an ack its acknowledgement', () => {
     const task = stored({ id: ID, type: 'do' })
     expect(refusalOf(task, row({ response: { outcome: 'not_done', feedback: 'blocked' }, status: 'done' }))).toEqual({
