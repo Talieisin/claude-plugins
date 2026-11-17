@@ -70,9 +70,22 @@ export type World = {
 
 export const START_EVENT = { cwd: ROOT, surface: 'desktop', isInteractive: true } as const
 
-export function world(on: On, options: { sessionId?: string; surfaces?: RenderSurface[]; isRepo?: boolean } = {}): World {
+export function world(
+  on: On,
+  options: {
+    sessionId?: string
+    surfaces?: RenderSurface[]
+    isRepo?: boolean
+    env?: Record<string, string>
+    store?: Record<string, unknown>
+    /** The origin remote; null for a repository with none. */
+    remote?: string | null
+  } = {},
+): World {
   const clock = mock.clock(on, { now: START })
-  mock.store(on)
+  mock.store(on, options.store)
+  // A local session unless a test says otherwise: the store pass (#33) runs only in a cloud one.
+  mock.env(on, options.env ?? {})
   const w: World = {
     files: new Map(),
     dirs: new Map([
@@ -121,11 +134,14 @@ export function world(on: On, options: { sessionId?: string; surfaces?: RenderSu
   on('session.id', () => ({ value: w.sessionId }))
   on('session.cwd', () => ({ value: ROOT }))
   on('session.repo', () => ({
-    value: w.isRepo ? { root: ROOT, remote: 'https://github.com/owner/repo.git', internal: false, name: null } : null,
+    value: w.isRepo
+      ? { root: ROOT, remote: options.remote === undefined ? 'https://github.com/owner/repo.git' : options.remote, internal: false, name: null }
+      : null,
   }))
   on('session.surfaces', () => ({ value: w.surfaces }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.attach', (_, e) => ({ clientId: e.clientId }))
+  on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('classic.SessionStart', () => ({}))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__humantray__${e.name}` } }))

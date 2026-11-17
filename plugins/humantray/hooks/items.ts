@@ -14,6 +14,7 @@ import type {
   SessionRecord,
   StoreFile,
 } from '../types'
+import { owesPush } from './row-shape'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -439,7 +440,8 @@ export const isLineDue = (item: Item): boolean =>
 
 /**
  * The one test of whether an item may be pruned. It may when it is finished:
- * answered, carrying no claim, and either delivered or owing no line. Such an
+ * answered, carrying no claim, either delivered or owing no line, and owing
+ * the store no push. Such an
  * item stays prunable and its order key never moves: no code path makes it
  * open, owed or claimed again. One write still reaches it: the owner's pass
  * flags an acknowledged `ack` that owes no line as `delivered`, which leaves
@@ -449,7 +451,10 @@ export const isPrunable = (item: Item): boolean =>
   item.status !== 'open' &&
   item.delivering_at === undefined &&
   item.delivering_by === undefined &&
-  (item.delivered || !isLineDue(item))
+  (item.delivered || !isLineDue(item)) &&
+  // An item mirrored to the store whose last state was not written there yet
+  // is kept until it is: pruning it would leave its row open for good.
+  !owesPush(item)
 
 /** When an item last changed for good: its answer, or else its last add or bump. */
 export const orderKey = (item: Item): number => item.response_at ?? item.updated
@@ -584,6 +589,49 @@ const isResponseOf = (type: string, r: unknown): boolean => {
   }
 }
 
+const isNullableString = (v: unknown): boolean => v === null || typeof v === 'string'
+
+/** Why an item's store fields (#33) are malformed, or undefined when they are fine or absent. */
+const storeFieldsProblem = (item: Record<string, unknown>, name: string): string | undefined => {
+  const { remote, row, response_by, answer_id, response_refused } = item
+  if (remote !== undefined) {
+    if (
+      !isRecord(remote) ||
+      typeof remote.session_id !== 'string' ||
+      !isNullableString(remote.session_title) ||
+      !isNullableString(remote.parent_session_id) ||
+      !isNullableString(remote.lead_session_id)
+    ) {
+      return `item ${name}: remote is malformed`
+    }
+  }
+  if (row !== undefined) {
+    if (
+      !isRecord(row) ||
+      typeof row.artifact !== 'string' ||
+      !isOptional(row.version, 'number') ||
+      !isOptional(row.sent, 'string')
+    ) {
+      return `item ${name}: row is malformed`
+    }
+  }
+  if (response_by !== undefined && response_by !== 'page' && response_by !== 'viewer' && response_by !== 'pane') {
+    return `item ${name}: response_by is malformed`
+  }
+  if (!isOptional(answer_id, 'string')) return `item ${name}: answer_id is not a string`
+  if (response_refused !== undefined) {
+    if (
+      !isRecord(response_refused) ||
+      typeof response_refused.answer_id !== 'string' ||
+      typeof response_refused.reason !== 'string' ||
+      typeof response_refused.at !== 'number'
+    ) {
+      return `item ${name}: response_refused is malformed`
+    }
+  }
+  return undefined
+}
+
 /** Why a stored item is not one this version can use, or undefined when it is. */
 const itemProblem = (item: unknown): string | undefined => {
   if (!isRecord(item)) return 'an item is not an object'
@@ -616,7 +664,7 @@ const itemProblem = (item: unknown): string | undefined => {
   if (item.status !== 'open' && !isResponseOf(item.type, item.response)) {
     return `item ${name}: the response is missing or malformed`
   }
-  return undefined
+  return storeFieldsProblem(item, name)
 }
 
 /** Reads a parsed `items.json`, or says why it is not one this version can use. */
