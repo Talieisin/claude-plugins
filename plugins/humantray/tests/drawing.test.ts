@@ -156,9 +156,19 @@ describe('forDrawing', () => {
       `- Step\n  - sub\n\n*Code 1*\n\n${F}\necho nested\n${F}\n\nAfter text\n\n- deeper\n\n- Next step`,
     ],
     [
-      'a 10th step inside a quote (the quote marks are taken off too)',
+      'a 10th step inside a quote (the quote marks are taken off too, until the item ends)',
       ['> 10. Build:', '>', `>     ${F}sh`, '>     echo 10', `>     ${F}`, '>', '>     Expect <DIGEST>', '>', '> 11. Next.'].join('\n'),
-      `> 10. Build:\n>\n\n*Code 1*\n\n${F}sh\necho 10\n${F}\n\nExpect <\u200bDIGEST>\n\n11. Next.`,
+      `> 10. Build:\n>\n\n*Code 1*\n\n${F}sh\necho 10\n${F}\n\nExpect <\u200bDIGEST>\n\n> 11. Next.`,
+    ],
+    [
+      'the next item keeps its nested list (the dedent stops where the item ends)',
+      ['1. Step one:', `   ${F}sh`, '   make a', `   ${F}`, '   Expect ok.', '2. Step two:', '   - check x', '   - check y', '3. Step three.'].join('\n'),
+      `1. Step one:\n\n*Code 1*\n\n${F}sh\nmake a\n${F}\n\nExpect ok.\n2. Step two:\n   - check x\n   - check y\n3. Step three.`,
+    ],
+    [
+      'a deeper list after the item keeps its depth',
+      ['- a', `  ${F}`, '  x', `  ${F}`, '- b', '  - c', '    - d'].join('\n'),
+      `- a\n\n*Code 1*\n\n${F}\nx\n${F}\n\n- b\n  - c\n    - d`,
     ],
   ]
   for (const [name, md, expected] of DEDENTED) {

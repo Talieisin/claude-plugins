@@ -743,8 +743,15 @@ export const forDrawing = (md: string, labelled = true): string => {
   // The text after a block that sat in a list item or a quote is drawn less
   // the indentation that container gave it, so that, now at the top level, it
   // stays prose and a list, never an indented code block.
+  // Only the lines still in that container: from the first line indented
+  // less (one that has left the item, such as the next item), none is taken.
   const text = (from: number, to: number, dedent: number) => {
-    const lines = raw.slice(from, to).map(line => (dedent > 0 ? dedentLine(line, dedent) : line))
+    let inside = dedent > 0
+    const lines = raw.slice(from, to).map(line => {
+      // A line of only spaces and quote marks is a blank line of its quote.
+      if (inside && /[^ \t>]/.test(line) && prefixWidth(line) < dedent) inside = false
+      return inside ? dedentLine(line, dedent) : line
+    })
     while (lines.length > 0 && (lines[0] ?? '').trim() === '') lines.shift()
     while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') lines.pop()
     if (lines.length > 0) pieces.push(breakFences(forDisplay(lines.join('\n'))))
@@ -805,6 +812,17 @@ export const splitDrawn = (drawn: string): string[] => {
   }
   flush()
   return pieces
+}
+
+/** How many columns a line's leading spaces, tabs (to their stop) and quote marks take. */
+const prefixWidth = (line: string): number => {
+  let col = 0
+  for (const ch of line) {
+    if (ch === '\t') col += 4 - (col % 4)
+    else if (ch === ' ' || ch === '>') col++
+    else break
+  }
+  return col
 }
 
 /**
