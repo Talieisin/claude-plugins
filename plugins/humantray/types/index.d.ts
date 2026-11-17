@@ -152,6 +152,13 @@ export type ResponseRow = {
   answered_at: number
   /** The item row as the answerer saw it. */
   seen: { bumps: number; updated: number }
+  /**
+   * Which view wrote the answer. Not proof that a person answered: rows are
+   * written as the owner, and any session holding `ArtifactData` could write
+   * one. That is why an answer line never stands in for the owner's approval
+   * of anything on a repository's "always back to the owner" list (decision 3
+   * on #26).
+   */
   by: 'page' | 'viewer'
 }
 

@@ -6,6 +6,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { PAGE_VERSION } from '../hooks/rows'
 import { REPO, TITLE, URL_A, URL_B, URL_NEW, artifactWorld, meta } from './artifact-world'
+import { MAX_CANDIDATES } from '../hooks/artifact-store'
 import { ADD, COMMAND, START, START_EVENT, answerOf, world } from './world'
 
 const CLOUD = { env: { CLAUDE_CODE_REMOTE: 'true' } }
@@ -198,5 +199,68 @@ describe('/humantray-page', () => {
     const ran = await $.command.run({ ...RUN, args: '' })
     expect(textOf(ran)).toMatch(/from a cloud session/)
     expect(a.artifacts).toEqual([])
+  })
+})
+
+describe('/humantray-page never publishes over a page that is not this repository\'s', () => {
+  const FOREIGN_META = { ...meta(START), repo: 'github.com/other/elsewhere' }
+
+  test("a link to another repository's page: refused before any publish, its title untouched", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, 'humantray: other/elsewhere')
+    a.put(URL_B, 'meta/page', FOREIGN_META)
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/not linked: .*another repository/)
+    expect(a.calls.some(c => c.input.action === 'publish')).toBe(false)
+    expect(a.artifacts.find(x => x.url === URL_B)?.title).toBe('humantray: other/elsewhere')
+  })
+
+  test('a title match whose meta/page is not ours is neither chosen nor taken over: a new page is made', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', { ...meta(START), schema: 2 })
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/created a private page/)
+    expect(a.calls.filter(c => c.input.action === 'publish').map(c => c.input.url)).toEqual([undefined])
+  })
+
+  test('a republished older page has its meta/page version raised, so a second run publishes nothing', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', { ...meta(START), page_version: 0, future: 'kept' })
+    await $.session.start(START_EVENT)
+    await $.command.run({ ...RUN, args: '' })
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION, created_at: START, future: 'kept' })
+    await $.command.run({ ...RUN, args: '' })
+    expect(a.calls.filter(c => c.input.action === 'publish')).toHaveLength(1)
+  })
+
+  test('every title match is read: the earliest page wins even as the sixth match', async ($, on) => {
+    const { w, a } = cloud(on)
+    const urls = Array.from({ length: 6 }, (_, n) => `https://claude.ai/artifact/fakematch0000000000${n}`)
+    urls.forEach((url, n) => {
+      a.add(url, TITLE)
+      a.put(url, 'meta/page', meta(START + (n === 5 ? -100 : n)))
+    })
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(approve)).id
+    await settle(w)
+    // The listing is newest first, so the earliest (added first here... the sixth added) is checked too.
+    expect(a.doc(urls[5] ?? '', `items/${id}`)).toBeDefined()
+  })
+
+  test('more title matches than can be read: nothing is chosen and nothing is created', async ($, on) => {
+    const { a } = cloud(on)
+    for (let n = 0; n <= MAX_CANDIDATES; n++) {
+      const url = `https://claude.ai/artifact/fakemany00000000000${String(n).padStart(2, '0')}`
+      a.add(url, TITLE)
+      a.put(url, 'meta/page', meta(START + n))
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/nothing was created/)
+    expect(a.calls.some(c => c.input.action === 'publish')).toBe(false)
   })
 })

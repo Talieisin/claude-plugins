@@ -108,8 +108,12 @@ export function fingerprint(item: Item & Required<Pick<Item, 'remote'>>): string
 }
 
 /**
- * Whether an item is owed a push: it carries its lineage, and what was last
- * written for it is not what it holds now (or nothing was).
+ * Whether an item is owed a push that keeps it from being pruned: it carries
+ * its lineage, a row was written for it, and that row is not what the item
+ * holds now. An item never written (no page linked yet) owes nothing: it is
+ * pruned as any other, and the store simply never sees a finished item.
  */
 export const owesPush = (item: Item): boolean =>
-  item.remote !== undefined && item.row?.sent !== fingerprint(item as Item & Required<Pick<Item, 'remote'>>)
+  item.remote !== undefined &&
+  item.row !== undefined &&
+  item.row.sent !== fingerprint(item as Item & Required<Pick<Item, 'remote'>>)

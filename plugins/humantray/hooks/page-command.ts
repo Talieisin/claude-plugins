@@ -24,6 +24,7 @@ import {
 import { PAGE_HTML } from '../page/page'
 import { normaliseRepo } from './items'
 import { PAGE_VERSION, metaFor, titleFor } from './rows'
+import type { MetaPage } from '../types'
 import { WRITER_VERSION } from './row-shape'
 import { locate } from './store'
 import { relinkPass } from './store-pass'
@@ -71,12 +72,43 @@ async function publish(
   }
 }
 
-/** Writes `meta/page` when absent; refuses an artifact that is another repository's. */
-async function ensureMeta($: EngineInterface, url: string, repo: string): Promise<{ ok: true } | { error: string }> {
+/**
+ * Whose page an artifact is, read before anything is published to it:
+ * this repository's (its meta and that meta's version), nobody's (no
+ * `meta/page` at all: it may be taken over), or someone else's (a `meta/page`
+ * that is not this repository's, or a schema this version cannot read).
+ */
+type Owner =
+  | { kind: 'ours'; meta: MetaPage; version: number }
+  | { kind: 'nobody' }
+  | { kind: 'foreign' }
+  | { kind: 'unavailable'; why: string }
+
+async function ownerOf($: EngineInterface, url: string, repo: string): Promise<Owner> {
   const meta = await readMeta($, url, repo)
-  if (meta.kind === 'unavailable') return { error: `its database could not be read (${meta.why})` }
-  if (meta.meta !== undefined) return { ok: true }
-  if (meta.version !== undefined) return { error: 'that artifact holds another repository’s humantray, or another page’s data' }
+  if (meta.kind === 'unavailable') return meta
+  if (meta.meta !== undefined) return { kind: 'ours', meta: meta.meta, version: meta.version ?? 0 }
+  return meta.version === undefined ? { kind: 'nobody' } : { kind: 'foreign' }
+}
+
+const FOREIGN = 'that artifact holds another repository’s humantray, or another page’s data, so nothing was published to it'
+
+/**
+ * Brings `meta/page` up to date after a publish: written when absent, and its
+ * page version raised (pinned) when the page published is newer than it says.
+ */
+async function settleMeta(
+  $: EngineInterface,
+  url: string,
+  repo: string,
+  owner: Owner,
+): Promise<{ ok: true } | { error: string }> {
+  if (owner.kind === 'ours') {
+    if (owner.meta.page_version >= PAGE_VERSION) return { ok: true }
+    const raised = { ...owner.meta, page_version: PAGE_VERSION, plugin_version: WRITER_VERSION }
+    const written = await setDoc($, url, 'meta', 'page', raised as unknown as Record<string, unknown>, owner.version)
+    return written.kind === 'ok' ? { ok: true } : { error: `its meta/page could not be brought up to date (${written.kind})` }
+  }
   const now = await $.clock.now()
   const written = await setDoc($, url, 'meta', 'page', { ...metaFor(repo, now, WRITER_VERSION) })
   if (written.kind === 'ok') return { ok: true }
@@ -85,6 +117,29 @@ async function ensureMeta($: EngineInterface, url: string, repo: string): Promis
     if (again.kind === 'ok' && again.meta !== undefined) return { ok: true }
   }
   return { error: `its meta/page could not be written (${written.kind})` }
+}
+
+/** Publishes when the page is behind or not yet ours, then settles meta/page; never touches someone else's. */
+async function adoptPage(
+  $: EngineInterface,
+  dir: string,
+  title: string,
+  url: string | undefined,
+  repo: string,
+  owner: Owner,
+): Promise<{ url: string } | { error: string }> {
+  if (owner.kind === 'foreign') return { error: FOREIGN }
+  if (owner.kind === 'unavailable') return { error: `its database could not be read (${owner.why}), so nothing was published to it` }
+  let target = url
+  if (owner.kind !== 'ours' || owner.meta.page_version < PAGE_VERSION) {
+    const published = await publish($, dir, title, url)
+    if ('error' in published) return published
+    target = published.url
+  }
+  if (target === undefined) return { error: 'no page to link' }
+  const settled = await settleMeta($, target, repo, owner)
+  if ('error' in settled) return settled
+  return { url: target }
 }
 
 /** Runs the command; the text is what the person sees. Never delivers an answer. */
@@ -98,11 +153,11 @@ export async function runPageCommand($: EngineInterface, args: string): Promise<
 
   if (given !== '') {
     if (!ARTIFACT_URL.test(given)) return 'humantray: give an artifact link (https://claude.ai/artifact/…), or nothing to find or create the page.'
-    const published = await publish($, where.ok.dir, title ?? 'humantray', given)
-    if ('error' in published) return `humantray: ${published.error}`
-    const meta = await ensureMeta($, published.url, repo)
-    if ('error' in meta) return `humantray: not linked: ${meta.error}`
-    await relinkPass($, repo, { url: published.url, how: 'given', at: now } satisfies Link)
+    // Whose page it is, before anything is published to it.
+    const owner = await ownerOf($, given, repo)
+    const linked = await adoptPage($, where.ok.dir, title ?? 'humantray', given, repo, owner)
+    if ('error' in linked) return `humantray: not linked: ${linked.error}`
+    await relinkPass($, repo, { url: linked.url, how: 'given', at: now } satisfies Link)
     return 'humantray: the page is linked for this repository. Pin it in claude.ai if you want it to hand.'
   }
 
@@ -113,25 +168,21 @@ export async function runPageCommand($: EngineInterface, args: string): Promise<
   if (found.kind === 'unavailable') {
     return `humantray: the artifact list could not be read to its end (${found.why}), so nothing was created. Try again.`
   }
-  if (found.url !== undefined) {
-    let url = found.url
-    if ((found.meta?.page_version ?? 0) < PAGE_VERSION) {
-      const published = await publish($, where.ok.dir, title, url)
-      if ('error' in published) return `humantray: found the page, but could not update it: ${published.error}`
-      url = published.url
-    }
-    await relinkPass($, repo, { url, how: 'found', at: now })
+  if (found.url !== undefined && found.meta !== undefined) {
+    const owner: Owner = { kind: 'ours', meta: found.meta, version: found.metaVersion ?? 0 }
+    const linked = await adoptPage($, where.ok.dir, title, found.url, repo, owner)
+    if ('error' in linked) return `humantray: found the page, but could not update it: ${linked.error}`
+    await relinkPass($, repo, { url: linked.url, how: 'found', at: now })
     return 'humantray: the page is linked for this repository.'
   }
-  // A title match nobody marked as humantray's: take it over, setting the rules first.
+  // A title match with no meta/page at all: take it over, setting the rules first.
+  // Its owner is read again here, so one marked in the meantime is not published over.
   const target = [...found.unqualified].sort()[0]
-  const published = await publish($, where.ok.dir, title, target)
-  if ('error' in published) return `humantray: ${published.error}`
-  const meta = await ensureMeta($, published.url, repo)
-  if ('error' in meta) return `humantray: not linked: ${meta.error}`
-  await relinkPass($, repo, { url: published.url, how: target === undefined ? 'created' : 'found', at: now })
+  const owner: Owner = target === undefined ? { kind: 'nobody' } : await ownerOf($, target, repo)
+  const linked = await adoptPage($, where.ok.dir, title, target, repo, owner)
+  if ('error' in linked) return `humantray: not linked: ${linked.error}`
+  await relinkPass($, repo, { url: linked.url, how: target === undefined ? 'created' : 'found', at: now })
   return target === undefined
     ? 'humantray: created a private page for this repository and linked it. It is not pinned: pin it in claude.ai if you want it to hand.'
     : 'humantray: took over the page with this repository’s title and linked it.'
 }
-

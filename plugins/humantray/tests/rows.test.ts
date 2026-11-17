@@ -86,8 +86,12 @@ describe('item rows', () => {
     expect(owesPush(stored({ id: ID, type: 'ack' }))).toBe(false)
   })
 
-  test('a finished item still owed a push is not prunable; once written, it is', () => {
+  test('a finished item whose row is behind is not prunable; once written, it is; one never written is', () => {
     const item = withRemote({ id: ID, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, delivered: true })
+    // Never written (no page linked): it owes nothing, and prunes as any other.
+    expect(owesPush(item)).toBe(false)
+    expect(isPrunable(item)).toBe(true)
+    item.row = { artifact: URL_A, version: 1, sent: 'stale' }
     expect(isPrunable(item)).toBe(false)
     item.row = { artifact: URL_A, version: 2, sent: fingerprint(item) }
     expect(isPrunable(item)).toBe(true)
@@ -313,6 +317,21 @@ describe('the tools replies, as Claude Code 2.1.326 gave them', () => {
     expect(parseWrite({ kind: 'error', text: 'db write failed (quota_exceeded): full' }).kind).toBe('unavailable')
     expect(parseWrite({ kind: 'needs-person', text: 'x' })).toEqual({ kind: 'needs-person' })
     expect(parseWrite({ kind: 'denied', text: 'held' }).kind).toBe('unavailable')
+  })
+
+  test('the artifact listing is read only when its rows are all known and as many as it declares', () => {
+    const row = '- (mine) humantray: owner/repo — https://claude.ai/artifact/fakeartifact0000000000A — updated 2026-01-02'
+    const shared = '- (shared) Theirs — https://claude.ai/artifact/fakeartifact0000000000D — updated 2026-01-01'
+    // A cut-off reply: it declares rows it does not hold.
+    expect(parseListing('1 published artifacts (most recently opened or updated first):')).toBeUndefined()
+    expect(parseListing(`3 published artifacts:\n${row}\n${shared}`)).toBeUndefined()
+    expect(parseListing(`2 published artifacts:\n${row}\n${shared}`)?.listed).toHaveLength(1)
+    // A row of no known shape, even one that says (mine): unreadable, never skipped.
+    expect(parseListing(`2 published artifacts:\n${row}\n- (mine) humantray: owner/repo — not a link — updated 2026-01-01`)).toBeUndefined()
+    expect(parseListing(`2 published artifacts:\n${row}\n- (team) Other — https://claude.ai/artifact/fakeartifact0000000000E — updated 2026-01-01`)).toBeUndefined()
+    // Nothing may follow the next-page line.
+    expect(parseListing(`1 published artifacts:\n${row}\n(More exist: pass \`page_token\` "t1" with the same \`scope\` to list the next ones.)\n${shared}`)).toBeUndefined()
+    expect(parseListing('No artifacts yet.\nsomething')).toBeUndefined()
   })
 
   test('the artifact listing: own rows, the next page, and anything else unavailable', () => {

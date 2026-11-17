@@ -62,12 +62,19 @@ export type PassKind = 'push' | 'relink' | 'turn' | 'start'
 
 const RANK: Record<PassKind, number> = { push: 0, relink: 1, turn: 2, start: 3 }
 const wider = (a: PassKind | undefined, b: PassKind): PassKind => (a === undefined || RANK[b] > RANK[a] ? b : a)
-const does = (kind: PassKind) => ({
+const does = (kind: PassKind): { link: boolean; adopt: boolean; pull: boolean; pruneRows: boolean } => ({
   link: kind === 'start',
   adopt: kind === 'start' || kind === 'relink',
   pull: kind === 'start' || kind === 'turn',
   pruneRows: kind === 'start',
 })
+
+/**
+ * How often a turn pass may try again to find the page, or to adopt, while
+ * this process has no link or has not adopted yet (a page made after the
+ * session started, or a store that could not be reached at the start).
+ */
+export const FIND_AGAIN_MS = 10 * 60 * 1000
 
 /** The awaited part of the pass at `session.start`. */
 export const START_DEADLINE_MS = 4_000
@@ -124,6 +131,10 @@ let retries = 0
 let retry: { cancel: () => void } | undefined
 /** Answers were applied: the mod's own delivery pass should run (`takeDeliveryDue`). */
 let deliveryDue = false
+/** This session's rows on the linked artifact have been read for adoption. */
+let adoptedHere = false
+/** When this process last tried to find the page or to adopt (its clock). */
+let lastFind: number | undefined
 
 async function isCloud($: EngineInterface): Promise<boolean> {
   if (cloud !== undefined) return cloud
@@ -154,6 +165,14 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   if (kind === 'start') blocked = false
   if (blocked) return 'done'
   const step = does(kind)
+  const now = await $.clock.now()
+  // A turn finds the page and adopts too, while either is still owed, at most
+  // once every FIND_AGAIN_MS.
+  if (kind === 'turn' && (link === undefined || !adoptedHere) && (lastFind === undefined || now - lastFind >= FIND_AGAIN_MS)) {
+    if (link === undefined) step.link = true
+    step.adopt = true
+  }
+  if (step.link || step.adopt) lastFind = now
   const me = await $.session.id()
   const seen = await peek($)
   if (seen.error !== undefined) return 'done'
@@ -171,14 +190,18 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
         return 'failed'
       }
       if (meta.meta !== undefined) usable = held
-      else await saveLink($, repo, undefined)
+      else {
+        await saveLink($, repo, undefined)
+        adoptedHere = false
+      }
     }
     if (usable === undefined) {
       const found = await findArtifact($, repo)
       if (found.kind === 'unavailable') return 'failed'
       if (found.url !== undefined) {
-        usable = { url: found.url, how: 'found', at: await $.clock.now() }
+        usable = { url: found.url, how: 'found', at: now }
         await saveLink($, repo, usable)
+        adoptedHere = false
       }
     }
     link = usable
@@ -195,6 +218,7 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   if (step.adopt && link !== undefined) {
     adoptable = await readSessionRows($, link.url, routable)
     if (adoptable.kind === 'unavailable') outcome = 'failed'
+    else adoptedHere = true
   }
   const target = link
   const recorded = await mutate<{ items: Item[]; changed: boolean }>($, file => {
@@ -266,7 +290,6 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   let applied = 0
   let refused = 0
   if (pushed.length > 0 || answers.size > 0 || newer.size > 0) {
-    const now = await $.clock.now()
     const done = await mutate<boolean>($, (file: StoreFile) => {
       let changed = false
       for (const each of pushed) {
@@ -316,7 +339,9 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
 
 async function pruneRows($: EngineInterface, url: string): Promise<void> {
   const read = await readFinishedRows($, url)
-  if (read.kind !== 'ok') return
+  // A row that could not be read (or a newer one) may hold a slot among the
+  // newest; pruning around it could delete a row that should be kept.
+  if (read.kind !== 'ok' || read.skipped > 0) return
   const doomed = prunableRows(read.rows).slice(0, 25)
   if (doomed.length === 0) return
   const responses = await queryDocs($, url, 'responses', { where: [['id', 'in', doomed.map(d => d.id)]], limit: 100 })
@@ -366,6 +391,7 @@ export async function pageState($: EngineInterface): Promise<PageState> {
 /** The command's: use this link from now on, then adopt and push (no pull, no delivery). */
 export async function relinkPass($: EngineInterface, repo: string, next: Link): Promise<void> {
   link = next
+  adoptedHere = false
   await saveLink($, repo, next)
   void requestPass($, 'relink')
 }

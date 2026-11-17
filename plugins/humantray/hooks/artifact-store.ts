@@ -208,11 +208,13 @@ export type Pushed =
   | { kind: 'unavailable'; why: string }
 
 /**
- * Writes an item's row: a create when no version is known, else pinned to
- * it. "Already exists" (a row whose version this file never recorded) and
- * "no longer at version" both lead to one read and one write pinned to what
- * was read, starting from the row as read so its unknown fields are kept.
- * The asker is the only writer of its rows, so what it holds wins.
+ * Writes an item's row. A row never written here is created; a row that
+ * exists is always read first and rewritten pinned to the version read,
+ * starting from the row as read so that the fields this version does not know
+ * (a newer writer's) are kept. "Already exists" on a create (a row this file
+ * never recorded) and "no longer at version" both lead to one more read and
+ * one more pinned write. The asker is the only writer of its rows, so what it
+ * holds wins.
  */
 export async function pushItem(
   $: EngineInterface,
@@ -220,23 +222,27 @@ export async function pushItem(
   item: Item & Required<Pick<Item, 'remote'>>,
   version: number | undefined,
 ): Promise<Pushed> {
-  const first = await setDoc($, url, 'items', item.id, itemToRow(item) as unknown as Record<string, unknown>, version)
-  if (first.kind === 'ok' || first.kind === 'needs-person' || first.kind === 'unavailable') return first
-  if (first.kind === 'refused' || (first.kind === 'missing' && version === undefined)) {
-    return { kind: 'unavailable', why: 'the store refused the write' }
+  const fresh = itemToRow(item) as unknown as Record<string, unknown>
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let written: Written
+    if (attempt === 0 && version === undefined) {
+      written = await setDoc($, url, 'items', item.id, fresh)
+    } else {
+      const read = await getDoc($, url, 'items', item.id)
+      if (read.kind === 'needs-person') return read
+      if (read.kind === 'unavailable') return read
+      if (read.kind === 'gone') return { kind: 'unavailable', why: 'the artifact is gone' }
+      const doc = read.docs[0]
+      written =
+        doc === undefined
+          ? await setDoc($, url, 'items', item.id, fresh)
+          : await setDoc($, url, 'items', item.id, itemToRow(item, doc.data) as unknown as Record<string, unknown>, doc.version)
+    }
+    if (written.kind === 'ok' || written.kind === 'needs-person' || written.kind === 'unavailable') return written
+    if (written.kind === 'refused') return { kind: 'unavailable', why: 'the store refused the write' }
+    // exists, stale or missing: read again and write once more.
   }
-  // exists, stale, or a pinned write to a row that is gone: read it, then write once more.
-  const read = await getDoc($, url, 'items', item.id)
-  if (read.kind === 'needs-person') return read
-  if (read.kind === 'unavailable') return read
-  if (read.kind === 'gone') return { kind: 'unavailable', why: 'the artifact is gone' }
-  const doc = read.docs[0]
-  const again =
-    doc === undefined
-      ? await setDoc($, url, 'items', item.id, itemToRow(item) as unknown as Record<string, unknown>)
-      : await setDoc($, url, 'items', item.id, itemToRow(item, doc.data) as unknown as Record<string, unknown>, doc.version)
-  if (again.kind === 'ok' || again.kind === 'needs-person' || again.kind === 'unavailable') return again
-  return { kind: 'unavailable', why: `the row changed again (${again.kind})` }
+  return { kind: 'unavailable', why: 'the row kept changing' }
 }
 
 /** The response rows for some items, read in chunks of 30 (the `in` limit). */
@@ -297,20 +303,25 @@ function rowsOf(docs: Doc[]): { kind: 'ok'; rows: Array<{ row: ItemRow; version:
 /** One artifact the person owns, as the listing names it. */
 export type Listed = { title: string; url: string }
 
-const LISTED = /^- \(mine\) (.+) — (https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+) — updated \S+\s*$/
+const LISTED = /^- \((mine|shared)\) (.+) — (https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+) — updated \S+\s*$/
 const MORE = /\(More exist: pass `page_token` "([^"]+)"/
 
 /**
  * Reads one page of `Artifact list`: the person's own artifacts, and the
  * token for the next page when more exist. Shared artifacts are left out:
- * humantray only uses an artifact the person owns.
+ * humantray only uses an artifact the person owns. A page is read only when
+ * every row is one of those two kinds and their number is the one the page
+ * declares; anything else (a cut-off reply, a row of another shape) is
+ * undefined, unreadable, and never "no match".
  */
 export function parseListing(text: string): { listed: Listed[]; next?: string } | undefined {
   const lines = text.trim().split('\n')
   const head = lines[0] ?? ''
-  if (/^No (?:published )?artifacts\b/i.test(head)) return { listed: [] }
-  if (!/^\d+ published artifacts?\b/.test(head)) return undefined
+  if (/^No (?:published )?artifacts\b/i.test(head)) return lines.length === 1 ? { listed: [] } : undefined
+  const declared = /^(\d+) published artifacts?\b/.exec(head)
+  if (declared?.[1] === undefined) return undefined
   const listed: Listed[] = []
+  let rows = 0
   let next: string | undefined
   for (const line of lines.slice(1)) {
     if (line.trim() === '') continue
@@ -319,14 +330,13 @@ export function parseListing(text: string): { listed: Listed[]; next?: string } 
       next = more[1]
       continue
     }
+    if (next !== undefined) return undefined // nothing may follow the next-page line
     const row = LISTED.exec(line)
-    if (row?.[1] !== undefined && row[2] !== undefined) {
-      listed.push({ title: row[1], url: row[2] })
-      continue
-    }
-    if (/^- \(/.test(line)) continue // another kind of row (shared): not ours to use
-    return undefined
+    if (row?.[1] === undefined || row[2] === undefined || row[3] === undefined) return undefined
+    rows += 1
+    if (row[1] === 'mine') listed.push({ title: row[2], url: row[3] })
   }
+  if (rows !== Number(declared[1])) return undefined
   return next === undefined ? { listed } : { listed, next }
 }
 
@@ -365,33 +375,51 @@ export async function readMeta(
   return { kind: 'ok', meta: checkMeta(doc.data, repo), version: doc.version }
 }
 
-/** How many title matches have their `meta/page` read before choosing. */
-export const MAX_CANDIDATES = 5
+/**
+ * The most title matches whose `meta/page` is read. Every match is read, so
+ * the earliest page always wins; more matches than this and the find is
+ * unavailable, so nothing is chosen or created on a guess.
+ */
+export const MAX_CANDIDATES = 20
+
+/** What finding the repository's artifact came to. */
+export type Found = {
+  kind: 'ok'
+  /** The chosen page, its meta and the meta's version. */
+  url?: string
+  meta?: MetaPage
+  metaVersion?: number
+  /** Title matches with no `meta/page` at all: only the command may take one over. */
+  unqualified: string[]
+}
 
 /**
  * Finds the repository's artifact by its title. Only an artifact whose
  * `meta/page` qualifies is chosen, and among several the earliest
- * `created_at`. `unqualified` lists title matches without a valid meta, which
- * only the command may take over.
+ * `created_at`. A title match whose `meta/page` exists but is not this
+ * repository's (another repository's, or a newer schema's) is never chosen
+ * or taken over.
  */
-export async function findArtifact(
-  $: EngineInterface,
-  repo: string,
-): Promise<{ kind: 'ok'; url?: string; meta?: MetaPage; unqualified: string[] } | { kind: 'unavailable'; why: string }> {
+export async function findArtifact($: EngineInterface, repo: string): Promise<Found | { kind: 'unavailable'; why: string }> {
   // A repository with no remote has no title to be found by.
   if (titleFor(repo) === undefined) return { kind: 'ok', unqualified: [] }
   const listed = await listTitled($, repo)
   if (listed.kind !== 'ok') return listed
-  const qualified: Array<{ url: string; meta: MetaPage }> = []
+  if (listed.listed.length > MAX_CANDIDATES) {
+    return { kind: 'unavailable', why: `${listed.listed.length} artifacts carry this repository's title; link one with /humantray-page <link>` }
+  }
+  const qualified: Array<{ url: string; meta: MetaPage; version: number }> = []
   const unqualified: string[] = []
-  for (const each of listed.listed.slice(0, MAX_CANDIDATES)) {
+  for (const each of listed.listed) {
     const meta = await readMeta($, each.url, repo)
     if (meta.kind !== 'ok') return meta
-    if (meta.meta === undefined) unqualified.push(each.url)
-    else qualified.push({ url: each.url, meta: meta.meta })
+    if (meta.meta !== undefined) qualified.push({ url: each.url, meta: meta.meta, version: meta.version ?? 0 })
+    else if (meta.version === undefined) unqualified.push(each.url)
   }
   const chosen = pickArtifact(qualified)
-  return chosen === undefined ? { kind: 'ok', unqualified } : { kind: 'ok', url: chosen.url, meta: chosen.meta, unqualified }
+  if (chosen === undefined) return { kind: 'ok', unqualified }
+  const version = qualified.find(each => each.url === chosen.url)?.version
+  return { kind: 'ok', url: chosen.url, meta: chosen.meta, metaVersion: version, unqualified }
 }
 
 /** The page's rules: the whole database is the owner's alone. */

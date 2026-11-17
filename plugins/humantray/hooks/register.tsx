@@ -325,6 +325,10 @@ async function answer($: EngineInterface, id: string, action: Action) {
     item.status = built.ok.status
     item.response_at = now
     item.delivered = false
+    // Answered here: any store answer refused earlier no longer stands (#33).
+    item.response_by = 'pane'
+    delete item.answer_id
+    delete item.response_refused
     return { result: { kind: 'stored' }, write: true }
   })
   if (done.error !== undefined) {

@@ -127,16 +127,26 @@ details.card[open] summary { margin-bottom: 10px; }
   var KINDS = [["all", "All"], ["question", "Questions"], ["todo", "To-dos"], ["fyi", "FYIs"]];
   var LABEL = { choice: "Choice", question: "Question", "do": "To-do", approve: "Approve", ack: "FYI" };
 
-  var state = { tab: "open", kind: "all", asker: "", open: [], responses: {}, history: [], newer: 0, bad: 0, loaded: false, failed: "", busy: {}, results: {} };
+  /*
+   * Everything keyed by a row's id (an item id, a session id) is a Map, never a
+   * plain object: ids are row data, and "__proto__" or "toString" must be
+   * harmless keys.
+   */
+  var state = {
+    tab: "open", kind: "all", asker: "", open: [], responses: new Map(), history: [], newer: 0, bad: 0,
+    loaded: false, failed: "", busy: new Map(), results: new Map(),
+    /* What the person has typed or picked on each open card, kept across every redraw until it is saved. */
+    drafts: new Map()
+  };
   var db = null;
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
-    if (attrs) for (var key in attrs) {
+    if (attrs) Object.keys(attrs).forEach(function (key) {
       if (key === "text") node.textContent = attrs[key];
       else if (key === "className") node.className = attrs[key];
       else node.setAttribute(key, attrs[key]);
-    }
+    });
     (children || []).forEach(function (child) { if (child) node.appendChild(child); });
     return node;
   }
@@ -161,16 +171,21 @@ details.card[open] summary { margin-bottom: 10px; }
     if (data.status !== "open" && !rec(data.response)) return { bad: true };
     return { ok: data };
   }
-  function readResponse(data) {
-    if (!rec(data) || data.schema !== 1) return null;
-    if (!str(data.id) || !str(data.answer_id) || !ANSWER_ID.test(data.answer_id)) return null;
+  /*
+   * A response row read as the answer for item id, or null. A row of a newer
+   * schema is kept as { newer: true }: an answer this page cannot read, given on
+   * a newer page, which this page never writes over unless the session refused it.
+   */
+  function readResponse(data, id) {
+    if (!rec(data) || data.id !== id || !str(data.answer_id) || !ANSWER_ID.test(data.answer_id)) return null;
+    if (data.schema !== 1) return num(data.schema) && data.schema > 1 ? { newer: true, id: id, answer_id: data.answer_id } : null;
     if (["acknowledged", "done", "answered"].indexOf(data.status) < 0 || !rec(data.response) || !num(data.answered_at)) return null;
     if (!rec(data.seen) || !num(data.seen.bumps) || !num(data.seen.updated) || (data.by !== "page" && data.by !== "viewer")) return null;
     return data;
   }
   /* Rule 1: an answer counts only when it reads and is not the one the session refused. */
   function countingAnswer(item) {
-    var answer = state.responses[item.id];
+    var answer = state.responses.get(item.id);
     if (!answer) return null;
     var refused = rec(item.response_refused) && str(item.response_refused.answer_id) ? item.response_refused.answer_id : null;
     return answer.answer_id === refused ? null : answer;
@@ -211,50 +226,86 @@ details.card[open] summary { margin-bottom: 10px; }
     return true;
   }
   var PUNCT = /[!-\/:-@\[-\x60{-~]/;
-  /* [label](href "title"), from the [ at i: the parts and where it ends, or null. */
-  function bracketLink(text, i) {
-    var depth = 0;
-    var j = i;
-    for (; j < text.length; j++) {
-      var ch = text.charAt(j);
-      if (ch === "\\") { j++; continue; }
-      if (ch === "[") depth++;
-      else if (ch === "]") { depth--; if (depth === 0) break; }
+  /* Sticky patterns, matched where the scanner stands; each bounded, so no search runs on to the end of a long text. */
+  var DEST = /\(\s*(<[^<>\n]{0,2048}>|[^\s()]{0,2048}(?:\([^\s()]{0,2048}\)[^\s()]{0,2048}){0,8})(?:\s+("[^"\n]{0,2048}"|'[^'\n]{0,2048}'|\([^)\n]{0,2048}\)))?\s*\)/y;
+  var AUTO = /<(https?:\/\/[^\s<>]{1,2048})>/iy;
+  var BARE = /https?:\/\/[^\s<]{1,2048}/iy;
+  /*
+   * One line of Markdown text, drawn into parent. Linear in the text: matching
+   * brackets and code-span backtick runs are found in one pass each, a failed
+   * search for an emphasis closer is remembered, and nesting stops at 16.
+   */
+  function inline(text, parent, depth) {
+    depth = depth || 0;
+    if (depth > 16) { parent.appendChild(document.createTextNode(text)); return; }
+    var n = text.length;
+    var k;
+    // Each [ and the ] that closes it.
+    var closeBracket = new Map();
+    var open = [];
+    for (k = 0; k < n; k++) {
+      var code = text.charCodeAt(k);
+      if (code === 92) { k++; continue; }
+      if (code === 91) open.push(k);
+      else if (code === 93 && open.length > 0) closeBracket.set(open.pop(), k);
     }
-    if (depth !== 0 || text.charAt(j + 1) !== "(") return null;
-    var m = /^\(\s*(<[^<>\n]*>|[^\s()]*(?:\([^\s()]*\)[^\s()]*)*)(?:\s+("[^"]*"|'[^']*'|\([^)]*\)))?\s*\)/.exec(text.slice(j + 1));
-    if (!m) return null;
-    var href = m[1].charAt(0) === "<" ? m[1].slice(1, -1) : m[1];
-    return { label: text.slice(i + 1, j), href: href, title: m[2] ? m[2].slice(1, -1) : "", end: j + 1 + m[0].length };
-  }
-  /* **strong**, *em*, __strong__, _em_ or ~~del~~ from the delimiter at i, or null. */
-  function emphasis(text, i) {
-    var ch = text.charAt(i);
-    var run = /^(\*+|_+|~+)/.exec(text.slice(i))[0];
-    if (ch === "~" && run.length !== 2) return null;
-    var size = ch === "~" || run.length >= 2 ? 2 : 1;
-    var after = text.charAt(i + size);
-    if (after === "" || /\s/.test(after)) return null;
-    if (ch === "_" && i > 0 && /[A-Za-z0-9]/.test(text.charAt(i - 1))) return null;
-    var delim = size === 2 ? ch + ch : ch;
-    var start = i + size;
-    for (var j = start + 1; j <= text.length - size; j++) {
-      if (text.substr(j, size) !== delim) continue;
-      if (text.charAt(j - 1) === "\\" || /\s/.test(text.charAt(j - 1))) continue;
-      if (size === 1 && text.charAt(j + 1) === ch) { j++; continue; }
-      while (size === 2 && text.charAt(j + size) === ch) j++;
-      if (ch === "_" && /[A-Za-z0-9]/.test(text.charAt(j + size))) continue;
-      return { tag: ch === "~" ? "del" : size === 2 ? "strong" : "em", inner: text.slice(start, j), end: j + size };
+    // Each run of backticks, and where the next run of the same length starts.
+    var runs = [];
+    for (k = 0; k < n; k++) {
+      if (text.charCodeAt(k) !== 96) continue;
+      var stop = k;
+      while (stop < n && text.charCodeAt(stop) === 96) stop++;
+      runs.push([k, stop - k]);
+      k = stop - 1;
     }
-    return null;
-  }
-  function inline(text, parent) {
+    var closeTicks = new Map();
+    var lastOfLength = new Map();
+    for (k = runs.length - 1; k >= 0; k--) {
+      closeTicks.set(runs[k][0], lastOfLength.has(runs[k][1]) ? lastOfLength.get(runs[k][1]) : -1);
+      lastOfLength.set(runs[k][1], runs[k][0]);
+    }
+    // For each emphasis delimiter, the first start from which no closer exists.
+    var noCloser = new Map();
+
+    function runAt(at, ch) { var end = at; while (end < n && text.charAt(end) === ch) end++; return end - at; }
+    function bracketLink(at) {
+      var close = closeBracket.get(at);
+      if (close === undefined) return null;
+      DEST.lastIndex = close + 1;
+      var m = DEST.exec(text);
+      if (!m) return null;
+      var href = m[1].charAt(0) === "<" ? m[1].slice(1, -1) : m[1];
+      return { label: text.slice(at + 1, close), href: href, title: m[2] ? m[2].slice(1, -1) : "", end: DEST.lastIndex };
+    }
+    function emphasis(at) {
+      var ch = text.charAt(at);
+      var run = runAt(at, ch);
+      if (ch === "~" && run !== 2) return null;
+      var size = ch === "~" || run >= 2 ? 2 : 1;
+      var after = text.charAt(at + size);
+      if (after === "" || /\s/.test(after)) return null;
+      if (ch === "_" && at > 0 && /[A-Za-z0-9]/.test(text.charAt(at - 1))) return null;
+      var delim = size === 2 ? ch + ch : ch;
+      var begin = at + size;
+      var failed = noCloser.get(delim);
+      if (failed !== undefined && begin >= failed) return null;
+      for (var j = begin + 1; j <= n - size; j++) {
+        if (text.charAt(j) !== ch || (size === 2 && text.charAt(j + 1) !== ch)) continue;
+        if (text.charAt(j - 1) === "\\" || /\s/.test(text.charAt(j - 1))) continue;
+        if (size === 1 && text.charAt(j + 1) === ch) { j++; continue; }
+        while (size === 2 && text.charAt(j + size) === ch) j++;
+        if (ch === "_" && /[A-Za-z0-9]/.test(text.charAt(j + size))) continue;
+        return { tag: ch === "~" ? "del" : size === 2 ? "strong" : "em", inner: text.slice(begin, j), end: j + size };
+      }
+      if (failed === undefined || begin < failed) noCloser.set(delim, begin);
+      return null;
+    }
+
     var buf = "";
     function flushText() { if (buf) { parent.appendChild(document.createTextNode(buf)); buf = ""; } }
     var i = 0;
-    while (i < text.length) {
+    while (i < n) {
       var c = text.charAt(i);
-      var rest = text.slice(i);
       var m;
       if (c === "\\") {
         var next = text.charAt(i + 1);
@@ -263,34 +314,43 @@ details.card[open] summary { margin-bottom: 10px; }
         buf += c; i++; continue;
       }
       if (c === "\n") {
-        if (/ {2,}$/.test(buf)) { buf = buf.replace(/ +$/, ""); flushText(); parent.appendChild(el("br")); }
-        else buf = buf.replace(/ +$/, "") + "\n";
+        // buf holds this line only (it is flushed at every line end), so trimming it stays linear.
+        var hard = buf.length >= 2 && buf.charAt(buf.length - 1) === " " && buf.charAt(buf.length - 2) === " ";
+        var keep = buf.length;
+        while (keep > 0 && buf.charAt(keep - 1) === " ") keep--;
+        buf = buf.slice(0, keep);
+        flushText();
+        if (hard) parent.appendChild(el("br"));
+        else parent.appendChild(document.createTextNode("\n"));
         i++; continue;
       }
       if (c === "\x60") {
-        m = /^(\x60+)([\s\S]*?[^\x60])\1(?!\x60)/.exec(rest);
-        if (m) {
+        var length = runAt(i, "\x60");
+        var close = closeTicks.has(i) ? closeTicks.get(i) : -1;
+        if (close > i) {
           flushText();
-          var code = m[2].replace(/\n/g, " ");
-          if (/^ [\s\S]* $/.test(code) && code.trim() !== "") code = code.slice(1, -1);
-          parent.appendChild(el("code", { text: code }));
-          i += m[0].length; continue;
+          var codeText = text.slice(i + length, close).replace(/\n/g, " ");
+          if (codeText.length >= 2 && codeText.charAt(0) === " " && codeText.charAt(codeText.length - 1) === " " && codeText.trim() !== "") {
+            codeText = codeText.slice(1, -1);
+          }
+          parent.appendChild(el("code", { text: codeText }));
+          i = close + length; continue;
         }
-        m = /^\x60+/.exec(rest);
-        buf += m[0]; i += m[0].length; continue;
+        buf += text.substr(i, length); i += length; continue;
       }
       if (c === "<") {
-        m = /^<(https?:\/\/[^\s<>]+)>/i.exec(rest);
+        AUTO.lastIndex = i;
+        m = AUTO.exec(text);
         if (m && safeUrl(m[1])) {
           var auto = m[1];
           flushText();
           link(auto, function (a) { a.textContent = auto; }, parent);
-          i += m[0].length; continue;
+          i = AUTO.lastIndex; continue;
         }
         buf += c; i++; continue;
       }
       if (c === "!" && text.charAt(i + 1) === "[") {
-        var image = bracketLink(text, i + 1);
+        var image = bracketLink(i + 1);
         if (image) {
           var shown = image.label.trim() === "" ? image.href : image.label;
           flushText();
@@ -301,15 +361,16 @@ details.card[open] summary { margin-bottom: 10px; }
         }
       }
       if (c === "[") {
-        var found = bracketLink(text, i);
+        var found = bracketLink(i);
         if (found) {
           flushText();
-          if (!link(found.href, function (a) { inline(found.label, a); }, parent, found.title)) inline(found.label, parent);
+          if (!link(found.href, function (a) { inline(found.label, a, depth + 1); }, parent, found.title)) inline(found.label, parent, depth + 1);
           i = found.end; continue;
         }
       }
       if ((c === "h" || c === "H") && (i === 0 || /[\s(*_~]/.test(text.charAt(i - 1)))) {
-        m = /^https?:\/\/[^\s<]+/i.exec(rest);
+        BARE.lastIndex = i;
+        m = BARE.exec(text);
         if (m) {
           var bare = m[0].replace(/[.,;:!?'")\]*_~]+$/, "");
           if (safeUrl(bare)) {
@@ -320,16 +381,16 @@ details.card[open] summary { margin-bottom: 10px; }
         }
       }
       if (c === "*" || c === "_" || c === "~") {
-        var span = emphasis(text, i);
+        var span = emphasis(i);
         if (span) {
           flushText();
           var node = el(span.tag);
-          inline(span.inner, node);
+          inline(span.inner, node, depth + 1);
           parent.appendChild(node);
           i = span.end; continue;
         }
-        m = /^(\*+|_+|~+)/.exec(rest);
-        buf += m[0]; i += m[0].length; continue;
+        var same = runAt(i, c);
+        buf += text.substr(i, same); i += same; continue;
       }
       buf += c; i++;
     }
@@ -550,9 +611,25 @@ details.card[open] summary { margin-bottom: 10px; }
   /* A free-text field as typed, or undefined when it holds nothing but space: never trimmed. */
   function typed(v) { var t = String(v || ""); return t.trim() === "" ? undefined : t; }
 
-  /* What the card's controls hold, as the pane would store it (buildResponse), or why not. */
-  function responseFrom(item, card, action) {
-    var value = function (name) { var f = card.querySelector('[data-field="' + name + '"]'); return f ? f.value : ""; };
+  /* The draft of one card: its free text and its picked options, as typed. */
+  function draftOf(id) {
+    var draft = state.drafts.get(id);
+    if (!draft) {
+      draft = { fields: new Map(), picked: [] };
+      state.drafts.set(id, draft);
+    }
+    return draft;
+  }
+  function fieldOf(id, name) {
+    var draft = state.drafts.get(id);
+    var value = draft ? draft.fields.get(name) : undefined;
+    return str(value) ? value : "";
+  }
+
+  /* What the card's draft holds, as the pane would store it (buildResponse), or why not. */
+  function responseFrom(item, action) {
+    var draft = draftOf(item.id);
+    var value = function (name) { return fieldOf(item.id, name); };
     var notes = item.notes === true ? typed(value("notes")) : undefined;
     var withNotes = function (r) { if (notes !== undefined) r.notes = notes; return r; };
     var texts = ["notes", "text", "feedback", "other"].map(value);
@@ -572,8 +649,8 @@ details.card[open] summary { margin-bottom: 10px; }
         return { response: withNotes({ text: text }) };
       }
       case "choice": {
-        var picked = Array.prototype.filter.call(card.querySelectorAll('input[data-option]'), function (x) { return x.checked; })
-          .map(function (x) { return x.getAttribute("data-option"); });
+        var labels = (item.options || []).map(function (o) { return o.label; });
+        var picked = draft.picked.filter(function (l) { return labels.indexOf(l) >= 0; });
         var other = typed(value("other"));
         if (item.multiSelect !== true) picked = other !== undefined ? [] : picked.slice(0, 1);
         if (picked.length === 0 && other === undefined) return { error: "Pick an option or fill in Other." };
@@ -585,39 +662,49 @@ details.card[open] summary { margin-bottom: 10px; }
     return { error: "This item cannot be answered here." };
   }
 
-  /* Rule 3: read; write only when no answer counts; read back to see whose answer was stored. */
-  async function submit(item, card, action) {
-    var built = responseFrom(item, card, action);
-    if (built.error) { state.results[item.id] = { bad: true, text: built.error }; render(); return; }
-    state.busy[item.id] = true;
-    state.results[item.id] = { text: "Saving…" };
+  /*
+   * Rule 3: read; write only when no answer counts; read back to see whose
+   * answer was stored. The page's database has no create-if-absent write, so
+   * two tabs can both write: the session applies the first answer it reads,
+   * and the waiting card shows the answer actually stored.
+   */
+  async function submit(item, action) {
+    var built = responseFrom(item, action);
+    if (built.error) { state.results.set(item.id, { bad: true, text: built.error }); render(); return; }
+    state.busy.set(item.id, true);
+    state.results.set(item.id, { text: "Saving…" });
     render();
     try {
       var ref = db.collection("responses").doc(item.id);
       var before = await ref.get();
-      var existing = before.exists ? readResponse(before.data()) : null;
+      var existing = before.exists ? readResponse(before.data(), item.id) : null;
       var refused = rec(item.response_refused) ? item.response_refused.answer_id : null;
       if (existing && existing.answer_id !== refused) {
-        state.results[item.id] = { text: "This item already has an answer." };
+        state.results.set(item.id, { text: existing.newer ? "This item was already answered on a newer page." : "This item already has an answer." });
       } else {
         var mine = answerId();
         await ref.set({
           schema: 1, id: item.id, answer_id: mine, response: built.response, status: STATUS_OF[item.type],
-          answered_at: Date.now(), seen: { bumps: item.bumps, updated: item.updated }, by: "page"
+          answered_at: Date.now(), seen: { bumps: item.bumps, updated: item.updated },
+          /* Which view wrote it; not proof a person answered (decision 3 on #26). */
+          by: "page"
         });
         var after = await ref.get();
-        var stored = after.exists ? readResponse(after.data()) : null;
-        state.results[item.id] = stored && stored.answer_id === mine
-          ? { text: "Saved. The session picks it up at its next turn." }
-          : { bad: true, text: "Another answer was stored first." };
+        var stored = after.exists ? readResponse(after.data(), item.id) : null;
+        if (stored && stored.answer_id === mine) {
+          state.drafts.delete(item.id);
+          state.results.set(item.id, { text: "Saved. If it was also answered somewhere else, the session takes the first answer it reads." });
+        } else {
+          state.results.set(item.id, { bad: true, text: "Another answer was stored first. The answer shown here is the one stored." });
+        }
       }
     } catch (e) {
       var code = e && e.code;
-      state.results[item.id] = { bad: true, text: code === "invalid_argument" || code === "not_granted"
+      state.results.set(item.id, { bad: true, text: code === "invalid_argument" || code === "not_granted"
         ? "This page cannot save answers for you. Only the page's owner can answer here."
-        : "The answer was not saved (" + (code || "error") + "). Try again." };
+        : "The answer was not saved (" + (code || "error") + "). Your answer is kept: try again." });
     }
-    state.busy[item.id] = false;
+    state.busy.set(item.id, false);
     render();
   }
 
@@ -636,11 +723,19 @@ details.card[open] summary { margin-bottom: 10px; }
     if (extra) meta.appendChild(el("span", { text: extra }));
     return meta;
   }
-  function textField(item, name, label, multiline) {
-    var id = "f-" + item.id + "-" + name;
-    var field = multiline
-      ? el("textarea", { id: id, "data-field": name, maxlength: String(LIMIT), placeholder: label, "aria-label": label })
-      : el("input", { id: id, type: "text", "data-field": name, maxlength: String(LIMIT), placeholder: label, "aria-label": label });
+  function textField(item, name, label) {
+    var field = el("textarea", { id: "f-" + item.id + "-" + name, "data-field": name, maxlength: String(LIMIT), placeholder: label, "aria-label": label });
+    field.value = fieldOf(item.id, name);
+    field.addEventListener("input", function () {
+      var draft = draftOf(item.id);
+      draft.fields.set(name, field.value);
+      // Single-select: typing in Other clears a picked option, as the pane does.
+      if (name === "other" && item.multiSelect !== true && field.value.trim() !== "") {
+        draft.picked = [];
+        var card = field.closest(".card");
+        if (card) Array.prototype.forEach.call(card.querySelectorAll("input[data-option]"), function (x) { x.checked = false; });
+      }
+    });
     return field;
   }
   function button(label, primary, onPress, disabled) {
@@ -652,41 +747,56 @@ details.card[open] summary { margin-bottom: 10px; }
 
   function openCard(item) {
     var card = el("section", { className: "card", id: "card-" + item.id });
-    var busy = state.busy[item.id] === true;
+    var busy = state.busy.get(item.id) === true;
+    var draft = state.drafts.get(item.id);
     card.appendChild(chips(item));
     card.appendChild(el("h2", { text: item.question }));
     if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md)]));
     if (rec(item.response_refused) && str(item.response_refused.reason)) {
       card.appendChild(el("div", { className: "note bad", text: "Your last answer was not taken: " + item.response_refused.reason }));
     }
-    var press = function (action) { return function () { submit(item, card, action); }; };
+    var press = function (action) { return function () { submit(item, action); }; };
     var actions = el("div", { className: "actions" });
     if (item.type === "ack") actions.appendChild(button("Acknowledge", true, press("ack"), busy));
     else if (item.type === "approve") {
       actions.appendChild(button("Approve", true, press("Approve"), busy));
       actions.appendChild(button("Reject", false, press("Reject"), busy));
     } else if (item.type === "do") {
-      card.appendChild(textField(item, "feedback", "Feedback (optional, Markdown)", true));
+      card.appendChild(textField(item, "feedback", "Feedback (optional, Markdown)"));
       actions.appendChild(button("Done", true, press("done"), busy));
       actions.appendChild(button("Not done", false, press("not_done"), busy));
     } else if (item.type === "question") {
-      card.appendChild(textField(item, "text", "Your answer (Markdown)", true));
+      card.appendChild(textField(item, "text", "Your answer (Markdown)"));
       actions.appendChild(button("Submit", true, press("submit"), busy));
     } else {
       var opts = el("div", { className: "opts" });
       var kind = item.multiSelect === true ? "checkbox" : "radio";
       (item.options || []).forEach(function (option, n) {
         var input = el("input", { type: kind, name: "o-" + item.id, id: "o-" + item.id + "-" + n, "data-option": option.label });
+        input.checked = draft !== undefined && draft.picked.indexOf(option.label) >= 0;
+        input.addEventListener("change", function () {
+          var d = draftOf(item.id);
+          if (item.multiSelect === true) {
+            d.picked = d.picked.filter(function (l) { return l !== option.label; });
+            if (input.checked) d.picked.push(option.label);
+          } else if (input.checked) {
+            // Single-select: picking an option clears Other, as the pane does.
+            d.picked = [option.label];
+            d.fields.set("other", "");
+            var other = card.querySelector('[data-field="other"]');
+            if (other) other.value = "";
+          }
+        });
         opts.appendChild(el("label", { className: "opt", "for": "o-" + item.id + "-" + n }, [
           input, el("span", { text: option.label }, [el("small", { text: option.description })])
         ]));
       });
-      opts.appendChild(el("div", { className: "opt other" }, [textField(item, "other", "Other… (Markdown)", true)]));
+      opts.appendChild(el("div", { className: "opt other" }, [textField(item, "other", "Other… (Markdown)")]));
       card.appendChild(opts);
       actions.appendChild(button("Submit", true, press("submit"), busy));
     }
-    if (item.notes === true) card.appendChild(textField(item, "notes", "Notes (optional, Markdown)", true));
-    var result = state.results[item.id];
+    if (item.notes === true) card.appendChild(textField(item, "notes", "Notes (optional, Markdown)"));
+    var result = state.results.get(item.id);
     if (result) actions.appendChild(el("span", { className: result.bad ? "status bad" : "status", text: result.text, role: "status" }));
     card.appendChild(actions);
     card.appendChild(metaLine(item));
@@ -715,8 +825,12 @@ details.card[open] summary { margin-bottom: 10px; }
     var card = el("section", { className: "card" });
     card.appendChild(chips(item));
     card.appendChild(el("h2", { text: item.question }));
-    card.appendChild(answerNode(answer.response, "Answered " + ago(answer.answered_at)));
-    var result = state.results[item.id];
+    if (answer.newer) {
+      card.appendChild(el("div", { className: "ans" }, [el("div", { className: "ans-when", text: "Answered on a newer humantray page: the answer cannot be shown here." })]));
+    } else {
+      card.appendChild(answerNode(answer.response, "The stored answer, given " + ago(answer.answered_at)));
+    }
+    var result = state.results.get(item.id);
     if (result) card.appendChild(el("span", { className: result.bad ? "status bad" : "status", text: result.text, role: "status" }));
     card.appendChild(metaLine(item, "not picked up yet"));
     return card;
@@ -735,30 +849,27 @@ details.card[open] summary { margin-bottom: 10px; }
   function askerName(item) { return str(item.session_title) && item.session_title.trim() !== "" ? item.session_title : "A session"; }
 
   function grouped(items, draw) {
-    var leads = {};
-    var order = [];
+    var leads = new Map();
     items.forEach(function (item) {
       var lead = str(item.lead_session_id) ? item.lead_session_id : "";
-      if (!leads[lead]) { leads[lead] = {}; order.push(lead); }
-      var asker = leads[lead];
-      if (!asker[item.session_id]) asker[item.session_id] = [];
-      asker[item.session_id].push(item);
+      if (!leads.has(lead)) leads.set(lead, new Map());
+      var askers = leads.get(lead);
+      if (!askers.has(item.session_id)) askers.set(item.session_id, []);
+      askers.get(item.session_id).push(item);
     });
     var out = [];
-    order.forEach(function (lead) {
+    leads.forEach(function (askers, lead) {
       var group = el("section", { className: "group" });
-      var leadItem = null;
-      Object.keys(leads[lead]).forEach(function (s) { if (s === lead) leadItem = leads[lead][s][0]; });
+      var leadItems = askers.get(lead);
       var title = el("h3", { className: "group-title" });
       title.appendChild(document.createTextNode("Lead: "));
-      title.appendChild(sessionLink(lead, leadItem ? askerName(leadItem) : (lead === "" ? "none" : "a lead session")));
+      title.appendChild(sessionLink(lead, leadItems ? askerName(leadItems[0]) : (lead === "" ? "none" : "a lead session")));
       group.appendChild(title);
-      Object.keys(leads[lead]).forEach(function (s) {
-        var list = leads[lead][s];
+      askers.forEach(function (list, session) {
         var asker = el("div", { className: "asker" });
         var head = el("p", { className: "asker-title" });
         head.appendChild(document.createTextNode("Asked by "));
-        head.appendChild(sessionLink(s, askerName(list[0])));
+        head.appendChild(sessionLink(session, askerName(list[0])));
         asker.appendChild(head);
         list.forEach(function (item) { asker.appendChild(draw(item)); });
         group.appendChild(asker);
@@ -795,18 +906,37 @@ details.card[open] summary { margin-bottom: 10px; }
       chipRow.appendChild(b);
     });
     var select = document.getElementById("asker");
-    var askers = {};
-    state.open.concat(state.history).forEach(function (item) { if (!askers[item.session_id]) askers[item.session_id] = askerName(item); });
+    var askers = new Map();
+    state.open.concat(state.history).forEach(function (item) { if (!askers.has(item.session_id)) askers.set(item.session_id, askerName(item)); });
     var chosen = state.asker;
     select.textContent = "";
     select.appendChild(el("option", { value: "", text: "All sessions" }));
-    Object.keys(askers).forEach(function (id) {
-      var option = el("option", { value: id, text: askers[id] });
+    askers.forEach(function (name, id) {
+      var option = el("option", { value: id, text: name });
       if (id === chosen) option.selected = true;
       select.appendChild(option);
     });
 
+    // The field being typed in keeps its focus, caret and scroll across the redraw.
+    var active = document.activeElement;
+    var focus = active && active.id && list.contains(active)
+      ? { id: active.id, start: active.selectionStart, end: active.selectionEnd, scroll: active.scrollTop }
+      : null;
     list.textContent = "";
+    drawList(list, open, waiting, keep);
+    if (focus) {
+      var again = document.getElementById(focus.id);
+      if (again) {
+        again.focus({ preventScroll: true });
+        if (typeof focus.start === "number" && typeof again.setSelectionRange === "function") {
+          try { again.setSelectionRange(focus.start, focus.end); } catch (e) { /* not a text field */ }
+        }
+        again.scrollTop = focus.scroll || 0;
+      }
+    }
+  }
+
+  function drawList(list, open, waiting, keep) {
     if (!state.loaded) {
       list.appendChild(el("div", { className: "empty", text: "Loading the asks from this page's database…" }));
       return;
@@ -882,8 +1012,8 @@ details.card[open] summary { margin-bottom: 10px; }
       render();
     }, failed);
     db.collection("responses").onSnapshot(function (snap) {
-      var map = {};
-      snap.docs.forEach(function (doc) { var r = readResponse(doc.data()); if (r && r.id === doc.id) map[doc.id] = r; });
+      var map = new Map();
+      snap.docs.forEach(function (doc) { var r = readResponse(doc.data(), doc.id); if (r) map.set(doc.id, r); });
       state.responses = map;
       render();
     }, failed);

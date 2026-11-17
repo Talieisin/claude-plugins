@@ -7,8 +7,9 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Item } from '../types'
 import { fingerprint, itemToRow } from '../hooks/row-shape'
 import { NEWER_ANSWER } from '../hooks/rows'
+import { FIND_AGAIN_MS } from '../hooks/store-pass'
 import { LEAD, ME, OTHER, TITLE, URL_A, artifactWorld, meta, response } from './artifact-world'
-import { ADD, COMMAND, START, START_EVENT, TURN, answerOf, stored, world } from './world'
+import { ADD, COMMAND, PANE, START, START_EVENT, TURN, answerOf, stored, world } from './world'
 
 const CLOUD = { env: { CLAUDE_CODE_REMOTE: 'true' } }
 const TURN_START = { text: '', turnId: 'turn-1' } as const
@@ -573,5 +574,147 @@ describe('pruning finished rows', () => {
     expect(a.doc(URL_A, `responses/${rows[2]?.id}`)).toBeUndefined()
     expect(a.doc(URL_A, `items/${open.id}`)).toBeDefined()
     expect(left(204)).toBe(true)
+  })
+})
+
+describe('finding and adopting later in the life of the process', () => {
+  test('a store unreachable for the first 70 s: a turn after ten minutes finds the page and pushes', async ($, on) => {
+    const { w, a } = linked(on)
+    a.listFails = true
+    await $.session.start(START_EVENT)
+    await settle(w)
+    await w.clock.advance(70_000)
+    a.listFails = false
+    const id = answerOf<{ id: string; page: string }>(await $.tool.call(approve))
+    expect(id.page).toBe('waiting')
+    await $.turn.start(TURN_START)
+    await settle(w)
+    // Within ten minutes of the last try: no new find.
+    expect(a.doc(URL_A, `items/${id.id}`)).toBeUndefined()
+    await w.clock.advance(FIND_AGAIN_MS)
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(a.doc(URL_A, `items/${id.id}`)).toBeDefined()
+    expect(answerOf<{ page: string }>(await $.tool.call({ ...approve, key: 'next' })).page).toBe('queued')
+  })
+
+  test('a replaced container whose get_session fails for the first 70 s adopts at a later turn, and takes the waiting answer', async ($, on) => {
+    const { w, a } = linked(on)
+    const open = mirrored({ id: ID1, type: 'approve' })
+    a.put(URL_A, `items/${ID1}`, itemToRow(open) as unknown as Record<string, unknown>)
+    a.put(URL_A, `responses/${ID1}`, response(ID1))
+    const answer = a.session
+    a.session = undefined
+    await $.session.start(START_EVENT)
+    await settle(w)
+    await w.clock.advance(70_000)
+    a.session = answer
+    await $.turn.start(TURN_START)
+    await settle(w)
+    await w.clock.advance(FIND_AGAIN_MS)
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(w.store().items.map(item => item.id)).toEqual([ID1])
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(w.submits).toEqual([`humantray HT-${ID1.slice(-5)} (Seeded): Approve`])
+  })
+
+  test('a page made after the session started is found at a turn ten minutes on', async ($, on) => {
+    const w = world(on, CLOUD)
+    const a = artifactWorld(on, { read: path => w.files.get(path) })
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(approve)).id
+    await settle(w)
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', meta(START))
+    await w.clock.advance(FIND_AGAIN_MS)
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(a.doc(URL_A, `items/${id}`)).toBeDefined()
+  })
+})
+
+describe('the pane and the store', () => {
+  test('a pane answer clears a refused store answer and names the pane', async ($, on) => {
+    const { w, a } = linked(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(approve)).id
+    await settle(w)
+    a.put(URL_A, `responses/${id}`, response(id, { response: { selected: ['Maybe'] } }))
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(w.store().items[0]?.response_refused).toBeDefined()
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${id}:reject` })
+    await ui.unmount()
+    await settle(w)
+    const item = w.store().items[0]
+    expect(item).toMatchObject({ status: 'answered', response: { selected: ['Reject'] }, response_by: 'pane' })
+    expect(item?.response_refused).toBeUndefined()
+    await $.turn.start(TURN_START)
+    await settle(w)
+    const row = a.doc(URL_A, `items/${id}`)?.data
+    expect(row).toMatchObject({ status: 'answered', response_by: 'pane', delivered: true })
+    expect(row).not.toHaveProperty('response_refused')
+  })
+})
+
+describe('rewrites keep what this version does not know', () => {
+  test('an adopted row with a field this version does not know keeps it through a bump', async ($, on) => {
+    const { w, a } = linked(on)
+    const item = mirrored({ id: ID1, type: 'approve', key: 'merge', body_md: 'one' })
+    a.put(URL_A, `items/${ID1}`, { ...(itemToRow(item) as unknown as Record<string, unknown>), role: 'worker' })
+    // A replaced container: adopted at the row's own version, so the next push is pinned to it.
+    await $.session.start(START_EVENT)
+    await settle(w)
+    expect(w.store().items[0]?.row?.version).toBe(1)
+    const bumped = answerOf<{ id: string; bumped: boolean }>(await $.tool.call({ ...approve, key: 'merge', body_md: 'two' }))
+    expect(bumped).toMatchObject({ id: ID1, bumped: true })
+    await settle(w)
+    expect(a.doc(URL_A, `items/${ID1}`)?.data).toMatchObject({ role: 'worker', body_md: 'two', bumps: 1 })
+  })
+})
+
+describe('pruning, linked or not', () => {
+  test('a cloud session with no page prunes its finished items to 200', async ($, on) => {
+    const w = world(on, CLOUD)
+    artifactWorld(on)
+    const done = Array.from({ length: 205 }, (_, n) =>
+      stored({
+        id: `01FFFFFFFFFFFFFFFFFFFF${String(n).padStart(4, '0')}`,
+        type: 'approve',
+        status: 'answered',
+        response: { selected: ['Approve'] },
+        response_at: START - 1_000_000 + n,
+        delivered: true,
+        remote: { ...REMOTE },
+      }),
+    )
+    w.seed({ version: 1, items: done, sessions: {} })
+    await $.session.start(START_EVENT)
+    await settle(w)
+    expect(w.store().items).toHaveLength(200)
+  })
+
+  test('no finished row is pruned while any finished row could not be read', async ($, on) => {
+    const { w, a } = linked(on)
+    for (let n = 0; n < 205; n++) {
+      const item = mirrored({
+        id: `01GGGGGGGGGGGGGGGGGGGG${String(n).padStart(4, '0')}`,
+        type: 'approve',
+        status: 'answered',
+        response: { selected: ['Approve'] },
+        response_at: START - 1_000_000 + n * 10,
+        delivered: true,
+      })
+      a.put(URL_A, `items/${item.id}`, itemToRow(item) as unknown as Record<string, unknown>)
+    }
+    a.put(URL_A, 'items/01GGGGGGGGGGGGGGGGGGGGNEWR', { schema: 2, status: 'answered', response_at: START })
+    a.session = { id: OTHER, title: null, parent: null }
+    await $.session.start(START_EVENT)
+    await settle(w)
+    expect(a.doc(URL_A, 'items/01GGGGGGGGGGGGGGGGGGGG0000')).toBeDefined()
+    expect(a.writes().filter(c => c.input.action === 'batch')).toEqual([])
   })
 })

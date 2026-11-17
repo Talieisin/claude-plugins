@@ -65,6 +65,7 @@ function stub() {
   window.__listeners = []
   window.__writes = []
   window.__raceLoser = false
+  window.__failSet = false
   const matches = (data, where) =>
     where.every(([f, op, v]) => (op === '==' ? data[f] === v : op === 'in' ? v.includes(data[f]) : false))
   const snapDoc = path => {
@@ -89,11 +90,13 @@ function stub() {
   const notify = () => {
     for (const l of window.__listeners) l()
   }
+  window.__notify = notify
   const docRef = path => ({
     id: path.split('/').pop(),
     path,
     get: async () => snapDoc(path),
     set: async data => {
+      if (window.__failSet) throw { code: 'unavailable', message: 'the store did not answer' }
       window.__writes.push({ path, data: JSON.parse(JSON.stringify(data)) })
       window.__store.set(path, JSON.parse(JSON.stringify(data)))
       if (window.__raceLoser) window.__store.set(path, { ...data, answer_id: 'someoneelse0000000001' })
@@ -138,9 +141,35 @@ function seed({ rich, evil, evilMd }) {
   put('meta/page', { schema: 1, kind: 'humantray', repo: 'example.com/example/repo', created_at: now, page_version: 1, plugin_version: '0.1.0' })
   put('items/01TESTPAGE000000000000RICH', base('01TESTPAGE000000000000RICH', { type: 'question', header: 'Plan', question: 'Does this plan read right?', body_md: rich, notes: true }))
   put('items/01TESTPAGE000000000000CHOI', base('01TESTPAGE000000000000CHOI', {
-    type: 'choice', header: 'Format', question: 'Which format first?',
+    type: 'choice', header: 'Format', question: 'Which format first?', notes: true,
     options: [{ label: 'TOML', description: 'Small.' }, { label: 'YAML', description: 'Wanted.' }],
   }))
+  put('items/01TESTPAGE000000000000SING', base('01TESTPAGE000000000000SING', {
+    type: 'choice', header: 'Pick', question: 'One only?',
+    options: [{ label: 'A', description: 'a' }, { label: 'B', description: 'b' }],
+  }))
+  put('items/01TESTPAGE000000000000MULT', base('01TESTPAGE000000000000MULT', {
+    type: 'choice', header: 'Many', question: 'Which ones?', multiSelect: true,
+    options: [{ label: 'X', description: 'x' }, { label: 'Y', description: 'y' }],
+  }))
+  put('items/01TESTPAGE000000000000ACKK', base('01TESTPAGE000000000000ACKK', { type: 'ack', header: 'FYI', question: 'Lane finished' }))
+  // Answered on a newer page: shown as answered elsewhere, never written over.
+  put('items/01TESTPAGE000000000000NEWS', base('01TESTPAGE000000000000NEWS', { type: 'question', header: 'Newer', question: 'Answered on a newer page?' }))
+  put('responses/01TESTPAGE000000000000NEWS', { schema: 2, id: '01TESTPAGE000000000000NEWS', answer_id: 'neweranswer000000001', future: true })
+  // A response document whose id names another item: no answer for this one.
+  put('items/01TESTPAGE000000000000MISM', base('01TESTPAGE000000000000MISM', { type: 'question', header: 'Mismatch', question: 'Mismatched answer?' }))
+  put('responses/01TESTPAGE000000000000MISM', {
+    schema: 1, id: '01TESTPAGE000000000000WAIT', answer_id: 'mismatchanswer000001', response: { text: 'not mine' },
+    status: 'answered', answered_at: now, seen: { bumps: 0, updated: now }, by: 'page',
+  })
+  // Ids that would be trouble as keys of plain objects.
+  for (const [n, weird] of ['__proto__', 'toString', 'disabled', 'constructor'].entries()) {
+    const id = '01TESTPAGE00000000000WEIRD' + n
+    put('items/' + id, base(id, { type: 'ack', header: 'Weird', question: 'Weird id ' + weird, session_id: weird, lead_session_id: weird, session_title: weird }))
+  }
+  // Long bodies that a naive scanner takes quadratic time over.
+  put('items/01TESTPAGE000000000000SLW1', base('01TESTPAGE000000000000SLW1', { type: 'ack', header: 'Slow', question: 'Stars', body_md: '*a '.repeat(6667) }))
+  put('items/01TESTPAGE000000000000SLW2', base('01TESTPAGE000000000000SLW2', { type: 'ack', header: 'Slow', question: 'Unders', body_md: '_a '.repeat(6667) }))
   put('items/01TESTPAGE000000000000TODO', base('01TESTPAGE000000000000TODO', { type: 'do', header: 'Token', question: 'Add the token', created: now - 3 * 86400e3 }))
   put('items/01TESTPAGE000000000000APPR', base('01TESTPAGE000000000000APPR', {
     type: 'approve', header: 'Merge', question: 'Merge it?',
@@ -287,7 +316,87 @@ try {
     assert.equal(await page.evaluate(() => document.getElementById('notes').innerText.includes('newer humantray')), true)
     assert.equal(await page.evaluate(() => document.body.innerText.includes('Your last answer was not taken')), true)
 
+    // Weird ids are harmless: their cards are drawn, nothing is disabled.
+    const weird = await page.evaluate(() => ({
+      cards: [...document.querySelectorAll('section.card')].filter(c => c.textContent.includes('Weird id')).length,
+      disabled: [...document.querySelectorAll('#list button, #list textarea')].filter(n => n.disabled).length,
+    }))
+    assert.deepEqual(weird, { cards: 4, disabled: 0 }, `${name}: weird ids`)
+    // A newer page's answer: shown as answered elsewhere; no card to answer it.
+    assert.equal(await page.$('#card-01TESTPAGE000000000000NEWS'), null, `${name}: the newer answer is not answerable here`)
+    assert.equal(await page.evaluate(() => document.body.innerText.includes('Answered on a newer humantray page')), true)
+    // A response document naming another item is no answer: the item stays open.
+    assert.notEqual(await page.$('#card-01TESTPAGE000000000000MISM'), null, `${name}: a mismatched answer counts as none`)
+    // Every redraw is fast, long pathological bodies included.
+    const redraw = await page.evaluate(() => {
+      const t0 = performance.now()
+      window.__notify()
+      return performance.now() - t0
+    })
+    assert.ok(redraw < 750, `${name}: three redraws took ${Math.round(redraw)} ms`)
+
     if (name === 'desktop, light') {
+      // Drafts survive a snapshot: the text, the picked option, the focus and the caret.
+      await page.fill('#f-01TESTPAGE000000000000RICH-text', 'a long *Markdown* answer\n\n- one\n- two')
+      await page.check('#o-01TESTPAGE000000000000MULT-1')
+      await page.focus('#f-01TESTPAGE000000000000RICH-text')
+      await page.evaluate(() => document.getElementById('f-01TESTPAGE000000000000RICH-text').setSelectionRange(7, 7))
+      await page.evaluate(() => {
+        window.__store.set('items/01TESTPAGE000000000000ARRV', {
+          ...window.__store.get('items/01TESTPAGE000000000000ACKK'), id: '01TESTPAGE000000000000ARRV', short: 'HT-0ARRV', question: 'Arrived later',
+        })
+        window.__notify()
+      })
+      const kept = await page.evaluate(() => ({
+        text: document.getElementById('f-01TESTPAGE000000000000RICH-text').value,
+        ticked: document.getElementById('o-01TESTPAGE000000000000MULT-1').checked,
+        focus: document.activeElement && document.activeElement.id,
+        caret: document.activeElement && document.activeElement.selectionStart,
+        arrived: document.body.innerText.includes('Arrived later'),
+      }))
+      assert.deepEqual(kept, {
+        text: 'a long *Markdown* answer\n\n- one\n- two', ticked: true, focus: 'f-01TESTPAGE000000000000RICH-text', caret: 7, arrived: true,
+      }, 'a snapshot keeps drafts, focus and caret')
+      // A draft in one card survives answering another.
+      await page.click('#card-01TESTPAGE000000000000ACKK button.btn.primary')
+      await page.waitForTimeout(100)
+      assert.equal(await page.inputValue('#f-01TESTPAGE000000000000RICH-text'), 'a long *Markdown* answer\n\n- one\n- two', 'answering another card keeps a draft')
+      // Notes survive a refused submit.
+      await page.fill('#f-01TESTPAGE000000000000CHOI-notes', 'long notes\n\n> kept')
+      await page.click('#card-01TESTPAGE000000000000CHOI button.btn.primary')
+      await page.waitForTimeout(100)
+      assert.equal(await page.$eval('#card-01TESTPAGE000000000000CHOI .status', n => n.textContent), 'Pick an option or fill in Other.')
+      assert.equal(await page.inputValue('#f-01TESTPAGE000000000000CHOI-notes'), 'long notes\n\n> kept', 'a refused submit keeps the notes')
+      // A failed save keeps the answer to try again with.
+      await page.evaluate(() => { window.__failSet = true })
+      await page.click('#card-01TESTPAGE000000000000RICH button.btn.primary')
+      await page.waitForTimeout(150)
+      assert.match(await page.$eval('#card-01TESTPAGE000000000000RICH .status', n => n.textContent), /not saved \(unavailable\)/)
+      assert.equal(await page.inputValue('#f-01TESTPAGE000000000000RICH-text'), 'a long *Markdown* answer\n\n- one\n- two', 'a failed save keeps the answer')
+      await page.evaluate(() => { window.__failSet = false })
+      // Tabs and back keep a draft.
+      await page.click('#tab-history')
+      await page.click('#tab-open')
+      assert.equal(await page.inputValue('#f-01TESTPAGE000000000000RICH-text'), 'a long *Markdown* answer\n\n- one\n- two', 'a tab change keeps a draft')
+
+      // Single-select: typing Other then picking an option stores the option and clears Other.
+      await page.fill('#f-01TESTPAGE000000000000SING-other', 'something else')
+      await page.check('#o-01TESTPAGE000000000000SING-1')
+      assert.equal(await page.inputValue('#f-01TESTPAGE000000000000SING-other'), '', 'picking an option clears Other')
+      // ...and picking then typing Other unpicks the option.
+      await page.check('#o-01TESTPAGE000000000000SING-0')
+      await page.fill('#f-01TESTPAGE000000000000SING-other', 'none of these')
+      assert.equal(await page.isChecked('#o-01TESTPAGE000000000000SING-0'), false, 'typing Other unpicks the option')
+      await page.check('#o-01TESTPAGE000000000000SING-1')
+      await page.click('#card-01TESTPAGE000000000000SING button.btn.primary')
+      await page.waitForTimeout(150)
+      assert.deepEqual((await page.evaluate(() => window.__writes.find(w => w.path.endsWith('SING')))).data.response, { selected: ['B'] }, 'the picked option is the one stored')
+      // The mismatched answer is no answer: this page may answer the item.
+      await page.fill('#f-01TESTPAGE000000000000MISM-text', 'mine')
+      await page.click('#card-01TESTPAGE000000000000MISM button.btn.primary')
+      await page.waitForTimeout(150)
+      assert.equal((await page.evaluate(() => window.__writes.find(w => w.path.endsWith('MISM')))).data.response.text, 'mine')
+
       // An answer is stored exactly as typed, Markdown and surrounding space included.
       const typed = '  ## Looks right\n\n- [x] steps\n- [ ] tests\n\n> ship it  \n'
       await page.fill('#f-01TESTPAGE000000000000RICH-text', typed)
@@ -313,7 +422,9 @@ try {
       await page.fill('#f-01TESTPAGE000000000000CHOI-other', 'Both:\n\n1. TOML\n2. YAML')
       await page.click('#card-01TESTPAGE000000000000CHOI button.btn.primary')
       await page.waitForTimeout(150)
-      assert.deepEqual((await page.evaluate(() => window.__writes.find(w => w.path.endsWith('CHOI')))).data.response, { selected: [], other: 'Both:\n\n1. TOML\n2. YAML' })
+      assert.deepEqual((await page.evaluate(() => window.__writes.find(w => w.path.endsWith('CHOI')))).data.response, {
+        selected: [], other: 'Both:\n\n1. TOML\n2. YAML', notes: 'long notes\n\n> kept',
+      })
       // A lost race says so.
       await page.evaluate(() => {
         window.__raceLoser = true
@@ -321,6 +432,7 @@ try {
       await page.click('#card-01TESTPAGE000000000000TODO button.btn.primary')
       await page.waitForTimeout(150)
       assert.equal(await page.evaluate(() => document.body.innerText.includes('Another answer was stored first.')), true)
+      assert.equal(await page.evaluate(() => document.body.innerText.includes('The stored answer, given')), true)
       // History draws its answers as Markdown too.
       await page.click('#tab-history')
       await page.waitForTimeout(100)
