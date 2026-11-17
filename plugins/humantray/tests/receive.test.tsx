@@ -3,7 +3,7 @@
 // `session.receive` (a running one), as test 0 recorded, writes the response
 // row under rule 4, and delivers the answer exactly once.
 
-import { describe, expect, test } from 'claude-code/testing'
+import { type Engine, describe, expect, test } from 'claude-code/testing'
 
 import type { Item } from '../types'
 import { fingerprint, itemToRow } from '../hooks/row-shape'
@@ -51,7 +51,7 @@ async function settle(w: ReturnType<typeof world>) {
 }
 
 /** A linked cloud session with one open approve item of its own, started. */
-async function asker($: Parameters<Parameters<typeof test>[1]>[0], on: On, items?: Item[]) {
+async function asker($: Engine, on: On, items?: Item[]) {
   const { w, a } = linked(on)
   seedMirrored(w, a, items ?? [mirrored({ id: ID1, type: 'approve' })])
   await $.session.start(START_EVENT)

@@ -273,6 +273,100 @@ export type HistoryFull = {
  */
 export type Tray = { items: Item[]; me: string; mine: string[]; history: HistoryEntry[]; repo: string }
 
+/**
+ * The local viewer's setting (#32), in the plugin's `$.store` under
+ * `viewer:config`: which repositories or artifacts it shows, and the session
+ * that is the viewer (only that session takes the lease back by itself).
+ */
+export type ViewerConfig = { repos?: string[]; urls?: string[]; session: string }
+
+/**
+ * Who is the viewer on this computer (`viewer:lease`): the module instance
+ * holding it, its session, and when it last renewed. Fresh for 90 s.
+ */
+export type ViewerLease = { instance: string; session: string; renewed: number }
+
+/**
+ * One answer the viewer is sending (`viewer:outbox`, keyed by
+ * `<artifact> <id>`): the envelope as sent, and how its sends went. It stays
+ * until the store settles it (delivered, refused, superseded or gone).
+ */
+export type OutboxEntry = {
+  artifact: string
+  id: string
+  short: string
+  /** The asker's routable id: where the envelope goes. */
+  to: string
+  answer_id: string
+  /** The envelope's text, sent again as it is. */
+  text: string
+  /** When it was first sent, and last sent, on the viewer's clock. */
+  first: number
+  last: number
+  sends: number
+  /** How the last send went: queued at the asker, or not, with the reason. */
+  delivered: boolean
+  reason?: string
+}
+
+/**
+ * What a viewer card shows, from the store and the outbox:
+ * - `answerable`: open, nothing pending;
+ * - `sent`: our envelope is queued at the asker, not taken yet;
+ * - `not-sent`: the last send was refused (`reason`);
+ * - `not-taken`: 24 h with no change;
+ * - `stored`: our response row exists; the asker has not applied it yet;
+ * - `applied`: closed with our answer, not yet delivered;
+ * - `page`: another answer that counts is waiting (given on the page);
+ * - `read-only`: the asker cannot take envelopes (no `envelope: 1`).
+ */
+export type CardState = 'answerable' | 'sent' | 'not-sent' | 'not-taken' | 'stored' | 'applied' | 'page' | 'read-only'
+
+/** One item as the viewer draws it. */
+export type ViewerCard = {
+  /** The artifact it was read from. */
+  url: string
+  row: ItemRow
+  version: number
+  state: CardState
+  /** Why: the asker's refusal of our last answer, or why a send failed. */
+  reason?: string
+  /** Older than 24 h. */
+  old: boolean
+}
+
+/** One asking session in the viewer: its title, whether its id may be linked, and when it was last active. */
+export type ViewerAsker = { session_id: string; title: string | null; link: boolean; lastActive: number; cards: ViewerCard[] }
+
+/** One lead in the viewer, and the sessions under it. */
+export type ViewerLead = { lead: string | null; title: string | null; askers: ViewerAsker[] }
+
+/** One repository in the viewer: its artifact, when it was last read, and its leads. */
+export type ViewerRepo = {
+  repo: string
+  url: string
+  /** When it was last read whole, or null if never. */
+  readAt: number | null
+  /** The last read failed: what is shown is from `readAt`. */
+  stale: boolean
+  /** Rows that could not be read, or were written by a newer schema. */
+  skipped: number
+  leads: ViewerLead[]
+}
+
+/** What the viewer's pane and band draw from (#32). */
+export type ViewerTray = {
+  repos: ViewerRepo[]
+  /** Answered items across the repositories, as History draws them. */
+  history: HistoryEntry[]
+  /** Cards that can be answered now. */
+  answerable: number
+  /** How finding the artifacts went. */
+  found: 'ok' | 'unreadable' | 'none'
+  /** When this was built. */
+  at: number
+}
+
 /** Which list the pane shows. */
 export type TrayView = 'open' | 'history'
 
@@ -295,6 +389,12 @@ declare module 'claude-code' {
       page: number
       /** The History entry shown in full, or null for the list. */
       expanded: Shaped<HistoryFull | null>
+      /** The viewer's tray, or null when this session is not the viewer (#32). */
+      viewer: Shaped<ViewerTray | null>
+      /** The viewer's Open page shown, from 0. */
+      vpage: number
+      /** A viewer card shown in full, or null. */
+      vexpanded: Shaped<HistoryFull | null>
       drafts: StateFamily<Draft>
     }
   }

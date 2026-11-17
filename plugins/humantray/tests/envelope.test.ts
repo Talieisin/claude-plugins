@@ -3,19 +3,20 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
+import type { ResponseEnvelope } from '../types'
 import { ENVELOPE_CLOSE, ENVELOPE_MAX, ENVELOPE_OPEN, isEnvelopeOrigin, makeEnvelope, parseEnvelope, readEnvelope, rowOf, unwrap } from '../hooks/envelope'
 import { ME, URL_A } from './artifact-world'
 import { TYPED, WRAP_CLOSE, WRAP_OPEN, envelopeFor, textOf, wrapped } from './envelope-fixtures'
 
 const ID = '01AAAAAAAAAAAAAAAAAAAENVLP1'
 
-const RESPONSES = [
+const RESPONSES: Array<Pick<ResponseEnvelope, 'status' | 'response'>> = [
   { status: 'acknowledged', response: { acknowledged: true, notes: TYPED } },
   { status: 'answered', response: { selected: ['TOML'], other: TYPED, notes: TYPED } },
   { status: 'answered', response: { text: TYPED, notes: TYPED } },
   { status: 'done', response: { outcome: 'not_done', feedback: TYPED, notes: TYPED } },
   { status: 'answered', response: { selected: ['Reject'], notes: TYPED } },
-] as const
+]
 
 describe('making and reading an envelope', () => {
   test('every response shape round-trips through make, unwrap and parse, its Markdown whole', () => {

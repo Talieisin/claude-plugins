@@ -28,6 +28,10 @@ export type World = {
   submits: string[]
   /** Every delivery from another session that reached the model, in order. */
   received: string[]
+  /** The plugin's $.store as it holds it now (a copy). */
+  kv: (key: string) => unknown
+  /** Answers a store read instead of the store, for a test (undefined: the store answers). */
+  storeOverride: (key: string) => unknown
   /** How the engine answers a submit; by default the prompt enters. */
   answerSubmit: (e: PromptSubmitInput) => PromptSubmitResult | Promise<PromptSubmitResult>
   /** A hook to run inside each submit, before it answers (to look at the disk). */
@@ -85,7 +89,24 @@ export function world(
   } = {},
 ): World {
   const clock = mock.clock(on, { now: START })
-  mock.store(on, options.store)
+  // The plugin's $.store, kept here so a test can look at it or change it (as
+  // another session sharing the store would). Values are copied in and out.
+  const kv = new Map<string, string>(Object.entries(options.store ?? {}).map(([k, v]) => [k, JSON.stringify(v)]))
+  on('store.get', (_, e) => {
+    const held = w.storeOverride(e.key)
+    if (held !== undefined) return { value: held }
+    const text = kv.get(e.key)
+    return { value: text === undefined ? undefined : (JSON.parse(text) as unknown) }
+  })
+  on('store.set', (_, e) => {
+    kv.set(e.key, JSON.stringify(e.value))
+    return { value: undefined }
+  })
+  on('store.delete', (_, e) => {
+    kv.delete(e.key)
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...kv.keys()] }))
   // A local session unless a test says otherwise: the store pass (#33) runs only in a cloud one.
   mock.env(on, options.env ?? {})
   const w: World = {
@@ -99,6 +120,11 @@ export function world(
     isRepo: options.isRepo ?? true,
     submits: [],
     received: [],
+    kv: key => {
+      const text = kv.get(key)
+      return text === undefined ? undefined : (JSON.parse(text) as unknown)
+    },
+    storeOverride: () => undefined,
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,
     failMoveOfTemporary: false,
