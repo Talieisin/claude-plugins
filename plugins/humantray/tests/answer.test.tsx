@@ -263,8 +263,53 @@ describe('compare-and-set', () => {
     await ui.input({ key: `${id}:text`, text: 'a'.repeat(10_001) })
     expect(await ui.find({ type: 'Text', text: 'An answer can be at most 10000 characters.' })).toBeDefined()
     expect(w.files.get(FILE)).toBe(before)
-    await ui.input({ key: `${id}:text`, text: 'a'.repeat(10_000) })
+    // Drawn afresh after the Enter (#48), still holding what was typed.
+    expect((await ui.find({ key: `${id}:text:1` }))?.props.value).toBe('a'.repeat(10_001))
+    await ui.input({ key: `${id}:text:1`, text: 'a'.repeat(10_000) })
     await ui.unmount()
     expect(w.store().items[0]?.status).toBe('answered')
+  })
+})
+
+// #48: the engine empties a field on Enter, and drawing the same value again
+// does not refill it. After an Enter the field is drawn under a new key,
+// holding the text. (The focus is put back on it too; the kit's pane never
+// holds the keyboard, so that part is on the owner's terminal check.)
+describe('Enter in a free-text field keeps the text shown', () => {
+  const TYPED = 'first line\n\n- a list\n- of two'
+  const FIELDS: Array<[string, Record<string, unknown>, string]> = [
+    ['a do card\'s feedback', { type: 'do', header: 'Key', question: 'Rotate' }, 'feedback'],
+    ['a choice card\'s Other', { type: 'choice', header: 'Colour', question: 'Which?', options: OPTIONS }, 'other'],
+    ['an approve card\'s notes', { type: 'approve', header: 'Plan', question: 'OK?', notes: true }, 'notes'],
+  ]
+  for (const [name, call, field] of FIELDS) {
+    for (const surface of SURFACES) {
+      test(`${name}, on ${surface}`, async ($, on) => {
+        world(on, { surfaces: [surface] })
+        await $.session.start(START_EVENT)
+        const id = answerOf<{ id: string }>(await $.tool.call({ ...call, tool: ADD })).id
+        const ui = await $.ui.mount({ ...PANE, surface })
+        await ui.input({ key: `${id}:${field}`, text: TYPED.slice(0, 5), kind: 'change' })
+        await ui.input({ key: `${id}:${field}`, text: TYPED })
+        expect(await ui.find({ key: `${id}:${field}` })).toBeUndefined()
+        const drawn = await ui.find({ key: `${id}:${field}:1` })
+        expect(drawn?.type).toBe('Input')
+        expect(drawn?.props.value).toBe(TYPED)
+        // A second Enter draws it afresh again, with the edit.
+        await ui.input({ key: `${id}:${field}:1`, text: `${TYPED}\n- and three` })
+        expect((await ui.find({ key: `${id}:${field}:2` }))?.props.value).toBe(`${TYPED}\n- and three`)
+        await ui.unmount()
+      })
+    }
+  }
+
+  test('the answer then carries the text exactly as typed', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const item = await answerOne($, w, 'desktop', { type: 'do', header: 'Key', question: 'Rotate' }, [
+      { type: 'feedback', text: TYPED },
+      { press: 'not_done' },
+    ])
+    expect(item.response).toEqual({ outcome: 'not_done', feedback: TYPED })
   })
 })

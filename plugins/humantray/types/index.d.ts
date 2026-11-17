@@ -399,6 +399,13 @@ export type Draft = {
   feedback: string
   notes: string
   error: string
+  /**
+   * How many times Enter was pressed in this card's free-text fields. The
+   * engine empties a field on Enter, and drawing the same `value` again does
+   * not refill it, so each field's key carries this count: after an Enter the
+   * field is drawn afresh, holding the draft (#48).
+   */
+  entered: number
 }
 
 declare module 'claude-code' {

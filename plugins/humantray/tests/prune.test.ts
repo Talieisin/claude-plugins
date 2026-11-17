@@ -445,6 +445,49 @@ describe('blocks: History cuts Markdown only between whole blocks', () => {
     }
   })
 
+  // #45: a paragraph that runs into another structure with no blank line
+  // between is one block, but not a paragraph: never cut at a word inside it.
+  describe('a paragraph running into a list, a fence or a quote is left out whole, never cut inside', () => {
+    const lead = `${'word '.repeat(30).trimEnd()}:`
+    const CASES: Array<[string, string]> = [
+      ['a list', `${lead}\n- ${'item '.repeat(40)}\n- last`],
+      ['a numbered list', `${lead}\n1. ${'item '.repeat(40)}`],
+      ['a fence', `${lead}\n\`\`\`sh\n${'echo word '.repeat(20)}\n\`\`\``],
+      ['a tilde fence', `${lead}\n~~~\n${'code word '.repeat(20)}\n~~~`],
+      ['a quote', `${lead}\n> ${'quoted '.repeat(40)}`],
+      ['a heading', `${lead}\n## ${'heading '.repeat(40)}`],
+      ['a table row', `${lead}\n| ${'cell '.repeat(40)} |`],
+      ['a tag', `${lead}\n<${'​'}details> ${'more '.repeat(40)}`],
+    ]
+    for (const [name, md] of CASES) {
+      test(name, () => {
+        expect(blocksOf(md)).toHaveLength(1)
+        // Every cut that would fall inside the structure keeps the block out.
+        for (const max of [lead.length + 1, lead.length + 10, Math.floor(md.length / 2), md.length - 1]) {
+          expect(clipBlocks(md, max)).toEqual({ text: '', clipped: true })
+        }
+        expect(clipBlocks(md, md.length)).toEqual({ text: md, clipped: false })
+      })
+    }
+
+    test('a paragraph of several plain lines is still cut at a word boundary', () => {
+      const md = `${'alpha beta '.repeat(20)}\n${'gamma delta '.repeat(20)}\n  ${'lazy line '.repeat(10)}`
+      const cut = clipBlocks(md, 300)
+      expect(cut.clipped).toBe(true)
+      expect(cut.text.endsWith('…')).toBe(true)
+      expect(cut.text.length).toBeLessThanOrEqual(300)
+      expect(md.startsWith(cut.text.slice(0, -1))).toBe(true)
+      expect(/\s/.test(md[cut.text.length - 1] ?? '')).toBe(true)
+    })
+
+    test('the same paragraph after the list moved below a blank line is cut, and the list left out', () => {
+      const md = `${'word '.repeat(120).trimEnd()}\n\n- item`
+      const cut = clipBlocks(md, 100)
+      expect(cut.text.endsWith('…')).toBe(true)
+      expect(cut.text).not.toContain('- item')
+    })
+  })
+
   test('an unclosed fence runs to the end; a closing fence must match its mark', () => {
     expect(blocksOf('a\n\n~~~\nx\n\n```\n\ny\n~~~~\n\nz')).toEqual(['a', '~~~\nx\n\n```\n\ny\n~~~~', 'z'])
     expect(blocksOf('```\nno end\n\nstill code')).toEqual(['```\nno end\n\nstill code'])

@@ -225,7 +225,7 @@ export function world(
     return { value: { tool: `mcp__humantray__${e.name}` } }
   })
   on('command.register', (_, e) => {
-    if (w.refuseCommand(e.name)) throw new Error(`"/${e.name}" refused: it is the plugin's /humantray:humantray`)
+    if (w.refuseCommand(e.name)) throw new Error(`"/${e.name}" refused: the name is taken`)
     w.commands.push(e.name)
     return { value: { command: e.name } }
   })
@@ -449,7 +449,7 @@ export async function answerOne(
 
 /** The command's input as the engine raises it when the person types it. */
 export const COMMAND = {
-  command: 'humantray',
+  command: 'humantray-open',
   args: '',
   origin: { kind: 'composer' },
   presentation: { isFullscreen: true, columns: 160 },
