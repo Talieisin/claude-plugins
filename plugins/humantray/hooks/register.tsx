@@ -14,6 +14,11 @@
 // grouped by repository (this one first), a page at a time, read only. Every change also prunes finished items (answered,
 // delivered or owing no line, unclaimed) past the last 200 per repository
 // (items.ts, `prune`); nothing still owed or in flight is ever pruned.
+//
+// In a cloud session the store pass (store-pass.ts, #33) also mirrors this
+// session's items to the repository's artifact page and brings answers given
+// there back into the file, where the same claim and settle deliver them.
+// `/humantray-page` creates or links that page; no hook ever publishes.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
@@ -41,7 +46,10 @@ import {
   ulid,
   validateAdd,
 } from './items'
+import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
+import { START_DEADLINE_MS, pageState, requestPass, takeDeliveryDue } from './store-pass'
+import { withDeadline } from './artifact-store'
 
 const PANE = 'humantray'
 const TITLE = 'Humantray'
@@ -192,6 +200,8 @@ async function settle($: EngineInterface, id: string, claim: string, where: Wher
     }, { where })
     if (done.error === undefined) {
       forget(id, claim)
+      // Mirror the delivery to the store (push only: no delivery from here).
+      if (done.ok.result) void requestPass($, 'push')
       // Redraw, so History's mark leaves `delivering` without waiting for a pass.
       if (done.ok.result) {
         const me = await $.session.id()
@@ -277,6 +287,15 @@ async function sync($: EngineInterface, deliver: boolean) {
   await showTray($, done.ok, me).catch(() => undefined)
 }
 
+/**
+ * Runs a store pass (#33) and then, when it applied answers given on the
+ * page, this mod's own delivery pass. Never used by a tool or command hook.
+ */
+async function storePass($: EngineInterface, kind: 'start' | 'turn') {
+  await requestPass($, kind)
+  if (takeDeliveryDue()) await sync($, true).catch(() => undefined)
+}
+
 async function setDraft($: EngineInterface, id: string, change: (draft: Draft) => Partial<Draft>) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const held = await $.state.get({ ...drafts, id })
@@ -342,7 +361,13 @@ export const register: Register = on => {
       isDeferred: false,
     })
     await $.command.register({ name: 'humantray', description: 'Open the humantray pane' })
+    await $.command.register({
+      name: 'humantray-page',
+      description: "Create or link this repository's humantray page (an artifact); give a link to use that one",
+    })
     await sync($, true).catch(() => undefined)
+    // The store pass: at most START_DEADLINE_MS here; the rest goes on detached.
+    await withDeadline($, storePass($, 'start'), START_DEADLINE_MS).catch(() => undefined)
     const shown = await read($, tray)
     if (shown !== null && shown.items.length > 0) await openPane($)
     return next(e)
@@ -382,10 +407,16 @@ export const register: Register = on => {
     return ran
   })
 
+  on('turn.start', ($, e, next) => {
+    if (e.agentId === undefined) void storePass($, 'turn')
+    return next(e)
+  })
+
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
     const ran = await next(e)
     await sync($, true).catch(() => undefined)
+    void storePass($, 'turn')
     return ran
   })
 
@@ -425,7 +456,10 @@ export const register: Register = on => {
     } catch {
       // Drawing is best effort.
     }
-    return { result: JSON.stringify({ id: item.id, short: item.short, bumped }) }
+    // The row is written after this call (push only: a tool hook never delivers).
+    void requestPass($, 'push')
+    const page = await pageState($).catch(() => 'none' as const)
+    return { result: JSON.stringify({ id: item.id, short: item.short, bumped, page }) }
   }).catch(() => fail('humantray: humantray_add failed before writing; nothing was added'))
 
   on('tool.call', { tool: LIST }, async $ => {
@@ -451,6 +485,11 @@ export const register: Register = on => {
       text: seen.error === undefined ? 'Humantray pane opened.' : seen.error,
       isTextDisplayOnly: true as const,
     }
+  })
+
+  on('command.run', { command: 'humantray-page' }, async ($, e) => {
+    const text = await runPageCommand($, e.args).catch(error => `humantray: ${String(error)}`)
+    return { text, isTextDisplayOnly: true as const }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {

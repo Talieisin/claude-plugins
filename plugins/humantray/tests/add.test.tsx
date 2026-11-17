@@ -106,7 +106,7 @@ describe('bumping', () => {
       ],
     })
     const firstResult = answerOf<{ id: string }>(first)
-    expect(answerOf(again)).toEqual({ id: firstResult.id, short: `HT-${firstResult.id.slice(-5)}`, bumped: true })
+    expect(answerOf(again)).toEqual({ id: firstResult.id, short: `HT-${firstResult.id.slice(-5)}`, bumped: true, page: 'none' })
     const items = w.store().items
     expect(items).toHaveLength(2)
     const bumped = items.find(item => item.id === firstResult.id)
@@ -169,7 +169,7 @@ describe('bumping across /clear, /branch and /resume', () => {
     await w.drain()
     await w.clock.advance(1000)
     const again = await $.tool.call({ ...APPROVE, body_md: 'two' })
-    expect(answerOf(again)).toEqual({ id, short: `HT-${id.slice(-5)}`, bumped: true })
+    expect(answerOf(again)).toEqual({ id, short: `HT-${id.slice(-5)}`, bumped: true, page: 'none' })
     const items = w.store().items
     expect(items).toHaveLength(1)
     expect(items[0]).toMatchObject({ id, session_id: 'session-a', bumps: 1, body_md: 'two' })

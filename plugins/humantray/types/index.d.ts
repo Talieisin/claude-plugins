@@ -1,6 +1,8 @@
 // The humantray mod's contract: the records it keeps in
-// `<git common dir>/humantray/items.json`, and the values it holds in
-// `$.state` for drawing. The file is the truth; `$.state` is a cache.
+// `<git common dir>/humantray/items.json`, the rows it mirrors to the
+// repository's artifact database (the shared store, #33), and the values it
+// holds in `$.state` for drawing. In each container the file is the truth;
+// the rows are the copy other views read; `$.state` is a cache.
 
 /** The five kinds of item a session can put in the tray. */
 export type ItemType = 'ack' | 'choice' | 'question' | 'do' | 'approve'
@@ -29,9 +31,12 @@ export type Item = {
   short: string
   /** The `origin` remote as `host/owner/name`, or the repository's root. */
   repo: string
+  /**
+   * The session that added it, by its local transcript id (`$.session.id()`),
+   * which changes at a /clear. Not the routable `session_…` id: that is
+   * `remote.session_id`, and the row's `session_id`.
+   */
   session_id: string
-  /** The lead this session reports to; set by a later version (#27). */
-  lead_id?: string
   type: ItemType
   header: string
   question: string
@@ -55,6 +60,110 @@ export type Item = {
   delivering_at?: number
   delivering_by?: string
   origin: 'local' | 'relayed'
+  /** The asker's routable lineage, when `get_session` answered (cloud sessions): the item is mirrored to the store. */
+  remote?: RemoteLineage
+  /** The outbox record: what was last written to the store for this item. */
+  row?: RowRecord
+  /** Where the applied answer came from. */
+  response_by?: 'page' | 'viewer' | 'pane'
+  /** The `answer_id` of the store answer that was applied. */
+  answer_id?: string
+  /** The last store answer this session refused, and why; cleared once an answer is applied. */
+  response_refused?: ResponseRefusal
+}
+
+/** A session's routable lineage, from `get_session`. */
+export type RemoteLineage = {
+  /** The routable `session_…` id, stable across a /clear. */
+  session_id: string
+  session_title: string | null
+  parent_session_id: string | null
+  /** The parent's id, or the session's own when it has none; #27 replaces it with the walk to the top. */
+  lead_session_id: string | null
+}
+
+/**
+ * The outbox record of one item: the artifact it was written to, the row's
+ * version there, and the fingerprint of what was written. The item is due for
+ * a push when `artifact` is not the current link or its fingerprint differs.
+ */
+export type RowRecord = { artifact: string; version?: number; sent?: string }
+
+/** A store answer the asker refused: which one, why, and when (the asker's clock). */
+export type ResponseRefusal = { answer_id: string; reason: string; at: number }
+
+/**
+ * `items/<ULID>` in the artifact database, schema 1. Written by the asker's
+ * own mod, pinned with `if_version` once it exists; finished rows are also
+ * pruned by any cloud asker of the repository. Extra fields are allowed and
+ * kept on a rewrite; only a missing or wrongly typed known field makes a row
+ * unreadable. `schema` rises only for a breaking change.
+ */
+export type ItemRow = {
+  schema: 1
+  id: string
+  short: string
+  repo: string
+  type: ItemType
+  header: string
+  question: string
+  body_md: string
+  key: string
+  options?: ItemOption[]
+  multiSelect?: boolean
+  notes?: boolean
+  notify_on_done?: boolean
+  /** The asker's clock, ms since the epoch. */
+  created: number
+  updated: number
+  bumps: number
+  status: ItemStatus
+  response?: ItemResponse
+  /** The asker's clock when it applied the answer. */
+  response_at?: number
+  response_by?: 'page' | 'viewer' | 'pane'
+  answer_id?: string
+  response_refused?: ResponseRefusal
+  delivered: boolean
+  delivered_at?: number
+  /** The asker's routable `session_…` id. */
+  session_id: string
+  session_title: string | null
+  parent_session_id: string | null
+  lead_session_id: string | null
+  /** The plugin version that wrote the row. */
+  writer_version: string
+}
+
+/**
+ * `responses/<ULID>` in the artifact database, schema 1: one answer, written
+ * by the page (or by a mod on the viewer's route). It counts as the item's
+ * answer only when it is well formed and its `answer_id` is not the one the
+ * item row names in `response_refused`; anything else may be replaced.
+ */
+export type ResponseRow = {
+  schema: 1
+  id: string
+  /** Random, made by the answerer: 16 to 64 of `[A-Za-z0-9_-]`. */
+  answer_id: string
+  response: ItemResponse
+  status: Exclude<ItemStatus, 'open'>
+  /** The answerer's clock, for display only. */
+  answered_at: number
+  /** The item row as the answerer saw it. */
+  seen: { bumps: number; updated: number }
+  by: 'page' | 'viewer'
+}
+
+/** `meta/page`: what marks an artifact as a repository's humantray store. */
+export type MetaPage = {
+  schema: 1
+  kind: 'humantray'
+  repo: string
+  created_at: number
+  /** Rises with every change to the published page. */
+  page_version: number
+  plugin_version: string
 }
 
 /** What the store knows of a session: when it was last seen, and who took over. */
