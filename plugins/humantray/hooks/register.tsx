@@ -12,7 +12,8 @@
 // the submit resolves without a drop. A drop or a rejection releases the
 // claim for the next pass. Nothing about items enters the system prompt.
 //
-// The pane shows the open items, or History: the store's answered items,
+// The pane opens by itself on an add or a resume, and on `/humantray-open`
+// (#47). It shows the open items, or History: the store's answered items,
 // grouped by repository (this one first), a page at a time, read only, with
 // the person's Markdown drawn as Markdown and any entry shown in full on
 // request. Every change also prunes finished items (answered,
@@ -452,8 +453,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     armDelivery($)
     // Each in its own try: one the engine refuses must not skip the rest of the
-    // start. On 2.1.326, with the plugin's own `humantray` skill installed,
-    // `/humantray` is refused as the skill's `/humantray:humantray`.
+    // start. The pane's command is `/humantray-open`, not `/humantray`: on
+    // 2.1.326, with the plugin's own `humantray` skill installed, `/humantray`
+    // is refused as the skill's `/humantray:humantray` (#47).
     try {
       await $.tool.register({ name: 'humantray_add', description: ADD_DESCRIPTION, inputSchema: ADD_SCHEMA, isDeferred: false })
     } catch {
@@ -470,7 +472,7 @@ export const register: Register = on => {
       // Refused: the rest of the start still runs.
     }
     try {
-      await $.command.register({ name: 'humantray', description: 'Open the humantray pane' })
+      await $.command.register({ name: 'humantray-open', description: 'Open the humantray pane' })
     } catch {
       // Refused: the rest of the start still runs.
     }
@@ -634,7 +636,7 @@ export const register: Register = on => {
     return { result: JSON.stringify({ items }) }
   }).catch(() => fail('humantray: humantray_list failed unexpectedly'))
 
-  on('command.run', { command: 'humantray' }, async $ => {
+  on('command.run', { command: 'humantray-open' }, async $ => {
     const seen = await peek($)
     const me = await $.session.id()
     await showTray($, seen.error === undefined ? seen.ok : null, me)

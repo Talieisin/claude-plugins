@@ -12,6 +12,7 @@ Two tools: `humantray_add` and `humantray_list` (model-facing `mcp__humantray__h
 ## When it applies
 
 - **Only where this session draws the tray:** a local session with a pane. A cloud session or a `claude -p` run draws nothing, and nobody would see the item. There, ask as you did before, and say why.
+- **The pane opens by itself** when you add an item. If the person cannot see it, tell them `/humantray-open` opens it. Not `/humantray`, which runs this skill instead.
 - **Your role and `AGENTS.md` win.** Where a role skill (`cloud:worker`, `cloud:reader`, `cloud:tester`, `cloud:lead`) or the repository's `AGENTS.md` says how you ask, do that. A worker, reader or tester sends its question to its lead and posts it on the issue.
 
 ## Asking

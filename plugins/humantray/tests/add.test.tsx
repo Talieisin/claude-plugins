@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ADD, DIR, FILE, HOUR, LIST, LOCK, PANE, START, START_EVENT, answerOf, stored, world } from './world'
+import { ADD, COMMAND, DIR, FILE, HOUR, LIST, LOCK, PANE, START, START_EVENT, answerOf, stored, world } from './world'
 
 const CHOICE = {
   tool: ADD,
@@ -643,9 +643,31 @@ describe('the lock', () => {
 })
 
 describe('registering at session start', () => {
-  test('a command the engine refuses (/humantray beside the humantray skill, 2.1.326) skips nothing else', async ($, on) => {
+  test('every command registers: the pane\'s is /humantray-open, not /humantray, which the humantray skill takes (#47)', async ($, on) => {
+    const w = world(on)
+    // As 2.1.326 does with the plugin's own `humantray` skill installed.
+    w.refuseCommand = name => name === 'humantray'
+    await $.session.start(START_EVENT)
+    expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-page'])
+  })
+
+  test('/humantray-open opens the pane and draws this session\'s items', async ($, on) => {
     const w = world(on)
     w.refuseCommand = name => name === 'humantray'
+    await $.session.start(START_EVENT)
+    await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Deployed' })
+    const before = w.opened.length
+    const ran = await $.command.run(COMMAND)
+    expect((ran as { text?: string }).text).toBe('Humantray pane opened.')
+    expect(w.opened.length).toBeGreaterThan(before)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: /Deployed/ })).toBeDefined()
+    await ui.unmount()
+  })
+
+  test('a command the engine refuses skips nothing else', async ($, on) => {
+    const w = world(on)
+    w.refuseCommand = name => name === 'humantray-open'
     await $.session.start(START_EVENT)
     expect(w.commands).toEqual(['humantray-viewer', 'humantray-page'])
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Still works?' })
