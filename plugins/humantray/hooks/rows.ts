@@ -92,7 +92,7 @@ export function checkItemRow(data: unknown): RowRead<ItemRow> {
   for (const field of ['multiSelect', 'notes', 'notify_on_done'] as const) {
     if (!isOptional(data[field], 'boolean')) return { bad: `${field} is not true or false` }
   }
-  for (const field of ['response_at', 'delivered_at'] as const) {
+  for (const field of ['response_at', 'delivered_at', 'envelope'] as const) {
     if (!isOptional(data[field], 'number')) return { bad: `${field} is not a number` }
   }
   if (data.status !== 'open' && !isResponseShape(data.type, data.response)) return { bad: 'the response is malformed' }

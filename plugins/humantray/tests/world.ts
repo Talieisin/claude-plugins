@@ -26,6 +26,28 @@ export type World = {
   isRepo: boolean
   /** Every prompt the mod submitted, in order. */
   submits: string[]
+  /** Every delivery from another session that reached the model, in order. */
+  received: string[]
+  /** The plugin's $.store as it holds it now (a copy). */
+  kv: (key: string) => unknown
+  /** Writes the plugin's $.store directly, as another session sharing it would. */
+  kvSet: (key: string, value: unknown) => void
+  /** Every line the mod logged with $.ui.log. */
+  logs: string[]
+  /** Every $.session.id() fails, as an engine might. */
+  failSessionId: boolean
+  /** The engine refuses to register a command of this name. */
+  refuseCommand: (name: string) => boolean
+  /** Every command registered, in order. */
+  commands: string[]
+  /** Every $.session.id() waits for this first (a slow engine). */
+  sessionIdGate: Promise<void> | undefined
+  /** A $.store.set of this key fails, as a busy store might. */
+  failStoreSet: (key: string) => boolean
+  /** Every row the plugin itself appended with $.session.append. */
+  appended: unknown[]
+  /** Answers a store read instead of the store, for a test (undefined: the store answers). */
+  storeOverride: (key: string) => unknown
   /** How the engine answers a submit; by default the prompt enters. */
   answerSubmit: (e: PromptSubmitInput) => PromptSubmitResult | Promise<PromptSubmitResult>
   /** A hook to run inside each submit, before it answers (to look at the disk). */
@@ -83,7 +105,25 @@ export function world(
   } = {},
 ): World {
   const clock = mock.clock(on, { now: START })
-  mock.store(on, options.store)
+  // The plugin's $.store, kept here so a test can look at it or change it (as
+  // another session sharing the store would). Values are copied in and out.
+  const kv = new Map<string, string>(Object.entries(options.store ?? {}).map(([k, v]) => [k, JSON.stringify(v)]))
+  on('store.get', (_, e) => {
+    const held = w.storeOverride(e.key)
+    if (held !== undefined) return { value: held }
+    const text = kv.get(e.key)
+    return { value: text === undefined ? undefined : (JSON.parse(text) as unknown) }
+  })
+  on('store.set', (_, e) => {
+    if (w.failStoreSet(e.key)) throw new Error('store busy')
+    kv.set(e.key, JSON.stringify(e.value))
+    return { value: undefined }
+  })
+  on('store.delete', (_, e) => {
+    kv.delete(e.key)
+    return { value: undefined }
+  })
+  on('store.keys', () => ({ value: [...kv.keys()] }))
   // A local session unless a test says otherwise: the store pass (#33) runs only in a cloud one.
   mock.env(on, options.env ?? {})
   const w: World = {
@@ -96,6 +136,22 @@ export function world(
     surfaces: options.surfaces ?? ['desktop'],
     isRepo: options.isRepo ?? true,
     submits: [],
+    received: [],
+    kv: key => {
+      const text = kv.get(key)
+      return text === undefined ? undefined : (JSON.parse(text) as unknown)
+    },
+    storeOverride: () => undefined,
+    kvSet: (key, value) => {
+      kv.set(key, JSON.stringify(value))
+    },
+    logs: [],
+    failSessionId: false,
+    refuseCommand: () => false,
+    commands: [],
+    sessionIdGate: undefined,
+    failStoreSet: () => false,
+    appended: [],
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,
     failMoveOfTemporary: false,
@@ -131,7 +187,11 @@ export function world(
     },
   }
 
-  on('session.id', () => ({ value: w.sessionId }))
+  on('session.id', async () => {
+    if (w.sessionIdGate !== undefined) await w.sessionIdGate
+    if (w.failSessionId) throw new Error('the session id could not be read')
+    return { value: w.sessionId }
+  })
   on('session.cwd', () => ({ value: ROOT }))
   on('session.repo', () => ({
     value: w.isRepo
@@ -145,7 +205,11 @@ export function world(
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('classic.SessionStart', () => ({}))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__humantray__${e.name}` } }))
-  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('command.register', (_, e) => {
+    if (w.refuseCommand(e.name)) throw new Error(`"/${e.name}" refused: it is the plugin's /humantray:humantray`)
+    w.commands.push(e.name)
+    return { value: { command: e.name } }
+  })
   on('ui.open', (_, e) => {
     w.opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -154,6 +218,19 @@ export function world(
     if (w.failToast) return { deny: 'the surface went away' }
     w.toasts.push(e.text)
     return { value: undefined }
+  })
+  on('ui.log', (_, e) => {
+    w.logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.append', (_, e) => {
+    if (e.origin.kind === 'plugin') w.appended.push(e.message)
+    return { message: e.message, uuid: e.uuid }
+  })
+  // A delivery from another session that no plugin took is queued for the model, as it arrived.
+  on('session.receive', (_, e) => {
+    w.received.push(e.text)
+    return { text: e.text }
   })
   on('prompt.submit', async (_, e) => {
     w.submits.push(e.text)

@@ -52,6 +52,15 @@ describe('item rows', () => {
     }
   })
 
+  test('a row says its asker takes response envelopes (envelope: 1, #32); a row without it, or a newer value, still reads', () => {
+    const row = itemToRow(withRemote({ id: ID, type: 'approve' }))
+    expect(row.envelope).toBe(1)
+    const { envelope: _gone, ...without } = row
+    expect('ok' in checkItemRow(without)).toBe(true)
+    expect('ok' in checkItemRow({ ...row, envelope: 2 })).toBe(true)
+    expect(checkItemRow({ ...row, envelope: 'yes' })).toEqual({ bad: 'envelope is not a number' })
+  })
+
   test('an extra field is accepted, and kept by a rewrite; a missing known field is not', () => {
     const item = withRemote({ id: ID, type: 'ack' })
     const row = { ...itemToRow(item), role: 'worker' }

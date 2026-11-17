@@ -23,11 +23,17 @@
 // session's items to the repository's artifact page and brings answers given
 // there back into the file, where the same claim and settle deliver them.
 // `/humantray-page` creates or links that page; no hook ever publishes.
+//
+// On the owner's computer, `/humantray-viewer` makes one local session the
+// viewer (viewer.ts, #32): it reads every repository's page, draws it here
+// grouped by repository, lead and asker, and answers by sending a response
+// envelope to the asker (envelope.ts), whose cloud mod takes it in
+// `prompt.submit` or `session.receive` (receive.ts) and delivers it as above.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Draft, HistoryEntry, HistoryFull, Item, StoreFile } from '../types'
+import type { Draft, HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
 import {
   type Action,
   type AddOutcome,
@@ -37,6 +43,7 @@ import {
   addOrBump,
   applySettle,
   buildResponse,
+  clipBlocks,
   deliveryText,
   forDisplay,
   fullOf,
@@ -55,8 +62,12 @@ import {
 } from './items'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
-import { START_DEADLINE_MS, pageState, requestPass, takeDeliveryDue } from './store-pass'
+import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
 import { withDeadline } from './artifact-store'
+import { isEnvelopeOrigin, readEnvelopes } from './envelope'
+import { takeEnvelope } from './receive'
+import { rowToItem } from './rows'
+import { isViewing, resumeViewer, sendAgain, tick, viewerAnswer, viewerCommand } from './viewer'
 
 const PANE = 'humantray'
 /** How many lines tall a free-text field is: room for a list or a short code block. */
@@ -74,6 +85,11 @@ const page = atom({ plugin: 'humantray', key: 'page' } as const, 0)
 /** The History entry shown in full: read from the store when "Show in full" is pressed. */
 const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as HistoryFull | null, { shape: 'full-2' })
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
+// The viewer's (#32): its tray (built in viewer.ts, which declares the same
+// atom), its Open page, and a card shown in full.
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
+const viewerPage = atom({ plugin: 'humantray', key: 'vpage' } as const, 0)
+const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-1' })
 
 const token = (): string => {
   const bytes = new Uint8Array(8)
@@ -307,7 +323,67 @@ async function sync($: EngineInterface, deliver: boolean) {
  */
 async function storePass($: EngineInterface, kind: 'start' | 'turn') {
   await requestPass($, kind)
-  if (takeDeliveryDue()) await sync($, true).catch(() => undefined)
+  // Any delivery the pass started (onDeliveryDue, below) is part of this pass.
+  await deliveryIdle()
+}
+
+/**
+ * Takes the envelopes a hook stopped (#32), deciding nothing and waiting on
+ * nothing: it starts the take detached and returns the reason the hook gives
+ * at once. Everything that can wait or fail (the session id, the debug note,
+ * the `to`, `artifact` and lineage checks) runs after the hook has returned
+ * (decided on #32). A taken envelope that fails those checks is discarded
+ * with a log line: it was delivered to this session, and the viewer sends a
+ * real one again.
+ */
+function takeAll($: EngineInterface, envelopes: ResponseEnvelope[], via: 'prompt.submit' | 'session.receive'): string {
+  const shorts = envelopes.map(envelope => shortOf(envelope.id)).join(', ')
+  armDelivery($)
+  void takeDetached($, envelopes, via, shorts)
+  return `humantray: took an answer for ${shorts} from the viewer`
+}
+
+/** The detached part of `takeAll`: the debug note, then each take. Never rejects. */
+async function takeDetached($: EngineInterface, envelopes: ResponseEnvelope[], via: 'prompt.submit' | 'session.receive', shorts: string) {
+  try {
+    const me = await $.session.id()
+    $.ui.log(`humantray: taking an answer from the viewer for ${shorts} in ${me} (${via})`, { to: 'debug' })
+  } catch (error) {
+    try {
+      $.ui.log(`humantray: an answer from the viewer for ${shorts} (${via}) was discarded: ${String(error)}`, { to: 'debug' })
+    } catch {
+      // Logging is best effort.
+    }
+    return
+  }
+  for (const envelope of envelopes) void takeEnvelope($, envelope, via)
+}
+
+/** The most characters of an open card's body the viewer draws before "Show in full" (#32). */
+const VIEWER_BODY = 3_000
+/** Cards on one page of the viewer's Open list, so a page stays far under a surface's limit. */
+const VIEWER_PAGE = 10
+
+/** The draft of a viewer card: kept apart from a local card of the same id. */
+const viewerDraftId = (id: string) => `v:${id}`
+
+/** Answers a viewer card from its draft; any error is shown on the card. */
+async function viewerPress($: EngineInterface, card: ViewerCard, action: Action) {
+  const id = viewerDraftId(card.row.id)
+  const held = await $.state.get({ ...drafts, id })
+  const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
+  const done = await viewerAnswer($, card, draft, action)
+  if ('error' in done) await setDraft($, id, () => ({ error: done.error }))
+  else await $.state.set({ ...drafts, id }, { ...EMPTY_DRAFT })
+}
+
+/**
+ * Every store pass that applies an answer (a turn, a retry, the receiver)
+ * runs the delivery pass at once, not at the next turn (#32, F3). Armed from
+ * each hook that can start a pass, with that hook's `$`.
+ */
+function armDelivery($: EngineInterface) {
+  onDeliveryDue(() => sync($, true).catch(() => undefined))
 }
 
 async function setDraft($: EngineInterface, id: string, change: (draft: Draft) => Partial<Draft>) {
@@ -366,28 +442,55 @@ async function answer($: EngineInterface, id: string, action: Action) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.tool.register({
-      name: 'humantray_add',
-      description: ADD_DESCRIPTION,
-      inputSchema: ADD_SCHEMA,
-      isDeferred: false,
-    })
-    await $.tool.register({
-      name: 'humantray_list',
-      description: LIST_DESCRIPTION,
-      inputSchema: { type: 'object', properties: {} },
-      isDeferred: false,
-    })
-    await $.command.register({ name: 'humantray', description: 'Open the humantray pane' })
-    await $.command.register({
-      name: 'humantray-page',
-      description: "Create or link this repository's humantray page (an artifact); give a link to use that one",
-    })
+    armDelivery($)
+    // Each in its own try: one the engine refuses must not skip the rest of the
+    // start. On 2.1.326, with the plugin's own `humantray` skill installed,
+    // `/humantray` is refused as the skill's `/humantray:humantray`.
+    try {
+      await $.tool.register({ name: 'humantray_add', description: ADD_DESCRIPTION, inputSchema: ADD_SCHEMA, isDeferred: false })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.tool.register({
+        name: 'humantray_list',
+        description: LIST_DESCRIPTION,
+        inputSchema: { type: 'object', properties: {} },
+        isDeferred: false,
+      })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({ name: 'humantray', description: 'Open the humantray pane' })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({
+        name: 'humantray-viewer',
+        description: 'Show every repository\'s humantray here and answer it (local sessions); "off" to stop',
+      })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({
+        name: 'humantray-page',
+        description: "Create or link this repository's humantray page (an artifact); give a link to use that one",
+      })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
     await sync($, true).catch(() => undefined)
     // The store pass: at most START_DEADLINE_MS here; the rest goes on detached.
     await withDeadline($, storePass($, 'start'), START_DEADLINE_MS).catch(() => undefined)
     const shown = await read($, tray)
     if (shown !== null && shown.items.length > 0) await openPane($)
+    // The viewer session itself starting again takes the viewer back (#32); detached.
+    void resumeViewer($)
+      .then(viewing => (viewing ? openPane($) : undefined))
+      .catch(() => undefined)
     return next(e)
   })
 
@@ -426,12 +529,41 @@ export const register: Register = on => {
   })
 
   on('turn.start', ($, e, next) => {
+    armDelivery($)
     if (e.agentId === undefined) void storePass($, 'turn')
     return next(e)
   })
 
+  // A response envelope from the local viewer (#32). Test 0 on #32: a send that
+  // starts a stopped container reaches `prompt.submit` only (origin `peer`); one
+  // to a running container reaches `session.receive` only. Either way the hook
+  // decides on the origin and the anchored shape of the whole text alone: pure,
+  // with no await (decided on #32), so no slow call can let an envelope through.
+  // It is stopped before the model sees it, and everything else (the session
+  // id, logging, the routing checks) runs detached after the hook returned.
+  // Every other prompt and delivery passes untouched, and a hook that fails
+  // still stops an envelope.
+  on('prompt.submit', ($, e, next) => {
+    const envelopes = isEnvelopeOrigin(e.origin) ? readEnvelopes(e.text) : undefined
+    if (envelopes === undefined) return next(e)
+    return { drop: takeAll($, envelopes, 'prompt.submit') }
+  }).catch(($, e, next) =>
+    isEnvelopeOrigin(e.origin) && readEnvelopes(e.text) !== undefined ? { drop: 'humantray: took an answer from the viewer' } : next(e),
+  )
+
+  on('session.receive', ($, e, next) => {
+    const envelopes = e.agentId === undefined && isEnvelopeOrigin(e.origin) ? readEnvelopes(e.text) : undefined
+    if (envelopes === undefined) return next(e)
+    return { consumed: takeAll($, envelopes, 'session.receive') }
+  }).catch(($, e, next) =>
+    e.agentId === undefined && isEnvelopeOrigin(e.origin) && readEnvelopes(e.text) !== undefined
+      ? { consumed: 'humantray: took an answer from the viewer' }
+      : next(e),
+  )
+
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
+    armDelivery($)
     const ran = await next(e)
     await sync($, true).catch(() => undefined)
     void storePass($, 'turn')
@@ -505,6 +637,12 @@ export const register: Register = on => {
     }
   })
 
+  on('command.run', { command: 'humantray-viewer' }, async ($, e) => {
+    const text = await viewerCommand($, e.args).catch(error => `humantray viewer: ${String(error)}`)
+    if (isViewing()) await openPane($).catch(() => undefined)
+    return { text, isTextDisplayOnly: true as const }
+  })
+
   on('command.run', { command: 'humantray-page' }, async ($, e) => {
     const text = await runPageCommand($, e.args).catch(error => `humantray: ${String(error)}`)
     return { text, isTextDisplayOnly: true as const }
@@ -512,15 +650,394 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const shown = await read($, tray)
-    const count = shown?.items.length ?? 0
+    const viewing = await read($, viewerTray)
+    const count = (shown?.items.length ?? 0) + (viewing?.answerable ?? 0)
     if (count === 0) return next(e)
     const { Text } = $.ui.resolve(e)
     return <Text>Humantray: {String(count)} open</Text>
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Input, Markdown, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Link, Markdown, Text } = $.ui.resolve(e)
+    // One card's controls, by type: the local pane's (keys and drafts by the
+    // item's id) and the viewer's (#32; by `v:` and the id) alike.
+    const controlsFor = (item: Item, key: string, draftId: string, draft: Draft, press: (action: Action) => () => Promise<void>) => {
+      // Free text is several lines tall and kept exactly as typed, Markdown and all.
+      const field = (name: 'other' | 'text' | 'feedback' | 'notes', label: string, onEnter?: () => Promise<void>) => (
+        <Input
+          key={`${key}:${name}`}
+          label={label}
+          rows={ROWS}
+          value={draft[name]}
+          onInput={value => setDraft($, draftId, () => ({ [name]: value, error: '' }))}
+          onSubmit={async value => {
+            await setDraft($, draftId, () => ({ [name]: value, error: '' }))
+            if (onEnter !== undefined) await onEnter()
+          }}
+        />
+      )
+
+      const controls = []
+      if (item.type === 'ack') {
+        controls.push(<Button key={`${key}:ack`} label="Acknowledge" variant="primary" onPress={press({ kind: 'ack' })} />)
+      } else if (item.type === 'do') {
+        controls.push(field('feedback', 'Feedback (optional, Markdown)'))
+        controls.push(
+          <Box key={`${key}:outcomes`} flexDirection="row" gap={1}>
+            <Button key={`${key}:done`} label="Done" variant="primary" onPress={press({ kind: 'do', outcome: 'done' })} />
+            <Button key={`${key}:not_done`} label="Not done" onPress={press({ kind: 'do', outcome: 'not_done' })} />
+          </Box>,
+        )
+      } else if (item.type === 'approve') {
+        controls.push(
+          <Box key={`${key}:verdicts`} flexDirection="row" gap={1}>
+            <Button key={`${key}:approve`} label="Approve" variant="primary" onPress={press({ kind: 'approve', choice: 'Approve' })} />
+            <Button key={`${key}:reject`} label="Reject" onPress={press({ kind: 'approve', choice: 'Reject' })} />
+          </Box>,
+        )
+      } else if (item.type === 'question') {
+        controls.push(field('text', 'Answer (Markdown)', press({ kind: 'submit' })))
+      } else {
+        const isMulti = item.multiSelect === true
+        ;(item.options ?? []).forEach((option, index) => {
+          const isOn = draft.selected.includes(option.label)
+          const mark = isMulti ? (isOn ? '[x]' : '[ ]') : isOn ? '(•)' : '( )'
+          controls.push(
+            <Button
+              key={`${key}:opt:${index}`}
+              plain
+              onPress={() =>
+                setDraft($, draftId, current => ({
+                  error: '',
+                  ...(isMulti
+                    ? {
+                        selected: current.selected.includes(option.label)
+                          ? current.selected.filter(label => label !== option.label)
+                          : [...current.selected, option.label],
+                      }
+                    : { selected: [option.label], other: '' }),
+                }))
+              }
+            >
+              {mark} {option.label} <Text dimColor>{option.description}</Text>
+            </Button>,
+          )
+        })
+        controls.push(
+          <Input
+            key={`${key}:other`}
+            label="Other (Markdown)"
+            rows={ROWS}
+            value={draft.other}
+            onInput={value =>
+              setDraft($, draftId, current => ({
+                other: value,
+                error: '',
+                selected: !isMulti && value.trim() !== '' ? [] : current.selected,
+              }))
+            }
+            onSubmit={value =>
+              setDraft($, draftId, current => ({
+                other: value,
+                error: '',
+                selected: !isMulti && value.trim() !== '' ? [] : current.selected,
+              }))
+            }
+          />,
+        )
+      }
+      if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
+      if (item.type === 'choice' || item.type === 'question') {
+        controls.push(<Button key={`${key}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />)
+      }
+      return controls
+    }
+
     const shown = await read($, tray)
+    const viewing = await read($, viewerTray)
+    if (viewing !== null) {
+      // The local viewer (#32): every repository's open items, read from the
+      // store, answered by envelope. This session's own items keep their group.
+      const vshowing = await read($, view)
+      const vtoggle = (
+        <Button
+          key="humantray:view"
+          label={vshowing === 'history' ? `Open items (${viewing.answerable})` : `History (${viewing.history.length})`}
+          onPress={async () => {
+            await update($, viewerPage, () => 0)
+            await update($, viewerExpanded, () => null)
+            await update($, view, current => (current === 'history' ? 'open' : 'history'))
+            if (vshowing !== 'history') await tick($, { history: true })
+          }}
+        />
+      )
+      const leaseNote = viewing.leaseFailed ? (
+        <Text key="v:lease" color="error">
+          The viewer lease could not be written; it is tried again every tick.
+        </Text>
+      ) : null
+      const status = viewing.repos.flatMap(repo => {
+        const notes = []
+        if (repo.stale) notes.push(repo.readAt === null ? 'not read yet' : `last read ${when(repo.readAt)}`)
+        if (repo.skipped > 0) notes.push(`${String(repo.skipped)} rows could not be read (written by a newer humantray, or malformed)`)
+        return notes.length === 0 ? [] : [<Text key={`v:repo:${repo.url}:status`} dimColor>{`${plain(repo.repo)}: ${notes.join('; ')}`}</Text>]
+      })
+      const head = (
+        <Text key="v:head" dimColor>
+          {viewing.found === 'unreadable' && viewing.repos.length === 0
+            ? 'Viewer: the list of artifacts could not be read. Give the page link with /humantray-viewer <link>.'
+            : `Viewer: ${String(viewing.repos.length)} ${viewing.repos.length === 1 ? 'repository' : 'repositories'} · ${String(viewing.answerable)} to answer${
+                viewing.found === 'unreadable' ? ' · the list of artifacts could not be read just now, so the last set is shown' : ''
+              }`}
+        </Text>
+      )
+      const full = await read($, viewerExpanded)
+      if (full !== null) {
+        return (
+          <Box flexDirection="column" gap={1}>
+            <Button key="v:back" label="Back" onPress={() => update($, viewerExpanded, () => null)} />
+            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" paddingX={1}>
+              <Text bold>
+                [{plain(full.header)}] {plain(full.question)}
+              </Text>
+              <Text dimColor>{full.short}</Text>
+              {full.body.text !== '' && <Markdown key={`v:${full.id}:full:body`} text={full.body.text} />}
+              {full.body.clipped && (
+                <Text key={`v:${full.id}:full:more`} dimColor>
+                  {`(… cut short: ${String(full.body.length)} characters in all)`}
+                </Text>
+              )}
+            </Box>
+          </Box>
+        )
+      }
+      if (vshowing === 'history') {
+        const pages = Math.max(1, Math.ceil(viewing.history.length / HISTORY_PAGE))
+        const at = Math.min(Math.max(0, await read($, viewerPage)), pages - 1)
+        const entries = viewing.history.slice(at * HISTORY_PAGE, (at + 1) * HISTORY_PAGE)
+        const rows = []
+        let heading: string | undefined
+        for (const entry of entries) {
+          if (entry.repo !== heading) {
+            heading = entry.repo
+            rows.push(
+              <Text key={`v:history:repo:${entry.repo}`} bold>
+                {plain(entry.repo)}
+              </Text>,
+            )
+          }
+          rows.push(
+            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
+              <Text bold>
+                [{plain(entry.header)}] {plain(entry.question)}
+              </Text>
+              <Text dimColor>
+                {entry.short} · answered {when(entry.at)}
+                {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
+              </Text>
+              {entry.answer !== '' && <Text>{plain(entry.answer)}</Text>}
+              {entry.parts.flatMap(part => {
+                const nodes = [
+                  <Text key={`v:${entry.id}:${part.label}:label`} dimColor>
+                    {part.label}:
+                  </Text>,
+                ]
+                if (part.text !== '') nodes.push(<Markdown key={`v:${entry.id}:${part.label}`} text={part.text} />)
+                if (part.clipped) {
+                  nodes.push(
+                    <Text key={`v:${entry.id}:${part.label}:more`} dimColor>
+                      {`(… cut short: ${String(part.length)} characters in all)`}
+                    </Text>,
+                  )
+                }
+                return nodes
+              })}
+            </Box>,
+          )
+        }
+        const paging =
+          pages > 1 ? (
+            <Box key="v:history:paging" flexDirection="row" gap={1}>
+              {at > 0 && <Button key="v:history:previous" label="Previous" onPress={() => update($, viewerPage, () => at - 1)} />}
+              <Text dimColor>
+                Page {String(at + 1)} of {String(pages)}
+              </Text>
+              {at < pages - 1 && <Button key="v:history:next" label="Next" onPress={() => update($, viewerPage, () => at + 1)} />}
+            </Box>
+          ) : null
+        const historyStatus = viewing.repos.flatMap(repo =>
+          repo.historyStale
+            ? [
+                <Text key={`v:repo:${repo.url}:history`} dimColor>
+                  {`${plain(repo.repo)}: History ${repo.historyAt === null ? 'not read yet' : `last read ${when(repo.historyAt)}`}`}
+                </Text>,
+              ]
+            : [],
+        )
+        return (
+          <Box flexDirection="column" gap={1}>
+            {vtoggle}
+            {head}
+            {historyStatus}
+            {paging}
+            {rows.length === 0 ? <Text key="v:history:none" dimColor>No answered items yet.</Text> : rows}
+          </Box>
+        )
+      }
+      // Open: one list of cards in group order, a page at a time.
+      type Placed = { repo: string; url: string; lead: string; asker: string; askerTitle: string; link: boolean; lastActive: number; card: ViewerCard }
+      const placed: Placed[] = []
+      for (const repo of viewing.repos) {
+        for (const lead of repo.leads) {
+          const leadName = lead.title ?? (lead.lead === null ? 'no lead' : `lead ${lead.lead.slice(-6)}`)
+          for (const asker of lead.askers) {
+            for (const card of asker.cards) {
+              placed.push({
+                repo: repo.repo,
+                url: repo.url,
+                lead: leadName,
+                asker: asker.session_id,
+                askerTitle: asker.title ?? asker.session_id,
+                link: asker.link,
+                lastActive: asker.lastActive,
+                card,
+              })
+            }
+          }
+        }
+      }
+      const pages = Math.max(1, Math.ceil(placed.length / VIEWER_PAGE))
+      const at = Math.min(Math.max(0, await read($, viewerPage)), pages - 1)
+      const now = viewing.at
+      const nodes = []
+      let last: Placed | undefined
+      for (const each of placed.slice(at * VIEWER_PAGE, (at + 1) * VIEWER_PAGE)) {
+        if (last === undefined || last.url !== each.url) {
+          nodes.push(
+            <Text key={`v:repo:${each.url}`} bold>
+              {plain(each.repo)}
+            </Text>,
+          )
+        }
+        if (last === undefined || last.url !== each.url || last.lead !== each.lead) {
+          nodes.push(<Text key={`v:lead:${each.url}:${each.lead}`}>{`Lead: ${plain(each.lead)}`}</Text>)
+        }
+        if (last === undefined || last.url !== each.url || last.asker !== each.asker) {
+          const old = now - each.lastActive >= 24 * 60 * 60 * 1000
+          nodes.push(
+            <Box key={`v:asker:${each.url}:${each.asker}`} flexDirection="column">
+              <Text>{plain(each.askerTitle)}</Text>
+              {each.link ? <Link key={`v:asker:${each.url}:${each.asker}:link`} href={`https://claude.ai/code/${each.asker}`} label="open session" /> : null}
+              <Text dimColor>{`last active ${when(each.lastActive)}${old ? ' (over a day ago)' : ''}`}</Text>
+            </Box>,
+          )
+        }
+        last = each
+        const card = each.card
+        const row = card.row
+        const key = `v:${row.id}`
+        const item = rowToItem(row, '', card.url, card.version)
+        const held = await $.state.get({ ...drafts, id: viewerDraftId(row.id) })
+        const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
+        const body = clipBlocks(forDisplay(row.body_md), VIEWER_BODY)
+        const lines = []
+        if (card.state === 'answerable') {
+          if (card.reason !== undefined) {
+            lines.push(
+              <Text key={`${key}:refused`} color="error">
+                {`The session refused the last answer: ${plain(card.reason)}`}
+              </Text>,
+            )
+          }
+          lines.push(...controlsFor(item, key, viewerDraftId(row.id), draft, (action: Action) => () => viewerPress($, card, action)))
+        } else {
+          const said: Record<string, string> = {
+            sent: 'Sent; waiting for the session to take it.',
+            'not-sent': `Not sent: ${plain(card.reason ?? 'no reason given')}. It is tried again on its schedule.`,
+            'not-taken': 'Not taken by the session in a day.',
+            stored: 'Stored; waiting for the session to apply it.',
+            applied: 'Applied; waiting for the session to receive it.',
+            page: 'Answered on the page; waiting for the session to pick it up.',
+            'read-only': "This session's humantray cannot take answers from here: answer on the page.",
+          }
+          lines.push(
+            <Text key={`${key}:state`} dimColor>
+              {said[card.state] ?? card.state}
+            </Text>,
+          )
+          if (card.state === 'not-taken') {
+            lines.push(<Button key={`${key}:again`} label="Send again" onPress={() => sendAgain($, card.url, row.id)} />)
+          }
+          if (card.state === 'not-taken' || card.state === 'read-only') {
+            lines.push(<Link key={`${key}:page`} href={card.url} label="Answer on the page" />)
+          }
+        }
+        nodes.push(
+          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Text bold>
+              [{plain(row.header)}] {plain(row.question)}
+            </Text>
+            <Text dimColor>
+              {row.short}
+              {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
+              {card.old ? ' · old' : ''}
+            </Text>
+            {body.text !== '' && <Markdown key={`${key}:body`} text={body.text} />}
+            {body.clipped && (
+              <Button key={`${key}:full`} label="Show in full" onPress={() => update($, viewerExpanded, () => fullOf(item))} />
+            )}
+            {lines}
+            {draft.error !== '' && <Text color="error">{draft.error}</Text>}
+          </Box>,
+        )
+      }
+      const paging =
+        pages > 1 ? (
+          <Box key="v:paging" flexDirection="row" gap={1}>
+            {at > 0 && <Button key="v:previous" label="Previous" onPress={() => update($, viewerPage, () => at - 1)} />}
+            <Text dimColor>
+              Page {String(at + 1)} of {String(pages)}
+            </Text>
+            {at < pages - 1 && <Button key="v:next" label="Next" onPress={() => update($, viewerPage, () => at + 1)} />}
+          </Box>
+        ) : null
+      // This session's own items, if any, at the foot, answered as in the local pane.
+      const local = []
+      if (shown !== null && shown.items.length > 0) {
+        local.push(
+          <Text key="v:local" bold>
+            This session
+          </Text>,
+        )
+        for (const item of shown.items) {
+          const id = item.id
+          const held = await $.state.get({ ...drafts, id })
+          const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
+          local.push(
+            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+              <Text bold>
+                [{plain(item.header)}] {plain(item.question)}
+              </Text>
+              <Text dimColor>{item.short}</Text>
+              {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDisplay(item.body_md)} />}
+              {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
+              {draft.error !== '' && <Text color="error">{draft.error}</Text>}
+            </Box>,
+          )
+        }
+      }
+      return (
+        <Box flexDirection="column" gap={1}>
+          {vtoggle}
+          {head}
+          {leaseNote}
+          {status}
+          {paging}
+          {nodes.length === 0 ? <Text key="v:none" dimColor>No open items.</Text> : nodes}
+          {local}
+        </Box>
+      )
+    }
     if (shown === null) {
       return <Text dimColor>No humantray here: not in a git repository, or the store could not be read.</Text>
     }
@@ -671,94 +1188,7 @@ export const register: Register = on => {
       const held = await $.state.get({ ...drafts, id })
       const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
       const press = (action: Action) => () => answer($, id, action)
-      // Free text is several lines tall and kept exactly as typed, Markdown and all.
-      const field = (name: 'other' | 'text' | 'feedback' | 'notes', label: string, onEnter?: () => Promise<void>) => (
-        <Input
-          key={`${id}:${name}`}
-          label={label}
-          rows={ROWS}
-          value={draft[name]}
-          onInput={value => setDraft($, id, () => ({ [name]: value, error: '' }))}
-          onSubmit={async value => {
-            await setDraft($, id, () => ({ [name]: value, error: '' }))
-            if (onEnter !== undefined) await onEnter()
-          }}
-        />
-      )
-
-      const controls = []
-      if (item.type === 'ack') {
-        controls.push(<Button key={`${id}:ack`} label="Acknowledge" variant="primary" onPress={press({ kind: 'ack' })} />)
-      } else if (item.type === 'do') {
-        controls.push(field('feedback', 'Feedback (optional, Markdown)'))
-        controls.push(
-          <Box key={`${id}:outcomes`} flexDirection="row" gap={1}>
-            <Button key={`${id}:done`} label="Done" variant="primary" onPress={press({ kind: 'do', outcome: 'done' })} />
-            <Button key={`${id}:not_done`} label="Not done" onPress={press({ kind: 'do', outcome: 'not_done' })} />
-          </Box>,
-        )
-      } else if (item.type === 'approve') {
-        controls.push(
-          <Box key={`${id}:verdicts`} flexDirection="row" gap={1}>
-            <Button key={`${id}:approve`} label="Approve" variant="primary" onPress={press({ kind: 'approve', choice: 'Approve' })} />
-            <Button key={`${id}:reject`} label="Reject" onPress={press({ kind: 'approve', choice: 'Reject' })} />
-          </Box>,
-        )
-      } else if (item.type === 'question') {
-        controls.push(field('text', 'Answer (Markdown)', press({ kind: 'submit' })))
-      } else {
-        const isMulti = item.multiSelect === true
-        ;(item.options ?? []).forEach((option, index) => {
-          const isOn = draft.selected.includes(option.label)
-          const mark = isMulti ? (isOn ? '[x]' : '[ ]') : isOn ? '(•)' : '( )'
-          controls.push(
-            <Button
-              key={`${id}:opt:${index}`}
-              plain
-              onPress={() =>
-                setDraft($, id, current => ({
-                  error: '',
-                  ...(isMulti
-                    ? {
-                        selected: current.selected.includes(option.label)
-                          ? current.selected.filter(label => label !== option.label)
-                          : [...current.selected, option.label],
-                      }
-                    : { selected: [option.label], other: '' }),
-                }))
-              }
-            >
-              {mark} {option.label} <Text dimColor>{option.description}</Text>
-            </Button>,
-          )
-        })
-        controls.push(
-          <Input
-            key={`${id}:other`}
-            label="Other (Markdown)"
-            rows={ROWS}
-            value={draft.other}
-            onInput={value =>
-              setDraft($, id, current => ({
-                other: value,
-                error: '',
-                selected: !isMulti && value.trim() !== '' ? [] : current.selected,
-              }))
-            }
-            onSubmit={value =>
-              setDraft($, id, current => ({
-                other: value,
-                error: '',
-                selected: !isMulti && value.trim() !== '' ? [] : current.selected,
-              }))
-            }
-          />,
-        )
-      }
-      if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
-      if (item.type === 'choice' || item.type === 'question') {
-        controls.push(<Button key={`${id}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />)
-      }
+      const controls = controlsFor(item, id, id, draft, press)
 
       const from = shown.mine.includes(id) ? '' : ' · another session'
       const bumped = item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''

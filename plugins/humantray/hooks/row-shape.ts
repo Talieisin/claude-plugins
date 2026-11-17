@@ -11,6 +11,13 @@ export const ROW_SCHEMA = 1
 /** The plugin version a row names as its writer. */
 export const WRITER_VERSION = '0.1.0'
 
+/**
+ * The response envelope version this mod's receiver takes (#32): a row
+ * carrying it tells the local viewer that it may answer the item by sending
+ * an envelope to the asker. A row without it is answered on the page only.
+ */
+export const ENVELOPE_VERSION = 1
+
 /** The fields of an item row this version knows; any other field is kept as it was. */
 export const ITEM_ROW_KEYS = [
   'schema',
@@ -42,6 +49,7 @@ export const ITEM_ROW_KEYS = [
   'parent_session_id',
   'lead_session_id',
   'writer_version',
+  'envelope',
 ] as const
 
 /**
@@ -82,6 +90,7 @@ export function itemToRow(item: Item & Required<Pick<Item, 'remote'>>, base: Rec
     parent_session_id: item.remote.parent_session_id,
     lead_session_id: item.remote.lead_session_id,
     writer_version: WRITER_VERSION,
+    envelope: ENVELOPE_VERSION,
   }
   for (const [key, value] of Object.entries(known)) if (value !== undefined) row[key] = value
   return row as ItemRow

@@ -129,14 +129,19 @@ let running: Promise<void> | undefined
 let pending: PassKind | undefined
 let retries = 0
 let retry: { cancel: () => void } | undefined
-/** Answers were applied: the mod's own delivery pass should run (`takeDeliveryDue`). */
+/** Answers were applied: the mod's own delivery pass should run (`onDeliveryDue`). */
 let deliveryDue = false
+/** The mod's delivery pass, run after every pass that applied an answer (#32, F3). */
+let deliver: (() => Promise<void>) | undefined
+/** The delivery pass last started, so a caller can wait for it. */
+let delivering: Promise<void> = Promise.resolve()
 /** This session's rows on the linked artifact have been read for adoption. */
 let adoptedHere = false
 /** When this process last tried to find the page or to adopt (its clock). */
 let lastFind: number | undefined
 
-async function isCloud($: EngineInterface): Promise<boolean> {
+/** Whether this is a cloud session, where the store pass runs. */
+export async function isCloud($: EngineInterface): Promise<boolean> {
   if (cloud !== undefined) return cloud
   try {
     cloud = (await $.env.get('CLAUDE_CODE_REMOTE')) === 'true'
@@ -160,6 +165,57 @@ function scheduleRetry($: EngineInterface, kind: PassKind) {
   }
 }
 
+/** Sets `link`: the cached one if its meta/page still qualifies, else one found by title, else none. */
+async function linkStep($: EngineInterface, repo: string, now: number): Promise<'done' | 'failed'> {
+  const held = link ?? (await loadLink($, repo))
+  let usable: Link | undefined
+  if (held !== undefined) {
+    const meta = await readMeta($, held.url, repo)
+    if (meta.kind === 'unavailable') {
+      link = held
+      return 'failed'
+    }
+    if (meta.meta !== undefined) usable = held
+    else {
+      await saveLink($, repo, undefined)
+      adoptedHere = false
+    }
+  }
+  if (usable === undefined) {
+    const found = await findArtifact($, repo)
+    if (found.kind === 'unavailable') return 'failed'
+    if (found.url !== undefined) {
+      usable = { url: found.url, how: 'found', at: now }
+      await saveLink($, repo, usable)
+      adoptedHere = false
+    }
+  }
+  link = usable
+  return 'done'
+}
+
+/**
+ * The link this process uses, found first when it has none (the receiver,
+ * #32): the cached one, or one found by title. Undefined when there is none
+ * or the store cannot be reached.
+ */
+export async function ensureLink($: EngineInterface): Promise<Link | undefined> {
+  if (link !== undefined) return link
+  const seen = await peek($)
+  if (seen.error !== undefined) return undefined
+  const repo = normaliseRepo(seen.ok.where.remote, seen.ok.where.root)
+  const now = await $.clock.now()
+  lastFind = now
+  await linkStep($, repo, now)
+  return link
+}
+
+/** This session's routable lineage, asked for once more when it is not known yet. */
+export async function ensureLineage($: EngineInterface): Promise<RemoteLineage | undefined> {
+  if (lineage === undefined) lineage = await fetchLineage($)
+  return lineage
+}
+
 async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   if (!(await isCloud($))) return 'done'
   if (kind === 'start') blocked = false
@@ -180,32 +236,7 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   let outcome: Outcome = 'done'
 
   // 1. Link: the cached one if its meta/page still qualifies, else by title.
-  if (step.link) {
-    const held = link ?? (await loadLink($, repo))
-    let usable: Link | undefined
-    if (held !== undefined) {
-      const meta = await readMeta($, held.url, repo)
-      if (meta.kind === 'unavailable') {
-        link = held
-        return 'failed'
-      }
-      if (meta.meta !== undefined) usable = held
-      else {
-        await saveLink($, repo, undefined)
-        adoptedHere = false
-      }
-    }
-    if (usable === undefined) {
-      const found = await findArtifact($, repo)
-      if (found.kind === 'unavailable') return 'failed'
-      if (found.url !== undefined) {
-        usable = { url: found.url, how: 'found', at: now }
-        await saveLink($, repo, usable)
-        adoptedHere = false
-      }
-    }
-    link = usable
-  }
+  if (step.link && (await linkStep($, repo, now)) === 'failed') return 'failed'
 
   // 2. Lineage: asked again on every pass until it answers.
   if (lineage === undefined) lineage = await fetchLineage($)
@@ -362,10 +393,14 @@ export function requestPass($: EngineInterface, kind: PassKind): Promise<void> {
   pending = wider(pending, kind)
   if (running !== undefined) return running
   running = (async () => {
+    // Only a start or turn pass delivers: the command's relink pass (adopt and
+    // push) and a tool's push pass never do, so no command or tool hook submits.
+    let delivers = false
     try {
       while (pending !== undefined) {
         const now = pending
         pending = undefined
+        if (now === 'start' || now === 'turn') delivers = true
         let outcome: Outcome
         try {
           outcome = await once($, now)
@@ -374,6 +409,15 @@ export function requestPass($: EngineInterface, kind: PassKind): Promise<void> {
         }
         if (outcome === 'failed') scheduleRetry($, now)
         else if (pending === undefined) retries = 0
+      }
+      // Answers applied by these passes (a turn, a retry of one, the
+      // receiver's) are delivered now, not at the next turn. Only once no pass
+      // is left to run, so the two never wait on the lock together. After a
+      // relink or push pass alone the flag waits for the next start or turn.
+      if (delivers && deliveryDue && deliver !== undefined) {
+        deliveryDue = false
+        const run = deliver
+        delivering = run().catch(() => undefined)
       }
     } finally {
       running = undefined
@@ -396,10 +440,26 @@ export async function relinkPass($: EngineInterface, repo: string, next: Link): 
   void requestPass($, 'relink')
 }
 
-/** Whether a pass applied answers since last asked; the caller then runs its delivery pass. */
-export function takeDeliveryDue(): boolean {
-  const due = deliveryDue
-  deliveryDue = false
-  return due
+/**
+ * Sets the mod's delivery pass, run after every pass that applied an answer
+ * (or adopted one not yet delivered). Without one, the flag waits for a later
+ * caller.
+ */
+export function onDeliveryDue(run: () => Promise<void>): void {
+  deliver = run
+}
+
+/** Runs the mod's delivery pass now (an answer applied earlier and not yet delivered), and resolves when it has. */
+export function deliverNow(): Promise<void> {
+  if (deliver !== undefined) {
+    const run = deliver
+    delivering = run().catch(() => undefined)
+  }
+  return delivering
+}
+
+/** Resolves when the delivery pass last started by a pass has finished. */
+export function deliveryIdle(): Promise<void> {
+  return delivering
 }
 
