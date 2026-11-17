@@ -632,21 +632,32 @@ export const blocksOf = (md: string): string[] => {
   return blocks
 }
 
-/** Whether a block is a plain paragraph: no list, quote, heading, table, fence, rule, tag or indented code. */
+/**
+ * Whether one line of a block is plain paragraph text: not a list item, a
+ * quote, a heading, a table row, a tag, a rule or setext underline, or a fence.
+ */
+const isParagraphLine = (line: string): boolean =>
+  line.trim() !== '' &&
+  !LIST_ITEM.test(line) &&
+  !QUOTE.test(line) &&
+  !/^ {0,3}(?:#{1,6}(?:[ \t]|$)|\||<|(?:[-*_][ \t]*){3,}$|=+[ \t]*$)/.test(line) &&
+  opens(line) === undefined
+
+/**
+ * Whether a block is a plain paragraph: every line of it plain paragraph text
+ * (#45: a paragraph that runs into a list, a fence or a quote with no blank
+ * line between is not one), not indented code, and no table.
+ */
 const isParagraph = (block: string): boolean =>
-  !LIST_ITEM.test(block) &&
-  !QUOTE.test(block) &&
-  !/^ {0,3}(?:#{1,6}(?:[ \t]|$)|\||<|(?:[-*_][ \t]*){3,}$)/.test(block) &&
-  !/^(?: {4}|\t)/.test(block) &&
-  opens(block.split('\n')[0] ?? '') === undefined &&
-  !/\n[ \t]*\|?[ \t]*:?-{3,}/.test(block)
+  block.split('\n').every(isParagraphLine) && !/^(?: {4}|\t)/.test(block) && !/\n[ \t]*\|?[ \t]*:?-{3,}/.test(block)
 
 /**
  * Markdown cut to at most `max` characters, only between whole blocks, never
  * inside a list, a table, a quote or a code block: as many leading blocks as
- * fit. When even the first block does not fit, a plain paragraph is cut at
- * the last word boundary that fits, with an ellipsis (decided on #40); any
- * other block is kept out whole (`text` is empty). `clipped` says whether
+ * fit. When even the first block does not fit, a plain paragraph (every line
+ * of it paragraph text, #45) is cut at the last word boundary that fits, with
+ * an ellipsis (decided on #40); any other block is kept out whole (`text` is
+ * empty). `clipped` says whether
  * anything was left out.
  */
 export const clipBlocks = (md: string, max: number): { text: string; clipped: boolean } => {
