@@ -456,8 +456,13 @@ function entryRead(entry: OutboxEntry, fresh: boolean): EntryRead {
   if (read.unreadable.has(entry.id)) return { kind: 'unknown' }
   const open = read.open.find(each => each.row.id === entry.id)
   if (open !== undefined) return { kind: 'row', row: open.row, response: read.responses.get(entry.id) }
+  // The closed row, or History's copy of it when that one is further on (a
+  // higher version): History reads delivered rows too, so an entry is settled
+  // from whichever read saw the row last.
   const closed = read.closed.get(entry.id)
-  if (closed !== undefined) return { kind: 'row', row: closed.row }
+  const finished = read.history.find(each => each.row.id === entry.id)
+  const latest = closed === undefined ? finished : finished !== undefined && finished.version > closed.version ? finished : closed
+  if (latest !== undefined) return { kind: 'row', row: latest.row }
   if (read.missing.has(entry.id)) return { kind: 'missing' }
   return { kind: 'unknown' }
 }
@@ -494,7 +499,14 @@ async function sendEntry($: EngineInterface, entry: OutboxEntry): Promise<boolea
   inFlight.add(flight)
   try {
     if (!(await stillHolds($))) return false
-    const sent = await sendText($, entry.to, entry.text)
+    // Decided on the entry as it is now, not on the copy a tick read before its
+    // store reads: one sent meanwhile is not due again yet, and a settled or
+    // replaced one is not sent at all.
+    const outbox = await readOutbox($)
+    const current = outbox?.[outboxKey(entry.artifact, entry.id)]
+    if (current === undefined || current.answer_id !== entry.answer_id) return true
+    if ((await $.clock.now()) < nextSendAt(current)) return true
+    const sent = await sendText($, current.to, current.text)
     const now = await $.clock.now()
     await changeEntry($, outboxKey(entry.artifact, entry.id), current =>
       current?.answer_id === entry.answer_id ? afterSend(current, sent, now) : 'keep',
@@ -598,7 +610,9 @@ async function tickOnce($: EngineInterface, options: TickOptions): Promise<void>
     if (!verdict.keep) {
       if (!live()) return
       // Settled: removed only if it is still the answer this read settled.
-      await changeEntry($, key, current => (current?.answer_id === entry.answer_id ? undefined : 'keep'))
+      if (!(await changeEntry($, key, current => (current?.answer_id === entry.answer_id ? undefined : 'keep')))) {
+        note($, `humantray viewer: ${entry.short} is settled but the outbox could not be written; tried again next tick`)
+      }
       if (verdict.toast !== undefined) toasts.push(verdict.toast)
       continue
     }
@@ -618,6 +632,15 @@ async function tickOnce($: EngineInterface, options: TickOptions): Promise<void>
   if (!live()) return
   lastStates = states
   await rebuild($, after ?? lastOutbox, states, now)
+}
+
+/** A line in the debug log, best effort: what the viewer could not do, never item text. */
+function note($: EngineInterface, text: string) {
+  try {
+    $.ui.log(text, { to: 'debug' })
+  } catch {
+    // Best effort.
+  }
 }
 
 async function toast($: EngineInterface, text: string) {

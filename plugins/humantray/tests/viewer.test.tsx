@@ -981,3 +981,62 @@ describe('re-read at 8e06312', () => {
     expect(await shownText(ui)).not.toContain('Viewer:')
   })
 })
+
+describe('acceptance findings (#32)', () => {
+  const sentOnce = (fields: Partial<OutboxEntry> = {}): OutboxEntry => ({
+    artifact: URL_A,
+    id: ID1,
+    short: `HT-${ID1.slice(-5)}`,
+    to: ME,
+    answer_id: 'snapAnswerId000000000000',
+    text: 'an envelope',
+    first: START - 3 * 60_000,
+    last: START - 3 * 60_000,
+    sends: 1,
+    delivered: true,
+    ...fields,
+  })
+
+  vtest('a tick does not resend from its stale copy: an entry sent while the tick read the store is not due again', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    const key = `${URL_A} ${ID1}`
+    // Due when the tick reads the outbox...
+    w.kvSet('viewer:outbox', { [key]: sentOnce() })
+    let once = false
+    a.before = () => {
+      if (once) return
+      once = true
+      // ...and sent by someone else while the tick reads the store.
+      w.kvSet('viewer:outbox', { [key]: sentOnce({ sends: 2, last: w.clock.now() }) })
+    }
+    await tickOnce(w)
+    expect(sends).toEqual([])
+  })
+
+  vtest('settled from History when the closed-row read is behind: no card left "applied", no resend', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    const key = `${URL_A} ${ID1}`
+    const answer = sentOnce().answer_id
+    const applied = { id: ID1, type: 'approve' as const, status: 'answered' as const, response: { selected: ['Approve'] }, answer_id: answer, response_at: START }
+    put(a, URL_A, rowOf({ ...applied, delivered: false }))
+    put(a, URL_A, rowOf({ ...applied, delivered: true }))
+    w.kvSet('viewer:outbox', { [key]: sentOnce() })
+    // The by-id read sees an older copy (not yet delivered); History sees the newer one.
+    const older = { data: rowOf({ ...applied, delivered: false }) as unknown as Record<string, unknown>, version: 2 }
+    const newer = { data: rowOf({ ...applied, delivered: true }) as unknown as Record<string, unknown>, version: 3 }
+    a.before = input => {
+      const query = JSON.stringify(input.query ?? {})
+      if (input.collection !== 'items') return
+      const docs = a.artifacts.find(x => x.url === URL_A)?.docs
+      if (query.includes('"in"') && query.includes(ID1)) docs?.set(`items/${ID1}`, older)
+      else if (query.includes('response_at')) docs?.set(`items/${ID1}`, newer)
+    }
+    await turnOn($, w)
+    expect(w.kv('viewer:outbox')).toEqual({})
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).not.toContain('Applied; waiting')
+    expect(sends).toEqual([])
+  })
+})

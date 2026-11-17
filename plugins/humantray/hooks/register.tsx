@@ -925,7 +925,7 @@ export const register: Register = on => {
         if (last === undefined || last.url !== each.url || last.asker !== each.asker) {
           const old = now - each.lastActive >= 24 * 60 * 60 * 1000
           nodes.push(
-            <Box key={`v:asker:${each.url}:${each.asker}`} flexDirection="row" gap={1}>
+            <Box key={`v:asker:${each.url}:${each.asker}`} flexDirection="column">
               <Text>{plain(each.askerTitle)}</Text>
               {each.link ? <Link key={`v:asker:${each.url}:${each.asker}:link`} href={`https://claude.ai/code/${each.asker}`} label="open session" /> : null}
               <Text dimColor>{`last active ${when(each.lastActive)}${old ? ' (over a day ago)' : ''}`}</Text>
