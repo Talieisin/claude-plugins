@@ -393,10 +393,14 @@ export function requestPass($: EngineInterface, kind: PassKind): Promise<void> {
   pending = wider(pending, kind)
   if (running !== undefined) return running
   running = (async () => {
+    // Only a start or turn pass delivers: the command's relink pass (adopt and
+    // push) and a tool's push pass never do, so no command or tool hook submits.
+    let delivers = false
     try {
       while (pending !== undefined) {
         const now = pending
         pending = undefined
+        if (now === 'start' || now === 'turn') delivers = true
         let outcome: Outcome
         try {
           outcome = await once($, now)
@@ -406,10 +410,11 @@ export function requestPass($: EngineInterface, kind: PassKind): Promise<void> {
         if (outcome === 'failed') scheduleRetry($, now)
         else if (pending === undefined) retries = 0
       }
-      // Answers applied by these passes, whatever asked for them (a retry,
-      // the receiver, a turn), are delivered now, not at the next turn. Only
-      // once no pass is left to run, so the two never wait on the lock together.
-      if (deliveryDue && deliver !== undefined) {
+      // Answers applied by these passes (a turn, a retry of one, the
+      // receiver's) are delivered now, not at the next turn. Only once no pass
+      // is left to run, so the two never wait on the lock together. After a
+      // relink or push pass alone the flag waits for the next start or turn.
+      if (delivers && deliveryDue && deliver !== undefined) {
         deliveryDue = false
         const run = deliver
         delivering = run().catch(() => undefined)

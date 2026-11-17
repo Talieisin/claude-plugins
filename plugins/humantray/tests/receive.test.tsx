@@ -9,7 +9,7 @@ import type { Item } from '../types'
 import { fingerprint, itemToRow } from '../hooks/row-shape'
 import { LEAD, ME, OTHER, TITLE, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
 import { TYPED, coldSubmit, envelopeFor, textOf, warmReceive, wrapped } from './envelope-fixtures'
-import { START, START_EVENT, stored, world } from './world'
+import { COMMAND, START, START_EVENT, stored, world } from './world'
 
 const CLOUD = { env: { CLAUDE_CODE_REMOTE: 'true' } }
 const REMOTE = { session_id: ME, session_title: 'worker for #1', parent_session_id: LEAD, lead_session_id: LEAD }
@@ -426,6 +426,146 @@ describe('a retry that applies an answer delivers it (F3)', () => {
     expect(w.submits).toEqual([])
     // The in-process retry, about 5 s later.
     await w.clock.advance(6_000)
+    await settle(w)
+    expect(w.submits).toEqual([LINE1])
+  })
+})
+
+describe('the hooks fail closed, and only a whole text is taken', () => {
+  test("prompt.submit's .catch: a hook that throws still stops a recognised envelope", async ($, on) => {
+    const { w, a } = await asker($, on)
+    w.failSessionId = true
+    const sent = await $.prompt.submit(coldSubmit(wrapped(textOf(envelopeFor(ID1)))))
+    expect(sent.drop).toBe('humantray: took an answer from the viewer')
+    await settle(w)
+    expect(w.received).toEqual([])
+    expect(responseWrites(a)).toEqual([])
+    // Not taken: the viewer sends it again, and a later copy is taken.
+    w.failSessionId = false
+    await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    await settle(w)
+    expect(w.submits).toEqual([LINE1])
+  })
+
+  test("session.receive's .catch: a hook that throws still consumes a recognised envelope", async ($, on) => {
+    const { w, a } = await asker($, on)
+    w.failSessionId = true
+    const got = await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    expect(got.consumed).toBe('humantray: took an answer from the viewer')
+    await settle(w)
+    expect(w.received).toEqual([])
+    expect(responseWrites(a)).toEqual([])
+  })
+
+  test('a .catch passes on what is not an envelope', async ($, on) => {
+    const { w } = await asker($, on)
+    w.failSessionId = true
+    const text = 'an ordinary message from another session'
+    const got = await $.session.receive(warmReceive(text))
+    expect(got.consumed).toBeUndefined()
+    expect(w.received).toEqual([text])
+  })
+
+  test('a wrapper is taken only as the whole text: a line before it or after it passes untouched', async ($, on) => {
+    const { w, a } = await asker($, on)
+    const one = wrapped(textOf(envelopeFor(ID1)))
+    for (const text of [`Look:\n${one}`, `${one}\nThat was it.`]) {
+      const got = await $.session.receive(warmReceive(text))
+      expect(got.consumed).toBeUndefined()
+    }
+    await settle(w)
+    expect(responseWrites(a)).toEqual([])
+  })
+
+  test('two complete wrapped envelopes in one text (two deliveries dequeued together): each is taken', async ($, on) => {
+    const { w } = await asker($, on, [mirrored({ id: ID1, type: 'approve' }), mirrored({ id: ID2, type: 'approve' })])
+    const text = `${wrapped(textOf(envelopeFor(ID1)))}\n${wrapped(textOf(envelopeFor(ID2, { response: { selected: ['Reject'] } })))}`
+    const sent = await $.prompt.submit(coldSubmit(text))
+    expect(sent.drop).toContain(`HT-${ID1.slice(-5)}`)
+    expect(sent.drop).toContain(`HT-${ID2.slice(-5)}`)
+    await settle(w)
+    expect([...w.submits].sort()).toEqual([LINE1, `humantray HT-${ID2.slice(-5)} (Seeded): Reject`].sort())
+  })
+
+  test('two envelopes with anything else between or around them pass untouched', async ($, on) => {
+    const { w, a } = await asker($, on, [mirrored({ id: ID1, type: 'approve' }), mirrored({ id: ID2, type: 'approve' })])
+    const two = `${wrapped(textOf(envelopeFor(ID1)))}\nand also\n${wrapped(textOf(envelopeFor(ID2)))}`
+    const got = await $.session.receive(warmReceive(two))
+    expect(got.consumed).toBeUndefined()
+    await settle(w)
+    expect(responseWrites(a)).toEqual([])
+  })
+})
+
+describe('rule 4 when someone writes first', () => {
+  test('the page creates the row between our read and our create: read again, nothing written, the page answer delivered once', async ($, on) => {
+    const { w, a } = await asker($, on)
+    let raced = false
+    a.before = input => {
+      if (!raced && input.action === 'set' && input.collection === 'responses' && input.if_version === undefined) {
+        raced = true
+        a.put(URL_A, `responses/${ID1}`, response(ID1, { response: { selected: ['Reject'] } }))
+      }
+    }
+    await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    await settle(w)
+    expect(raced).toBe(true)
+    expect(a.doc(URL_A, `responses/${ID1}`)?.data).toMatchObject({ by: 'page' })
+    expect(w.submits).toEqual([`humantray HT-${ID1.slice(-5)} (Seeded): Reject`])
+  })
+})
+
+describe('only a cloud session acts on an envelope', () => {
+  test('a local session with the item, the page and a lineage still writes and delivers nothing', async ($, on) => {
+    const w = world(on)
+    const a = artifactWorld(on, { read: path => w.files.get(path) })
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', meta(START - 1000))
+    const item = mirrored({ id: ID1, type: 'approve' })
+    w.seed({ version: 1, items: [item], sessions: {} })
+    a.put(URL_A, `items/${ID1}`, itemToRow(item) as unknown as Record<string, unknown>)
+    await $.session.start(START_EVENT)
+    const got = await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    expect(got.consumed).toBeDefined()
+    await settle(w)
+    expect(a.writes()).toEqual([])
+    expect(w.submits).toEqual([])
+    expect(w.store().items[0]?.status).toBe('open')
+  })
+
+  test('the artifact link in its other form (/code/artifact/) is the same artifact', async ($, on) => {
+    const { w } = await asker($, on)
+    const other = URL_A.replace('/artifact/', '/code/artifact/')
+    await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1, { artifact: other })))))
+    await settle(w)
+    expect(w.submits).toEqual([LINE1])
+  })
+})
+
+describe('the page command never delivers (decided on #32)', () => {
+  test('/humantray-page adopting an answered, undelivered row submits nothing; the next turn delivers it once', async ($, on) => {
+    const { w, a } = linked(on)
+    const answered = mirrored({
+      id: ID1,
+      type: 'approve',
+      status: 'answered',
+      response: { selected: ['Approve'] },
+      response_at: START - 10,
+      response_by: 'page',
+      answer_id: 'pageanswer00000000000000',
+      delivered: false,
+    })
+    a.put(URL_A, `items/${ID1}`, itemToRow(answered) as unknown as Record<string, unknown>)
+    // A replaced container whose store could not be reached at start: nothing linked or adopted yet.
+    a.garble = 1_000
+    await $.session.start(START_EVENT)
+    await settle(w)
+    a.garble = 0
+    await $.command.run({ ...COMMAND, command: 'humantray-page', args: '' })
+    await settle(w)
+    expect(w.store().items.map(item => item.id)).toEqual([ID1])
+    expect(w.submits).toEqual([])
+    await $.turn.start({ text: '', turnId: 'turn-2' })
     await settle(w)
     expect(w.submits).toEqual([LINE1])
   })

@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { ResponseEnvelope } from '../types'
-import { ENVELOPE_CLOSE, ENVELOPE_MAX, ENVELOPE_OPEN, isEnvelopeOrigin, makeEnvelope, parseEnvelope, readEnvelope, rowOf, unwrap } from '../hooks/envelope'
+import { ENVELOPE_CLOSE, ENVELOPE_MAX, ENVELOPE_OPEN, artifactId, isEnvelopeOrigin, makeEnvelope, parseEnvelope, readEnvelope, readEnvelopes, rowOf, unwrap } from '../hooks/envelope'
 import { ME, URL_A } from './artifact-world'
 import { TYPED, WRAP_CLOSE, WRAP_OPEN, envelopeFor, textOf, wrapped } from './envelope-fixtures'
 
@@ -95,5 +95,38 @@ describe('what is not an envelope', () => {
 
   test('to and artifact are carried as given', () => {
     expect(readEnvelope(good)).toMatchObject({ to: ME, artifact: URL_A })
+  })
+})
+
+describe('several envelopes in one text', () => {
+  const one = wrapped(textOf(envelopeFor(ID)))
+  const two = wrapped(textOf(envelopeFor('01AAAAAAAAAAAAAAAAAAAENVLP2')))
+
+  test('one envelope, wrapped or bare, is one', () => {
+    expect(readEnvelopes(one)).toHaveLength(1)
+    expect(readEnvelopes(textOf(envelopeFor(ID)))).toHaveLength(1)
+  })
+
+  test('two or three complete wrapped envelopes, with or without blank lines between, are each read', () => {
+    expect(readEnvelopes(`${one}\n${two}`)?.map(e => e.id)).toEqual([ID, '01AAAAAAAAAAAAAAAAAAAENVLP2'])
+    expect(readEnvelopes(`${one}\n\n${two}\n\n${one}`)).toHaveLength(3)
+  })
+
+  test('anything else is none: text between, around, a bare envelope beside a wrapped one, a bad one among good ones', () => {
+    const bare = textOf(envelopeFor(ID))
+    for (const text of [
+      `${one}\nand\n${two}`,
+      `hello\n${one}\n${two}`,
+      `${one}\n${two}\nbye`,
+      `${one}\n${bare}`,
+      `${one}\n${WRAP_OPEN}\nnot an envelope\n${WRAP_CLOSE}`,
+      `${one}\n${WRAP_OPEN}\n${bare}`,
+    ]) {
+      expect(readEnvelopes(text)).toBeUndefined()
+    }
+  })
+
+  test("an artifact's two link forms have one id", () => {
+    expect(artifactId(URL_A)).toBe(artifactId(URL_A.replace('/artifact/', '/code/artifact/')))
   })
 })

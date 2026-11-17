@@ -97,12 +97,45 @@ export function parseEnvelope(lines: readonly string[]): ResponseEnvelope | unde
 export const readEnvelope = (text: string): ResponseEnvelope | undefined => parseEnvelope(unwrap(text))
 
 /**
+ * The envelopes a delivery's whole text is: one (wrapped or not), or two or
+ * more complete wrapped envelopes one after another (deliveries dequeued
+ * together into one prompt), each checked alone. Anything else, any line
+ * outside a wrapper or any wrapper that does not hold exactly one envelope,
+ * is undefined: not humantray's, and passed on unchanged.
+ */
+export function readEnvelopes(text: string): ResponseEnvelope[] | undefined {
+  const one = readEnvelope(text)
+  if (one !== undefined) return [one]
+  const lines = trimLines(text.replace(/\r\n?/g, '\n').split('\n'))
+  const found: ResponseEnvelope[] = []
+  let at = 0
+  while (at < lines.length) {
+    if ((lines[at] ?? '').trim() === '') {
+      at += 1
+      continue
+    }
+    if (!WRAP_OPEN.test((lines[at] ?? '').trim())) return undefined
+    let end = at + 1
+    while (end < lines.length && (lines[end] ?? '').trim() !== WRAP_CLOSE) end += 1
+    if (end >= lines.length) return undefined
+    const envelope = parseEnvelope(lines.slice(at + 1, end))
+    if (envelope === undefined) return undefined
+    found.push(envelope)
+    at = end + 1
+  }
+  return found.length >= 2 ? found : undefined
+}
+
+/**
  * Whether a delivery came from another session, the only origin an envelope
  * is taken from: `peer` at both `prompt.submit` (a cold container) and
  * `session.receive` (a running one), as test 0 recorded. The engine stamps
  * the kind; a plugin name on it is the sender's claim and is not looked at.
  */
 export const isEnvelopeOrigin = (origin: { kind: string } | undefined): boolean => origin?.kind === 'peer'
+
+/** An artifact's own id, so its two link forms (`/artifact/` and `/code/artifact/`) compare equal. */
+export const artifactId = (url: string): string => url.replace(/^https:\/\/claude\.ai\/(?:code\/)?artifact\//, '')
 
 /** The response row an envelope carries: the envelope less `to` and `artifact`. */
 export function rowOf(envelope: ResponseEnvelope): Record<string, unknown> {

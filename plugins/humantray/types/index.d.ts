@@ -351,6 +351,10 @@ export type ViewerRepo = {
   stale: boolean
   /** Rows that could not be read, or were written by a newer schema. */
   skipped: number
+  /** When History was last read whole, or null if never; its freshness is its own. */
+  historyAt: number | null
+  /** The last History read failed: what History shows is from `historyAt`. */
+  historyStale: boolean
   leads: ViewerLead[]
 }
 

@@ -33,7 +33,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Draft, HistoryEntry, HistoryFull, Item, StoreFile, ViewerCard, ViewerTray } from '../types'
+import type { Draft, HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
 import {
   type Action,
   type AddOutcome,
@@ -64,7 +64,7 @@ import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
 import { withDeadline } from './artifact-store'
-import { isEnvelopeOrigin, readEnvelope } from './envelope'
+import { isEnvelopeOrigin, readEnvelopes } from './envelope'
 import { takeEnvelope } from './receive'
 import { rowToItem } from './rows'
 import { isViewing, resumeViewer, sendAgain, tick, viewerAnswer, viewerCommand } from './viewer'
@@ -87,7 +87,7 @@ const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 // The viewer's (#32): its tray (built in viewer.ts, which declares the same
 // atom), its Open page, and a card shown in full.
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-1' })
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-2' })
 const viewerPage = atom({ plugin: 'humantray', key: 'vpage' } as const, 0)
 const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-1' })
 
@@ -327,6 +327,21 @@ async function storePass($: EngineInterface, kind: 'start' | 'turn') {
   await deliveryIdle()
 }
 
+/**
+ * Takes the envelopes a hook stopped (#32): notes them in the debug log, with
+ * this session's id, then takes each one detached. Returns the reason the hook
+ * gives. The note goes first: if it fails, the hook's `.catch` still stops
+ * the delivery, and the viewer sends the answer again.
+ */
+async function takeAll($: EngineInterface, envelopes: ResponseEnvelope[], via: 'prompt.submit' | 'session.receive'): Promise<string> {
+  const shorts = envelopes.map(envelope => shortOf(envelope.id)).join(', ')
+  const me = await $.session.id()
+  $.ui.log(`humantray: taking an answer from the viewer for ${shorts} in ${me} (${via})`, { to: 'debug' })
+  armDelivery($)
+  for (const envelope of envelopes) void takeEnvelope($, envelope, via)
+  return `humantray: took an answer for ${shorts} from the viewer`
+}
+
 /** The most characters of an open card's body the viewer draws before "Show in full" (#32). */
 const VIEWER_BODY = 3_000
 /** Cards on one page of the viewer's Open list, so a page stays far under a surface's limit. */
@@ -490,24 +505,20 @@ export const register: Register = on => {
   // recognised by origin and whole text alone (pure, waiting on nothing),
   // stopped before the model sees it, and taken detached. Every other prompt
   // and delivery passes untouched, and a hook that fails still stops an envelope.
-  on('prompt.submit', ($, e, next) => {
-    const envelope = isEnvelopeOrigin(e.origin) ? readEnvelope(e.text) : undefined
-    if (envelope === undefined) return next(e)
-    armDelivery($)
-    void takeEnvelope($, envelope, 'prompt.submit')
-    return { drop: `humantray: took an answer for ${shortOf(envelope.id)} from the viewer` }
+  on('prompt.submit', async ($, e, next) => {
+    const envelopes = isEnvelopeOrigin(e.origin) ? readEnvelopes(e.text) : undefined
+    if (envelopes === undefined) return next(e)
+    return { drop: await takeAll($, envelopes, 'prompt.submit') }
   }).catch(($, e, next) =>
-    isEnvelopeOrigin(e.origin) && readEnvelope(e.text) !== undefined ? { drop: 'humantray: took an answer from the viewer' } : next(e),
+    isEnvelopeOrigin(e.origin) && readEnvelopes(e.text) !== undefined ? { drop: 'humantray: took an answer from the viewer' } : next(e),
   )
 
-  on('session.receive', ($, e, next) => {
-    const envelope = e.agentId === undefined && isEnvelopeOrigin(e.origin) ? readEnvelope(e.text) : undefined
-    if (envelope === undefined) return next(e)
-    armDelivery($)
-    void takeEnvelope($, envelope, 'session.receive')
-    return { consumed: `humantray: took an answer for ${shortOf(envelope.id)} from the viewer` }
+  on('session.receive', async ($, e, next) => {
+    const envelopes = e.agentId === undefined && isEnvelopeOrigin(e.origin) ? readEnvelopes(e.text) : undefined
+    if (envelopes === undefined) return next(e)
+    return { consumed: await takeAll($, envelopes, 'session.receive') }
   }).catch(($, e, next) =>
-    e.agentId === undefined && isEnvelopeOrigin(e.origin) && readEnvelope(e.text) !== undefined
+    e.agentId === undefined && isEnvelopeOrigin(e.origin) && readEnvelopes(e.text) !== undefined
       ? { consumed: 'humantray: took an answer from the viewer' }
       : next(e),
   )
@@ -730,9 +741,11 @@ export const register: Register = on => {
       })
       const head = (
         <Text key="v:head" dimColor>
-          {viewing.found === 'unreadable'
+          {viewing.found === 'unreadable' && viewing.repos.length === 0
             ? 'Viewer: the list of artifacts could not be read. Give the page link with /humantray-viewer <link>.'
-            : `Viewer: ${String(viewing.repos.length)} ${viewing.repos.length === 1 ? 'repository' : 'repositories'} · ${String(viewing.answerable)} to answer`}
+            : `Viewer: ${String(viewing.repos.length)} ${viewing.repos.length === 1 ? 'repository' : 'repositories'} · ${String(viewing.answerable)} to answer${
+                viewing.found === 'unreadable' ? ' · the list of artifacts could not be read just now, so the last set is shown' : ''
+              }`}
         </Text>
       )
       const full = await read($, viewerExpanded)
@@ -809,10 +822,20 @@ export const register: Register = on => {
               {at < pages - 1 && <Button key="v:history:next" label="Next" onPress={() => update($, viewerPage, () => at + 1)} />}
             </Box>
           ) : null
+        const historyStatus = viewing.repos.flatMap(repo =>
+          repo.historyStale
+            ? [
+                <Text key={`v:repo:${repo.url}:history`} dimColor>
+                  {`${plain(repo.repo)}: History ${repo.historyAt === null ? 'not read yet' : `last read ${when(repo.historyAt)}`}`}
+                </Text>,
+              ]
+            : [],
+        )
         return (
           <Box flexDirection="column" gap={1}>
             {vtoggle}
             {head}
+            {historyStatus}
             {paging}
             {rows.length === 0 ? <Text key="v:history:none" dimColor>No answered items yet.</Text> : rows}
           </Box>

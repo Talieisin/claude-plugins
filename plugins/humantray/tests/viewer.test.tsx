@@ -8,7 +8,7 @@ import { type Engine, describe, expect, test } from 'claude-code/testing'
 import type { Item, ItemRow, OutboxEntry } from '../types'
 import { readEnvelope } from '../hooks/envelope'
 import { fingerprint, itemToRow } from '../hooks/row-shape'
-import { GIVE_UP_MS, LEASE_MS, TICK_MS, isGivenUp, lastActive, nextSendAt, repoMatches, settleEntry } from '../hooks/viewer'
+import { FIND_MS, GIVE_UP_MS, LEASE_MS, MAX_LISTED, TICK_MS, isGivenUp, lastActive, nextSendAt, repoMatches, settleEntry } from '../hooks/viewer'
 import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
 import { COMMAND, LIST, PANE, START, START_EVENT, answerOf, stored, world } from './world'
 
@@ -35,6 +35,28 @@ function rowOf(fields: Partial<Item> & Pick<Item, 'id' | 'type'>, remote: Partia
 
 type Sent = { to: string; text: string }
 
+type Env = ReturnType<typeof viewerWorld>
+
+/** The world of the viewer test running now, so that every test ends with the read-only check. */
+let current: Env | undefined
+
+/**
+ * A viewer test: after its body, the viewer wrote no row, published nothing,
+ * submitted no prompt and appended nothing to the transcript, whatever it did.
+ */
+function vtest(name: string, body: ($: Engine, on: On) => Promise<void>) {
+  test(name, async ($, on) => {
+    current = undefined
+    await body($, on)
+    const env = current as Env | undefined
+    if (env === undefined) return
+    expect(env.a.writes()).toEqual([])
+    expect(env.a.calls.filter(c => c.tool === 'Artifact' && c.input.action === 'publish')).toEqual([])
+    expect(env.w.submits).toEqual([])
+    expect(env.w.appended).toEqual([])
+  })
+}
+
 /** A local viewer's world: two repositories' artifacts with rows, and a recorder of sends. */
 function viewerWorld(on: On, options: Parameters<typeof world>[1] = {}) {
   const w = world(on, { sessionId: VIEWER, ...options })
@@ -44,14 +66,18 @@ function viewerWorld(on: On, options: Parameters<typeof world>[1] = {}) {
   a.add(URL_B, 'humantray: owner/other')
   a.put(URL_B, 'meta/page', { ...meta(START - 1000), repo: REPO2 })
   const sends: Sent[] = []
-  const send = { answer: (_: Sent) => ({ isDelivered: true }) as { isDelivered: boolean; reason?: string } }
-  on('session.send', (_, e) => {
+  const send = {
+    answer: (_: Sent): { isDelivered: boolean; reason?: string } | Promise<{ isDelivered: boolean; reason?: string }> => ({ isDelivered: true }),
+  }
+  on('session.send', async (_, e) => {
     const sent = { to: String(e.to), text: e.text }
     sends.push(sent)
-    const answer = send.answer(sent)
+    const answer = await send.answer(sent)
     return answer.isDelivered ? { isDelivered: true as const } : { isDelivered: false as const, reason: answer.reason ?? 'refused' }
   })
-  return { w, a, sends, send }
+  const env = { w, a, sends, send }
+  current = env
+  return env
 }
 
 const put = (a: ReturnType<typeof artifactWorld>, url: string, row: ItemRow) =>
@@ -92,11 +118,14 @@ describe('the pure rules', () => {
     delivered: true,
   }
 
-  test('sends after the first: 2, 10 and 30 minutes after it, then hourly; given up after a day', () => {
+  test('never sent: due at once; then 2, 8 and 20 minutes after the last send (2, 10, 30 after the first when on time), then hourly; given up after a day', () => {
+    expect(nextSendAt({ ...entry, sends: 0 })).toBe(Number.NEGATIVE_INFINITY)
     expect(nextSendAt({ ...entry, sends: 1 }) - START).toBe(2 * 60_000)
-    expect(nextSendAt({ ...entry, sends: 2 }) - START).toBe(10 * 60_000)
-    expect(nextSendAt({ ...entry, sends: 3 }) - START).toBe(30 * 60_000)
+    expect(nextSendAt({ ...entry, sends: 2, last: START + 2 * 60_000 }) - START).toBe(10 * 60_000)
+    expect(nextSendAt({ ...entry, sends: 3, last: START + 10 * 60_000 }) - START).toBe(30 * 60_000)
     expect(nextSendAt({ ...entry, sends: 4, last: START + 5 }) - START).toBe(5 + 60 * 60_000)
+    // Behind (the viewer was off for hours): due once, then measured from that send, not from the first.
+    expect(nextSendAt({ ...entry, sends: 2, last: START + 5 * 60 * 60_000 }) - START).toBe(5 * 60 * 60_000 + 8 * 60_000)
     expect(isGivenUp(entry, START + GIVE_UP_MS - 1)).toBe(false)
     expect(isGivenUp(entry, START + GIVE_UP_MS)).toBe(true)
   })
@@ -138,7 +167,7 @@ describe('the pure rules', () => {
 })
 
 describe('the lease: one viewer per computer', () => {
-  test('/humantray-viewer makes this session the viewer and opens the pane', async ($, on) => {
+  vtest('/humantray-viewer makes this session the viewer and opens the pane', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     const text = await turnOn($, w)
@@ -148,14 +177,14 @@ describe('the lease: one viewer per computer', () => {
     expect(w.opened).toContain('humantray')
   })
 
-  test('a plain session with the setting stored does not become a viewer', async ($, on) => {
+  vtest('a plain session with the setting stored does not become a viewer', async ($, on) => {
     const { w, a } = viewerWorld(on, { store: { 'viewer:config': { session: 'someone-else' } } })
     await $.session.start(START_EVENT)
     await tickOnce(w)
     expect(a.calls.filter(c => c.tool === 'ArtifactData')).toEqual([])
   })
 
-  test("the viewer session's own restart takes a stale lease back", async ($, on) => {
+  vtest("the viewer session's own restart takes a stale lease back", async ($, on) => {
     const stale = { instance: 'gone', session: VIEWER, renewed: START - LEASE_MS - 1 }
     const { w, a } = viewerWorld(on, { store: { 'viewer:config': { session: VIEWER }, 'viewer:lease': stale } })
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
@@ -165,15 +194,15 @@ describe('the lease: one viewer per computer', () => {
     expect(await shownText(ui)).toContain('Viewer: 2 repositories')
   })
 
-  test('a fresh lease held by another instance is left alone at start', async ($, on) => {
-    const held = { instance: 'other', session: VIEWER, renewed: START - 1000 }
+  vtest("a fresh lease held by another session's instance is left alone at start", async ($, on) => {
+    const held = { instance: 'other', session: 'another-session', renewed: START - 1000 }
     const { w, a } = viewerWorld(on, { store: { 'viewer:config': { session: VIEWER }, 'viewer:lease': held } })
     await $.session.start(START_EVENT)
     await tickOnce(w)
     expect(a.calls.filter(c => c.tool === 'ArtifactData')).toEqual([])
   })
 
-  test('another session taking over with /humantray-viewer: this one stops at its next tick', async ($, on) => {
+  vtest('another session taking over with /humantray-viewer: this one stops at its next tick', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
@@ -187,7 +216,7 @@ describe('the lease: one viewer per computer', () => {
     expect(a.calls.length).toBe(before)
   })
 
-  test('in a cloud session the command refuses and nothing is read', async ($, on) => {
+  vtest('in a cloud session the command refuses and nothing is read', async ($, on) => {
     const { w, a } = viewerWorld(on, { env: { CLAUDE_CODE_REMOTE: 'true' } })
     a.session = { id: ME, title: null, parent: null }
     const text = await turnOn($, w)
@@ -197,7 +226,7 @@ describe('the lease: one viewer per computer', () => {
     expect(reads).toEqual([])
   })
 
-  test('off stops it', async ($, on) => {
+  vtest('off stops it', async ($, on) => {
     const { w, a } = viewerWorld(on)
     await turnOn($, w)
     const ran = await $.command.run({ ...VIEWER_COMMAND, args: 'off' })
@@ -209,7 +238,7 @@ describe('the lease: one viewer per computer', () => {
 })
 
 describe('finding the artifacts', () => {
-  test('one per repository: the earliest meta/page, whatever the listing order', async ($, on) => {
+  vtest('one per repository: the earliest meta/page, whatever the listing order', async ($, on) => {
     const { w, a } = viewerWorld(on)
     const later = 'https://claude.ai/artifact/fakeartifact00000LATER'
     a.add(later, 'humantray: owner/repo')
@@ -223,7 +252,7 @@ describe('finding the artifacts', () => {
     expect(text).not.toContain('Question 02')
   })
 
-  test('named repositories only', async ($, on) => {
+  vtest('named repositories only', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     put(a, URL_B, rowOf({ id: ID2, type: 'approve', repo: REPO2 }))
@@ -231,7 +260,7 @@ describe('finding the artifacts', () => {
     expect(text).toContain('on for 1 repository: github.com/owner/other')
   })
 
-  test('an unreadable listing says so, and a given link still works', async ($, on) => {
+  vtest('an unreadable listing says so, and a given link still works', async ($, on) => {
     const { w, a } = viewerWorld(on)
     a.listFails = true
     expect(await turnOn($, w)).toContain('could not be read')
@@ -241,14 +270,14 @@ describe('finding the artifacts', () => {
     expect((ran as { text?: string }).text).toContain('on for 1 repository: github.com/owner/repo')
   })
 
-  test('a word that is neither a repository nor a link is refused', async ($, on) => {
+  vtest('a word that is neither a repository nor a link is refused', async ($, on) => {
     const { w } = viewerWorld(on)
     expect(await turnOn($, w, 'not a repo!')).toContain('not a repository or an artifact link')
   })
 })
 
 describe('reading and drawing', () => {
-  test('grouped by repository, then lead, then asker, with a checked session link and last activity', async ($, on) => {
+  vtest('grouped by repository, then lead, then asker, with a checked session link and last activity', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     put(a, URL_A, rowOf({ id: ID2, type: 'ack' }, { session_id: LEAD, session_title: 'the lead', parent_session_id: null, lead_session_id: LEAD }))
@@ -266,7 +295,7 @@ describe('reading and drawing', () => {
     expect(text).toContain('last active')
   })
 
-  test('a failed read keeps the last data, marked stale', async ($, on) => {
+  vtest('a failed read keeps the last data, marked stale', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
@@ -278,7 +307,7 @@ describe('reading and drawing', () => {
     expect(text).toContain('last read')
   })
 
-  test('two reads a tick for each artifact with a few open items and an empty outbox', async ($, on) => {
+  vtest('two reads a tick for each artifact with a few open items and an empty outbox', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
@@ -290,7 +319,7 @@ describe('reading and drawing', () => {
     expect(tick).toHaveLength(3)
   })
 
-  test('unreadable and newer rows are counted, not drawn', async ($, on) => {
+  vtest('unreadable and newer rows are counted, not drawn', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     a.put(URL_A, `items/${ID2}`, { ...rowOf({ id: ID2, type: 'approve' }), schema: 2 } as unknown as Record<string, unknown>)
@@ -301,7 +330,7 @@ describe('reading and drawing', () => {
     expect(text).not.toContain('Question 02')
   })
 
-  test('a row without envelope: 1 is read-only, with a link to the page', async ($, on) => {
+  vtest('a row without envelope: 1 is read-only, with a link to the page', async ($, on) => {
     const { w, a } = viewerWorld(on)
     const { envelope: _e, ...old } = rowOf({ id: ID1, type: 'approve' })
     a.put(URL_A, `items/${ID1}`, old as unknown as Record<string, unknown>)
@@ -311,7 +340,7 @@ describe('reading and drawing', () => {
     expect(await shownText(ui)).toContain('answer on the page')
   })
 
-  test('50 open items with 20,000-character bodies: pages of 10 cards, each well under the drawing limit', async ($, on) => {
+  vtest('50 open items with 20,000-character bodies: pages of 10 cards, each well under the drawing limit', async ($, on) => {
     const { w, a } = viewerWorld(on)
     for (let n = 0; n < 50; n++) {
       const id = `01AAAAAAAAAAAAAAAAAAAB${String(n).padStart(4, '0')}`
@@ -326,7 +355,7 @@ describe('reading and drawing', () => {
     expect((await ui.findAll({ key: 'v:next' })).length).toBe(1)
   })
 
-  test('humantray_list in the viewer session lists no store items', async ($, on) => {
+  vtest('humantray_list in the viewer session lists no store items', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
@@ -346,7 +375,7 @@ describe('answering', () => {
     return env
   }
 
-  test('the outbox entry is written before the send', async ($, on) => {
+  vtest('the outbox entry is written before the send', async ($, on) => {
     const env = viewerWorld(on)
     put(env.a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     let heldAtSend: unknown
@@ -362,7 +391,7 @@ describe('answering', () => {
     expect((env.w.kv('viewer:outbox') as Record<string, OutboxEntry>)[`${URL_A} ${ID1}`]).toMatchObject({ sends: 1, delivered: true })
   })
 
-  test('one envelope to the asker, in the shape the asker reads, with the row as drawn', async ($, on) => {
+  vtest('one envelope to the asker, in the shape the asker reads, with the row as drawn', async ($, on) => {
     const { sends, a } = await answered($, on)
     expect(sends).toHaveLength(1)
     expect(sends[0]?.to).toContain(ME)
@@ -373,7 +402,7 @@ describe('answering', () => {
     expect(a.calls.filter(c => c.tool === 'Artifact' && c.input.action === 'publish')).toEqual([])
   })
 
-  test('the card then reads "sent", and a second answer is refused', async ($, on) => {
+  vtest('the card then reads "sent", and a second answer is refused', async ($, on) => {
     const { w } = await answered($, on)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
@@ -382,7 +411,7 @@ describe('answering', () => {
     expect(w.submits).toEqual([])
   })
 
-  test('sent again 2, 10 and 30 minutes after the first send while nothing settles', async ($, on) => {
+  vtest('sent again 2, 10 and 30 minutes after the first send while nothing settles', async ($, on) => {
     const { w, sends } = await answered($, on)
     await tickOnce(w, 2 * 60_000)
     expect(sends).toHaveLength(2)
@@ -396,7 +425,7 @@ describe('answering', () => {
     expect(sends).toHaveLength(5)
   })
 
-  test('a send not delivered is kept with its reason, and tried again', async ($, on) => {
+  vtest('a send not delivered is kept with its reason, and tried again', async ($, on) => {
     const env = viewerWorld(on)
     env.send.answer = () => ({ isDelivered: false, reason: 'the session is gone' })
     put(env.a, URL_A, rowOf({ id: ID1, type: 'approve' }))
@@ -410,7 +439,7 @@ describe('answering', () => {
     expect(env.sends).toHaveLength(2)
   })
 
-  test('applied and not yet delivered: kept, still sent on its schedule; delivered: settled and in History', async ($, on) => {
+  vtest('applied and not yet delivered: kept, still sent on its schedule; delivered: settled and in History', async ($, on) => {
     const { w, a, sends } = await answered($, on)
     const envelope = readEnvelope(sends[0]?.text ?? '')
     put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, answer_id: envelope?.answer_id, delivered: false }))
@@ -430,7 +459,7 @@ describe('answering', () => {
     expect(await shownText(ui)).toContain(`HT-${ID1.slice(-5)}`)
   })
 
-  test('the asker refused our answer: the card is answerable again, with the reason', async ($, on) => {
+  vtest('the asker refused our answer: the card is answerable again, with the reason', async ($, on) => {
     const { w, a, sends } = await answered($, on)
     const envelope = readEnvelope(sends[0]?.text ?? '')
     put(a, URL_A, rowOf({ id: ID1, type: 'approve', bumps: 1, response_refused: { answer_id: envelope?.answer_id ?? '', reason: 'raised again', at: START } }))
@@ -440,7 +469,7 @@ describe('answering', () => {
     expect((await ui.findAll({ key: `v:${ID1}:approve` })).length).toBe(1)
   })
 
-  test('our own response row while the item is open: kept, shown as stored', async ($, on) => {
+  vtest('our own response row while the item is open: kept, shown as stored', async ($, on) => {
     const { w, a, sends } = await answered($, on)
     const envelope = readEnvelope(sends[0]?.text ?? '')
     a.put(URL_A, `responses/${ID1}`, response(ID1, { answer_id: envelope?.answer_id, by: 'viewer' }))
@@ -449,7 +478,7 @@ describe('answering', () => {
     expect(await shownText(ui)).toContain('Stored; waiting for the session to apply it.')
   })
 
-  test('answered on the page first: settled, the card says so', async ($, on) => {
+  vtest('answered on the page first: settled, the card says so', async ($, on) => {
     const { w, a } = await answered($, on)
     a.put(URL_A, `responses/${ID1}`, response(ID1))
     await tickOnce(w)
@@ -457,7 +486,7 @@ describe('answering', () => {
     expect(await shownText(ui)).toContain('Answered on the page')
   })
 
-  test('another answer taken first: settled, with a toast naming only the short id', async ($, on) => {
+  vtest('another answer taken first: settled, with a toast naming only the short id', async ($, on) => {
     const { w, a } = await answered($, on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Reject'] }, answer_id: 'pageanswer000000000000', delivered: true }))
     await tickOnce(w)
@@ -465,7 +494,7 @@ describe('answering', () => {
     expect(w.toasts.join('\n')).not.toContain(MARK)
   })
 
-  test('the row gone (the store says no such document): settled', async ($, on) => {
+  vtest('the row gone (the store says no such document): settled', async ($, on) => {
     const { w, a, sends } = await answered($, on)
     a.artifacts.find(x => x.url === URL_A)?.docs.delete(`items/${ID1}`)
     await tickOnce(w, 2 * 60_000)
@@ -473,14 +502,14 @@ describe('answering', () => {
     expect(sends).toHaveLength(1)
   })
 
-  test('a read that fails changes nothing: still sent on its schedule', async ($, on) => {
+  vtest('a read that fails changes nothing: still sent on its schedule', async ($, on) => {
     const { w, a, sends } = await answered($, on)
     a.garble = 1_000
     await tickOnce(w, 2 * 60_000)
     expect(sends).toHaveLength(2)
   })
 
-  test('a day with nothing settled: "not taken", no more sends by itself, and Send again starts over', async ($, on) => {
+  vtest('a day with nothing settled: "not taken", no more sends by itself, and Send again starts over', async ($, on) => {
     // An answer first sent a day ago, still unsettled.
     const dayOld: OutboxEntry = {
       artifact: URL_A,
@@ -508,15 +537,59 @@ describe('answering', () => {
     expect(sends.length).toBe(count + 1)
   })
 
-  test('the outbox outlives the module: a restart of the viewer keeps sending it', async ($, on) => {
-    const { w, sends } = await answered($, on)
-    // A reload: session.start runs again; the instance's lease is its own.
+  vtest('a restart of the viewer within 90 s: the new instance takes its lease back at once and sends the outbox it left', async ($, on) => {
+    // What the previous process left: its fresh lease, the setting, and an answer due again.
+    const left: OutboxEntry = {
+      artifact: URL_A,
+      id: ID1,
+      short: `HT-${ID1.slice(-5)}`,
+      to: ME,
+      answer_id: 'leftAnswerId000000000000',
+      text: 'an envelope left by the last process',
+      first: START - 10 * 60_000,
+      last: START - 10 * 60_000,
+      sends: 1,
+      delivered: true,
+    }
+    const { w, a, sends } = viewerWorld(on, {
+      store: {
+        'viewer:config': { session: VIEWER },
+        'viewer:lease': { instance: 'the-previous-process', session: VIEWER, renewed: START - 5_000 },
+        'viewer:outbox': { [`${URL_A} ${ID1}`]: left },
+      },
+    })
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await $.session.start(START_EVENT)
-    await tickOnce(w, 2 * 60_000)
-    expect(sends.length).toBeGreaterThanOrEqual(2)
+    await w.clock.settle()
+    expect(sends).toEqual([{ to: expect.stringContaining(ME) as unknown as string, text: left.text }])
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).toContain('Viewer: 2 repositories')
   })
 
-  test('nothing about an item or answer enters a command reply or a toast', async ($, on) => {
+  vtest('an answer kept and never sent (the process ended first) is sent at the next tick, not an hour later', async ($, on) => {
+    const kept: OutboxEntry = {
+      artifact: URL_A,
+      id: ID1,
+      short: `HT-${ID1.slice(-5)}`,
+      to: ME,
+      answer_id: 'keptAnswerId000000000000',
+      text: 'a kept envelope',
+      first: START - 60_000,
+      last: START - 60_000,
+      sends: 0,
+      delivered: false,
+    }
+    const { w, a, sends } = viewerWorld(on, { store: { 'viewer:outbox': { [`${URL_A} ${ID1}`]: kept } } })
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    expect(sends).toHaveLength(1)
+    // Then on its steps from that send: nothing on the next ticks.
+    await tickOnce(w)
+    await tickOnce(w)
+    expect(sends).toHaveLength(1)
+  })
+
+  vtest('nothing about an item or answer enters a command reply or a toast', async ($, on) => {
     const { w } = await answered($, on)
     const ran = await $.command.run({ ...VIEWER_COMMAND, args: '' })
     expect((ran as { text?: string }).text).not.toContain(MARK)
@@ -524,7 +597,7 @@ describe('answering', () => {
     expect(w.submits).toEqual([])
   })
 
-  test('an answer of every type is sent in its shape', async ($, on) => {
+  vtest('an answer of every type is sent in its shape', async ($, on) => {
     const env = viewerWorld(on)
     put(env.a, URL_A, rowOf({ id: ID1, type: 'question' }))
     put(env.a, URL_A, rowOf({ id: ID2, type: 'do', notes: true }))
@@ -539,5 +612,319 @@ describe('answering', () => {
     expect(bodies.find(b => b?.id === ID1)?.response).toEqual({ text: '- a\n- b\n\n```sh\nmake\n```' })
     expect(bodies.find(b => b?.id === ID2)?.response).toEqual({ outcome: 'not_done', notes: '**done** at last' })
     expect(bodies.every(b => b?.to === ME)).toBe(true)
+  })
+})
+
+describe('one tick at a time, and nothing written after off', () => {
+  /** Holds every store call until released. */
+  function holdStore(a: ReturnType<typeof artifactWorld>) {
+    let release = () => undefined as void
+    a.hold = new Promise<void>(resolve => {
+      release = () => {
+        a.hold = undefined
+        resolve()
+      }
+    })
+    return () => release()
+  }
+
+  vtest('ticks never overlap: a tick asked for (the command, History) while one waits on the store makes no call until it ends', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    const release = holdStore(a)
+    // A timer tick starts and waits on its first read (the clock stays under the call's time limit).
+    await w.clock.advance(TICK_MS)
+    const before = a.calls.length
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const pressed = ui.press({ key: 'humantray:view' })
+    const ran = $.command.run({ ...VIEWER_COMMAND, args: '' })
+    await w.clock.settle()
+    expect(a.calls.length).toBe(before)
+    release()
+    await pressed
+    await ran
+    await w.clock.settle()
+    expect(a.calls.length).toBeGreaterThan(before)
+  })
+
+  vtest('a /humantray-viewer change made while a tick runs takes effect: the reply and the pane name the new set', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    put(a, URL_B, rowOf({ id: ID2, type: 'approve', repo: REPO2 }))
+    await turnOn($, w)
+    const release = holdStore(a)
+    await tickOnce(w)
+    const ran = $.command.run({ ...VIEWER_COMMAND, args: 'owner/other' })
+    await w.clock.settle()
+    release()
+    const text = ((await ran) as { text?: string }).text ?? ''
+    await w.clock.settle()
+    expect(text).toContain('on for 1 repository: github.com/owner/other')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const shown = await shownText(ui)
+    expect(shown).toContain('Question 02')
+    expect(shown).not.toContain('Question 01')
+  })
+
+  vtest('History asked for while a tick runs is read once that tick ends', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, delivered: true, response_at: START }))
+    await turnOn($, w)
+    await tickOnce(w)
+    const release = holdStore(a)
+    await tickOnce(w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const before = a.calls.length
+    const pressed = ui.press({ key: 'humantray:view' })
+    await w.clock.settle()
+    release()
+    await pressed
+    await w.clock.settle()
+    const historyReads = a.calls.slice(before).filter(c => c.input.collection === 'items' && JSON.stringify(c.input.query ?? {}).includes('response_at'))
+    expect(historyReads.length).toBeGreaterThan(0)
+  })
+
+  vtest('off while a tick runs: the pane goes back to the normal tray and stays there', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    const release = holdStore(a)
+    await tickOnce(w)
+    await $.command.run({ ...VIEWER_COMMAND, args: 'off' })
+    release()
+    await w.clock.settle()
+    await tickOnce(w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).not.toContain('Viewer:')
+  })
+})
+
+describe('finding the artifacts again', () => {
+  vtest('a meta/page read that fails at a re-find keeps the set and its cards', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    a.before = input => {
+      if (input.collection === 'meta' && input.action === 'get') a.garble = 1
+    }
+    await tickOnce(w, FIND_MS)
+    a.before = () => undefined
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const text = await shownText(ui)
+    expect(text).toContain('Viewer: 2 repositories')
+    expect(text).toContain('could not be read just now')
+    expect(text).toContain('Question 01')
+  })
+
+  vtest('a meta/page read that fails at turning on says the list could not be read, not that none was found', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    a.before = input => {
+      if (input.collection === 'meta' && input.action === 'get' && input.url === URL_B) a.garble = 1
+    }
+    const text = await turnOn($, w)
+    expect(text).toContain('could not be read')
+    expect(text).not.toContain('no humantray page was found')
+  })
+
+  vtest('an unreadable listing at a re-find keeps the set', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    a.listFails = true
+    await tickOnce(w, FIND_MS)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const text = await shownText(ui)
+    expect(text).toContain('Viewer: 2 repositories')
+    expect(text).toContain('could not be read just now')
+    expect(text).toContain('Question 01')
+  })
+
+  vtest('a repository named is found by its title, however many other humantray pages there are', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    for (let n = 0; n < MAX_LISTED + 10; n++) {
+      const url = `https://claude.ai/artifact/fakeartifact000many${String(n).padStart(4, '0')}`
+      a.add(url, `humantray: someone/repo${n}`)
+    }
+    // The named repository's page is the oldest, so the listing (newest first) gives it last.
+    const art = a.artifacts.find(x => x.url === URL_A)
+    if (art !== undefined) a.artifacts.push(...a.artifacts.splice(a.artifacts.indexOf(art), 1))
+    a.artifacts.unshift(...a.artifacts.splice(a.artifacts.length - 1, 1))
+    const text = await turnOn($, w, 'owner/repo')
+    expect(text).toContain('on for 1 repository: github.com/owner/repo')
+    const metaReads = a.calls.filter(c => c.input.collection === 'meta')
+    expect(metaReads.length).toBeLessThanOrEqual(2)
+  })
+
+  vtest('more humantray pages than the cap, with none named: could not be read, never "none"', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    for (let n = 0; n < MAX_LISTED + 10; n++) a.add(`https://claude.ai/artifact/fakeartifact000many${String(n).padStart(4, '0')}`, `humantray: someone/repo${n}`)
+    const text = await turnOn($, w)
+    expect(text).toContain('could not be read')
+  })
+})
+
+describe('History freshness', () => {
+  vtest('a History read that fails is shown as such, apart from the open items', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    a.before = input => {
+      if (JSON.stringify(input.query ?? {}).includes('response_at')) a.garble = 1
+    }
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).not.toContain('last read')
+    await ui.press({ key: 'humantray:view' })
+    await w.clock.settle()
+    expect(await shownText(ui)).toContain('History not read yet')
+  })
+})
+
+describe('the lease before every outbox write and send', () => {
+  const due = (): OutboxEntry => ({
+    artifact: URL_A,
+    id: ID1,
+    short: `HT-${ID1.slice(-5)}`,
+    to: ME,
+    answer_id: 'dueAnswerId0000000000000',
+    text: 'a due envelope',
+    first: START - 10 * 60_000,
+    last: START - 10 * 60_000,
+    sends: 1,
+    delivered: true,
+  })
+
+  vtest('a takeover during a tick: the resend due in that tick is not sent', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    w.kvSet('viewer:outbox', { [`${URL_A} ${ID1}`]: due() })
+    a.before = () => {
+      w.storeOverride = key => (key === 'viewer:lease' ? { instance: 'other', session: 'b', renewed: w.clock.now() } : undefined)
+    }
+    await tickOnce(w)
+    expect(sends).toEqual([])
+  })
+
+  vtest('an answer pressed after another session took over: nothing is kept or sent, and the card says why', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    w.storeOverride = key => (key === 'viewer:lease' ? { instance: 'other', session: 'b', renewed: w.clock.now() } : undefined)
+    await ui.press({ key: `v:${ID1}:approve` })
+    await w.clock.settle()
+    expect(sends).toEqual([])
+    expect(w.kv('viewer:outbox')).toBeUndefined()
+    expect(await shownText(ui)).toContain('no longer the viewer')
+  })
+
+  vtest('two presses at once: one answer kept, one envelope sent', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await Promise.all([ui.press({ key: `v:${ID1}:approve` }), ui.press({ key: `v:${ID1}:approve` })])
+    await w.clock.settle()
+    expect(sends).toHaveLength(1)
+    expect(Object.keys(w.kv('viewer:outbox') as Record<string, unknown>)).toHaveLength(1)
+  })
+
+  vtest('an item whose session id is not a session id cannot be answered here', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }, { session_id: 'not-a-session' }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `v:${ID1}:approve` })
+    await w.clock.settle()
+    expect(sends).toEqual([])
+    expect(await shownText(ui)).toContain('no session to send the answer to')
+  })
+
+  vtest('a row that cannot be read keeps its entry: still sent on its schedule', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    a.put(URL_A, `items/${ID1}`, { ...rowOf({ id: ID1, type: 'approve' }), schema: 2 } as unknown as Record<string, unknown>)
+    w.kvSet('viewer:outbox', { [`${URL_A} ${ID1}`]: due() })
+    await turnOn($, w)
+    expect(sends).toHaveLength(1)
+    expect(Object.keys(w.kv('viewer:outbox') as Record<string, unknown>)).toEqual([`${URL_A} ${ID1}`])
+  })
+
+  vtest('a stale read keeps its entry', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Reject'] }, answer_id: 'another', delivered: true }))
+    await turnOn($, w)
+    w.kvSet('viewer:outbox', { [`${URL_A} ${ID1}`]: due() })
+    a.garble = 1_000
+    await tickOnce(w)
+    expect(Object.keys(w.kv('viewer:outbox') as Record<string, unknown>)).toEqual([`${URL_A} ${ID1}`])
+    expect(sends).toHaveLength(1)
+  })
+
+  vtest('every outbox write keeps the entries it does not change: an answer added during a tick that settles another survives', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    // ID1 settled by this tick (applied and delivered with our answer).
+    const settling = due()
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, answer_id: settling.answer_id, delivered: true }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'approve' }))
+    await turnOn($, w)
+    w.kvSet('viewer:outbox', { [`${URL_A} ${ID1}`]: settling })
+    const added: OutboxEntry = { ...due(), id: ID2, short: `HT-${ID2.slice(-5)}`, answer_id: 'addedAnswerId00000000000', last: START, first: START }
+    let once = false
+    a.before = () => {
+      if (once) return
+      once = true
+      // Another answer is kept while this tick reads the store.
+      w.kvSet('viewer:outbox', { ...(w.kv('viewer:outbox') as Record<string, OutboxEntry>), [`${URL_A} ${ID2}`]: added })
+    }
+    await tickOnce(w)
+    expect(Object.keys(w.kv('viewer:outbox') as Record<string, unknown>)).toEqual([`${URL_A} ${ID2}`])
+  })
+
+  vtest('an outbox that cannot be read: no answer is taken, nothing is settled or sent', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    w.kvSet('viewer:outbox', 'not an outbox')
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `v:${ID1}:approve` })
+    await w.clock.settle()
+    expect(sends).toEqual([])
+    expect(await shownText(ui)).toContain('could not be read')
+    expect(w.kv('viewer:outbox')).toBe('not an outbox')
+  })
+
+  vtest('a send that never returns counts as failed after its time limit, and the viewer goes on', async ($, on) => {
+    const { w, a, send } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'approve' }))
+    await turnOn($, w)
+    send.answer = () => new Promise(() => undefined)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const pressed = ui.press({ key: `v:${ID1}:approve` })
+    await w.clock.advance(31_000)
+    await pressed
+    await w.clock.settle()
+    const entry = (w.kv('viewer:outbox') as Record<string, OutboxEntry>)[`${URL_A} ${ID1}`]
+    expect(entry).toMatchObject({ sends: 1, delivered: false })
+    expect(entry?.reason).toContain('30 s')
+    const before = a.calls.length
+    await tickOnce(w)
+    expect(a.calls.length).toBeGreaterThan(before)
+  })
+})
+
+describe('the card body cut', () => {
+  vtest('a body over 3,000 characters is drawn cut, with Show in full; the whole shows on request', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'ack', body_md: Array.from({ length: 40 }, (_, n) => `Paragraph ${n} ${'word '.repeat(30)}`).join('\n\n') }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const body = (await ui.findAll({ key: `v:${ID1}:body` }))[0] as unknown as { text?: string } | undefined
+    expect((body?.text ?? '').length).toBeLessThanOrEqual(3_000)
+    expect((body?.text ?? '').length).toBeGreaterThan(1_000)
+    await ui.press({ key: `v:${ID1}:full` })
+    await w.clock.settle()
+    expect(await shownText(ui)).toContain('Paragraph 39')
   })
 })

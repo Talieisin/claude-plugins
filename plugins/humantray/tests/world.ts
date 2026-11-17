@@ -30,6 +30,14 @@ export type World = {
   received: string[]
   /** The plugin's $.store as it holds it now (a copy). */
   kv: (key: string) => unknown
+  /** Writes the plugin's $.store directly, as another session sharing it would. */
+  kvSet: (key: string, value: unknown) => void
+  /** Every line the mod logged with $.ui.log. */
+  logs: string[]
+  /** Every $.session.id() fails, as an engine might. */
+  failSessionId: boolean
+  /** Every row the plugin itself appended with $.session.append. */
+  appended: unknown[]
   /** Answers a store read instead of the store, for a test (undefined: the store answers). */
   storeOverride: (key: string) => unknown
   /** How the engine answers a submit; by default the prompt enters. */
@@ -125,6 +133,12 @@ export function world(
       return text === undefined ? undefined : (JSON.parse(text) as unknown)
     },
     storeOverride: () => undefined,
+    kvSet: (key, value) => {
+      kv.set(key, JSON.stringify(value))
+    },
+    logs: [],
+    failSessionId: false,
+    appended: [],
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,
     failMoveOfTemporary: false,
@@ -160,7 +174,10 @@ export function world(
     },
   }
 
-  on('session.id', () => ({ value: w.sessionId }))
+  on('session.id', () => {
+    if (w.failSessionId) throw new Error('the session id could not be read')
+    return { value: w.sessionId }
+  })
   on('session.cwd', () => ({ value: ROOT }))
   on('session.repo', () => ({
     value: w.isRepo
@@ -183,6 +200,14 @@ export function world(
     if (w.failToast) return { deny: 'the surface went away' }
     w.toasts.push(e.text)
     return { value: undefined }
+  })
+  on('ui.log', (_, e) => {
+    w.logs.push(e.text)
+    return { value: undefined }
+  })
+  on('session.append', (_, e) => {
+    if (e.origin.kind === 'plugin') w.appended.push(e.message)
+    return { message: e.message, uuid: e.uuid }
   })
   // A delivery from another session that no plugin took is queued for the model, as it arrived.
   on('session.receive', (_, e) => {

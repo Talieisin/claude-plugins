@@ -19,7 +19,7 @@ import type { EngineInterface } from 'claude-code'
 
 import type { Item, ResponseEnvelope, ResponseRow } from '../types'
 import { writeResponse } from './artifact-store'
-import { rowOf } from './envelope'
+import { artifactId, rowOf } from './envelope'
 import { isLineDue, resolveOwner, shortOf } from './items'
 import { refusalOf, refuseStoreAnswer } from './rows'
 import { mutate, peek } from './store'
@@ -72,7 +72,10 @@ async function take($: EngineInterface, envelope: ResponseEnvelope, short: strin
   if (envelope.to !== lineage.session_id) return { kind: 'notMine', short, reason: 'addressed to another session' }
   const link = await ensureLink($)
   if (link === undefined) return { kind: 'refused', short, reason: 'no page is linked here, or it cannot be reached' }
-  if (link.url !== envelope.artifact) return { kind: 'notMine', short, reason: "read from another artifact than this session's page" }
+  // Compared by the artifact's own id: `/artifact/<id>` and `/code/artifact/<id>` are one artifact.
+  if (artifactId(link.url) !== artifactId(envelope.artifact)) {
+    return { kind: 'notMine', short, reason: "read from another artifact than this session's page" }
+  }
   const me = await $.session.id()
   let item = await mine($, envelope.id, me)
   if (item === undefined) {
