@@ -210,7 +210,10 @@ two places that read the same store:
   If that artifact holds no humantray data, the command publishes the page into
   it as a new version, replacing what it showed, so name only an artifact meant
   for this. It refuses one that holds another repository's page, or whose data
-  it cannot read. You can answer items on the page. No session pins it: pin it yourself in claude.ai if you want it to
+  it cannot read. You can answer items on the page. Nothing republishes the
+  page by itself: a humantray release that changes the page reaches it only
+  when `/humantray-page` is run again, in a cloud session that has the
+  release. No session pins it: pin it yourself in claude.ai if you want it to
   hand. Until a repository has a page, its cloud sessions do not use the tray
   and ask as they did before.
 - **The viewer, on a computer that stays on.** In a local session on that
@@ -218,8 +221,9 @@ two places that read the same store:
   `claude --remote-control` (or
   `claude --plugin-dir <checkout>/plugins/humantray --remote-control`), then
   run `/humantray-viewer`. It finds the humantray pages on your account and says
-  which repositories it found; if it says the list could not be read, name the
-  repositories (`/humantray-viewer <owner>/<repo>`) or a page's link instead.
+  which repositories it found. If it says the list could not be read, give a
+  page's link instead (`/humantray-viewer <link>`); naming repositories
+  (`/humantray-viewer <owner>/<repo>`) helps only when the list was too long.
   Its pane shows the open items of those pages, grouped by repository, then
   lead, then the session that asked, and reads them again about every 20
   seconds. An answer you give there is sent as a
