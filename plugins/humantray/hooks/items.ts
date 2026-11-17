@@ -6,11 +6,13 @@ import type {
   DeliveryMark,
   Draft,
   HistoryEntry,
+  HistoryFull,
   Item,
   ItemOption,
   ItemResponse,
   ItemStatus,
   ItemType,
+  PartLabel,
   SessionRecord,
   StoreFile,
 } from '../types'
@@ -337,10 +339,12 @@ export type Action =
   | { kind: 'do'; outcome: 'done' | 'not_done' }
   | { kind: 'approve'; choice: 'Approve' | 'Reject' }
 
-const trimmed = (text: string): string | undefined => {
-  const t = text.trim()
-  return t === '' ? undefined : t
-}
+/**
+ * A free-text field as typed, or undefined when it holds nothing but space:
+ * never trimmed, so the person's Markdown (indented code, line breaks) is
+ * stored as they wrote it. The page does the same (page.ts, `typed`).
+ */
+const typed = (text: string): string | undefined => (text.trim() === '' ? undefined : text)
 
 const tooLong = (draft: Draft): boolean =>
   [draft.other, draft.text, draft.feedback, draft.notes].some(t => t.length > LIMITS.answer)
@@ -355,7 +359,7 @@ export const buildResponse = (
   action: Action,
 ): Checked<{ response: ItemResponse; status: ItemStatus }> => {
   if (tooLong(draft)) return { error: `An answer can be at most ${LIMITS.answer} characters.` }
-  const notes = item.notes === true ? trimmed(draft.notes) : undefined
+  const notes = item.notes === true ? typed(draft.notes) : undefined
   const withNotes = <R extends ItemResponse>(r: R): R => (notes === undefined ? r : { ...r, notes })
 
   switch (item.type) {
@@ -364,7 +368,7 @@ export const buildResponse = (
       return { ok: { response: withNotes({ acknowledged: true }), status: 'acknowledged' } }
     case 'do': {
       if (action.kind !== 'do') return { error: 'Press Done or Not done.' }
-      const feedback = trimmed(draft.feedback)
+      const feedback = typed(draft.feedback)
       const response: ItemResponse = { outcome: action.outcome }
       if (feedback !== undefined) response.feedback = feedback
       return { ok: { response: withNotes(response), status: 'done' } }
@@ -374,7 +378,7 @@ export const buildResponse = (
       return { ok: { response: withNotes({ selected: [action.choice] }), status: 'answered' } }
     case 'question': {
       if (action.kind !== 'submit') return { error: 'Press Submit.' }
-      const text = trimmed(draft.text)
+      const text = typed(draft.text)
       if (text === undefined) return { error: 'Type an answer.' }
       return { ok: { response: withNotes({ text }), status: 'answered' } }
     }
@@ -382,7 +386,7 @@ export const buildResponse = (
       if (action.kind !== 'submit') return { error: 'Press Submit.' }
       const labels = new Set((item.options ?? []).map(o => o.label))
       let selected = draft.selected.filter(label => labels.has(label))
-      const other = trimmed(draft.other)
+      const other = typed(draft.other)
       if (item.multiSelect !== true) {
         if (other !== undefined) selected = []
         else selected = selected.slice(0, 1)
@@ -400,36 +404,52 @@ export const buildResponse = (
 /** One line: every line break and the space around it becomes ` / `. */
 const oneLine = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, ' / ').trim()
 
-/** The answer in a few words, without its notes. */
-const rawAnswer = (item: Item): string => {
+/**
+ * What was chosen, in a few words and with no free text: `acknowledged`,
+ * `done` or `not done`, the options picked (and `Other` when it was filled
+ * in), or `answered` for a question, whose text follows as a part.
+ */
+export const choiceOf = (item: Item): string => {
   const r = item.response
   if (r === undefined) return ''
   if ('acknowledged' in r) return 'acknowledged'
-  if ('outcome' in r) {
-    const outcome = r.outcome === 'done' ? 'done' : 'not done'
-    return r.feedback === undefined ? outcome : `${outcome}: ${r.feedback}`
-  }
-  if ('text' in r) return r.text
+  if ('outcome' in r) return r.outcome === 'done' ? 'done' : 'not done'
+  if ('text' in r) return 'answered'
   const parts = [...r.selected]
-  if (r.other !== undefined) parts.push(`Other: ${r.other}`)
+  if (r.other !== undefined) parts.push('Other')
   return parts.join('; ')
 }
 
-/** The answer in a few words, on one line, without its notes (History shows them apart). */
-export const answerText = (item: Item): string => oneLine(rawAnswer(item))
-
-/** The answer in a few words, for the delivery line. */
-export const summaryOf = (item: Item): string => {
+/**
+ * The free-text parts of a response, exactly as stored, in a fixed order: the
+ * answer, Other or the feedback first, then the notes. Blank parts are left out.
+ */
+export const partsOf = (item: Item): Array<{ label: PartLabel; text: string }> => {
   const r = item.response
-  if (r === undefined) return ''
-  let summary = rawAnswer(item)
-  if (r.notes !== undefined) summary += ` | notes: ${r.notes}`
-  return oneLine(summary)
+  if (r === undefined) return []
+  const parts: Array<{ label: PartLabel; text: string }> = []
+  const add = (label: PartLabel, text: string | undefined) => {
+    if (text !== undefined && text.trim() !== '') parts.push({ label, text })
+  }
+  if ('text' in r) add('Answer', r.text)
+  if ('other' in r) add('Other', r.other)
+  if ('feedback' in r) add('Feedback', r.feedback)
+  add('Notes', r.notes)
+  return parts
 }
 
-/** The line a session receives: `humantray HT-xxxxx (<header>): <summary>`. */
-export const deliveryLine = (item: Item): string =>
-  `humantray ${item.short} (${oneLine(item.header)}): ${summaryOf(item)}`
+/**
+ * What a session receives, in one submit. The first line is always
+ * `humantray HT-xxxxx (<header>): <what was chosen>`; each free-text part
+ * follows, exactly as typed (its Markdown kept, only `\r\n` and `\r` line
+ * ends made `\n`), after a blank line and a line with its label: `Answer:`,
+ * `Other:`, `Feedback:` or `Notes:`.
+ */
+export const deliveryText = (item: Item): string => {
+  const first = `humantray ${item.short} (${oneLine(item.header)}): ${oneLine(choiceOf(item))}`
+  const rest = partsOf(item).map(part => `\n\n${part.label}:\n${part.text.replace(/\r\n?/g, '\n')}`)
+  return [first, ...rest].join('')
+}
 
 /**
  * Whether an answered item owes its session a line. Every answered item does,
@@ -507,17 +527,175 @@ export const deliveryMark = (item: Item, now: number): DeliveryMark => {
 /** History entries drawn per page: 50 clipped entries stay well inside what a surface draws. */
 export const HISTORY_PAGE = 50
 
-/** The most characters of each text a History entry keeps; the store keeps the whole. */
-export const HISTORY_CLIP = { question: 200, answer: 300, notes: 300 } as const
+/**
+ * The most characters History draws of an entry's question, and of each of its
+ * free-text parts, in the list. The question (plain text) is cut with an
+ * ellipsis; a part is cut only between Markdown blocks (`clipBlocks`). The
+ * store keeps the whole, and "Show in full" draws it.
+ */
+export const HISTORY_CLIP = { question: 200, part: 500 } as const
 
 /** Text cut to `max` characters, ending in an ellipsis when cut. */
 export const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`)
 
 /**
+ * The mark of a line that opens a fenced code block (in a list or a quote
+ * too), or undefined. A backtick fence's info string holds no backtick, so
+ * three backticks with text and more backticks after are a code span.
+ */
+const opens = (line: string): string | undefined => {
+  const found = /^[ \t>]*(?:(`{3,})[^`]*|(~{3,}).*)$/.exec(line)
+  return found?.[1] ?? found?.[2]
+}
+
+/** Whether `line` closes the fence `opened`: the same mark, at least as long, and nothing after it. */
+const closes = (line: string, opened: string): boolean => {
+  const mark = /^[ \t>]*(`{3,}|~{3,})[ \t]*$/.exec(line)?.[1]
+  return mark !== undefined && mark[0] === opened[0] && mark.length >= opened.length
+}
+
+/**
+ * Markdown split into its top-level blocks: runs of lines separated by blank
+ * lines, where a fenced code block (blank lines and all) stays inside one
+ * block, and an indented line after a blank stays with the block before it
+ * (a list item's next paragraph, or an indented code block). Blocks are
+ * returned without the blank lines between them.
+ */
+export const blocksOf = (md: string): string[] => {
+  const lines = md.split('\n')
+  const blocks: string[] = []
+  let current: string[] = []
+  let gap: string[] = []
+  let fence: string | undefined
+  for (const line of lines) {
+    if (fence !== undefined) {
+      current.push(line)
+      if (closes(line, fence)) fence = undefined
+      continue
+    }
+    if (line.trim() === '') {
+      if (current.length > 0) gap.push(line)
+      continue
+    }
+    const continues = gap.length > 0 && /^(?: {2,}|\t)/.test(line)
+    if (gap.length > 0 && !continues) {
+      blocks.push(current.join('\n'))
+      current = []
+      gap = []
+    } else if (gap.length > 0) {
+      current.push(...gap)
+      gap = []
+    }
+    current.push(line)
+    fence = opens(line)
+  }
+  if (current.length > 0) blocks.push(current.join('\n'))
+  return blocks
+}
+
+/**
+ * Markdown cut to at most `max` characters, only between whole blocks, never
+ * inside a list, a table, a quote or a code block: as many leading blocks as
+ * fit. When even the first block does not fit, nothing is kept (`text` is
+ * empty) and `clipped` is true.
+ */
+export const clipBlocks = (md: string, max: number): { text: string; clipped: boolean } => {
+  if (md.length <= max) return { text: md, clipped: false }
+  const kept: string[] = []
+  let length = 0
+  for (const block of blocksOf(md)) {
+    const added = (kept.length === 0 ? 0 : 2) + block.length
+    if (length + added > max) break
+    kept.push(block)
+    length += added
+  }
+  return { text: kept.join('\n\n'), clipped: true }
+}
+
+/**
+ * Text as a surface may draw it: line ends made `\n`, and every other control
+ * character but tab replaced with U+FFFD, since one would make the surface
+ * refuse the whole pane. For drawing only; the store is never changed.
+ */
+export const plain = (text: string): string =>
+  text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '\ufffd')
+
+/**
+ * The places in one line that are not inside a code span: the line split at
+ * each span of backticks closed by a run of the same length. Even entries are
+ * outside code; odd entries are code spans, kept as they are.
+ */
+const outsideCode = (line: string): string[] => {
+  const pieces: string[] = []
+  let from = 0
+  let at = 0
+  while (at < line.length) {
+    if (line[at] !== '`') {
+      at++
+      continue
+    }
+    let run = 1
+    while (line[at + run] === '`') run++
+    const ticks = '`'.repeat(run)
+    let close = line.indexOf(ticks, at + run)
+    while (close !== -1 && line[close + run] === '`') {
+      let end = close
+      while (line[end] === '`') end++
+      close = line.indexOf(ticks, end)
+    }
+    if (close === -1) {
+      at += run
+      continue
+    }
+    pieces.push(line.slice(from, at), line.slice(at, close + run))
+    from = close + run
+    at = from
+  }
+  pieces.push(line.slice(from))
+  return pieces
+}
+
+/**
+ * Markdown as the pane draws it, with the owner's safety rules (#33's
+ * answer, which the page follows too): an image becomes a link to it, never
+ * loaded, and a `file:` link is drawn as text, so links are http and https
+ * only. Raw HTML is the engine's renderer's to keep inert, as in any reply.
+ * Fenced code and code spans are left exactly as written. For drawing only;
+ * the store is never changed.
+ */
+export const forDisplay = (md: string): string => {
+  let fence: string | undefined
+  return plain(md)
+    .split('\n')
+    .map(line => {
+      if (fence !== undefined) {
+        if (closes(line, fence)) fence = undefined
+        return line
+      }
+      fence = opens(line)
+      if (fence !== undefined) return line
+      // A link reference definition to a file (`[x]: file:///...`) is drawn as text too.
+      return outsideCode(line.replace(/^([ \t]{0,3}\[[^\]]+\]:[ \t]*<?)[ \t]*(file:)/i, '$1#$2'))
+        .map((piece, index) =>
+          index % 2 === 1
+            ? piece
+            : piece
+                .replace(/(^|[^\\])!\[/g, '$1[Image: ')
+                .replace(/\]\(\s*(<?)\s*(file:)/gi, '](#$1$2')
+                .replace(/<(file:)/gi, '&lt;$1'),
+        )
+        .join('')
+    })
+    .join('\n')
+}
+
+/**
  * The answered items of every `repo` value in the store, from every session,
  * as History draws them: the current repository's first, then each other
  * value by name; within each, newest first. An item is this session's when
- * its owner chain ends at `me`. Long text is clipped (HISTORY_CLIP).
+ * its owner chain ends at `me`. The question is cut to one clipped line, and
+ * each free-text part, as drawn (`forDisplay`), to whole Markdown blocks
+ * (HISTORY_CLIP).
  */
 export const historyOf = (file: StoreFile, repo: string, me: string, now: number): HistoryEntry[] =>
   file.items
@@ -531,24 +709,40 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       return compareAge(b, a)
     })
     .map(item => {
-      const entry: HistoryEntry = {
+      const question = clip(oneLine(item.question), HISTORY_CLIP.question)
+      // Cut what is drawn (forDisplay can lengthen it), so a page's size is bounded whatever was typed.
+      const parts = partsOf(item).map(part => {
+        const cut = clipBlocks(forDisplay(part.text), HISTORY_CLIP.part)
+        return { label: part.label, text: cut.text, length: part.text.length, clipped: cut.clipped }
+      })
+      return {
         id: item.id,
         short: item.short,
         repo: item.repo,
         type: item.type,
         header: item.header,
-        question: clip(oneLine(item.question), HISTORY_CLIP.question),
+        question,
         status: item.status,
-        answer: clip(answerText(item), HISTORY_CLIP.answer),
+        answer: item.type === 'question' ? '' : choiceOf(item),
+        parts,
+        clipped: question !== item.question || parts.some(part => part.clipped),
         bumps: item.bumps,
         at: orderKey(item),
         mark: deliveryMark(item, now),
         isMine: resolveOwner(file.sessions, item.session_id) === me,
       }
-      const notes = item.response?.notes
-      if (notes !== undefined) entry.notes = clip(oneLine(notes), HISTORY_CLIP.notes)
-      return entry
     })
+
+/** One answered item whole, as "Show in full" draws it: nothing clipped. */
+export const fullOf = (item: Item): HistoryFull => ({
+  id: item.id,
+  short: item.short,
+  header: item.header,
+  question: item.question,
+  body_md: item.body_md,
+  answer: item.type === 'question' ? '' : choiceOf(item),
+  parts: partsOf(item),
+})
 
 /**
  * Applies a finished submit to the item, only while the item still carries

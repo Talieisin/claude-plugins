@@ -422,3 +422,32 @@ export function oldestOfMany(n: number, count: number, from = 0): string[] {
   const keys = shuffled(n)
   return keys.flatMap((key, i) => (key < count ? [finished(from + i).id] : []))
 }
+
+/** Markdown with the structures the owner asked to keep: headings, lists, a task list, a quote, code, a table, a rule, a link. */
+export const RICH = [
+  '## Steps',
+  '',
+  '1. Rotate the **key**',
+  '   - in `prod` first',
+  '   - then *staging*',
+  '2. Tell [ops](https://example.com/ops)',
+  '',
+  '- [x] backed up',
+  '- [ ] announced',
+  '',
+  '> Check the logs first.',
+  '',
+  '```sh',
+  'make rotate',
+  '',
+  '    echo indented',
+  '```',
+  '',
+  '| Env | Done |',
+  '| --- | ---- |',
+  '| prod | yes |',
+  '',
+  '---',
+  '',
+  '    an indented code block',
+].join('\n')

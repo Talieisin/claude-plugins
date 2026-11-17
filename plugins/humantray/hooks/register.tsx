@@ -1,9 +1,11 @@
 // humantray: a tray of things a session needs from a person.
 //
 // The model adds items with `humantray_add`; the person answers them in the
-// pane; each answer reaches the session that asked as one line, through
-// `$.prompt.submit`. The store file is the truth (see store.ts); `$.state`
-// holds only what the pane and band draw from, rebuilt from the file.
+// pane; each answer reaches the session that asked in one submit, through
+// `$.prompt.submit`: a first line naming the item, then any free text the
+// person typed, exactly as typed (items.ts, `deliveryText`). The store file
+// is the truth (see store.ts); `$.state` holds only what the pane and band
+// draw from, rebuilt from the file.
 //
 // Delivery is at least once, never lost: an answer is claimed under the lock,
 // submitted without any hook waiting on it, and marked delivered only once
@@ -11,7 +13,9 @@
 // claim for the next pass. Nothing about items enters the system prompt.
 //
 // The pane shows the open items, or History: the store's answered items,
-// grouped by repository (this one first), a page at a time, read only. Every change also prunes finished items (answered,
+// grouped by repository (this one first), a page at a time, read only, with
+// the person's Markdown drawn as Markdown and any entry shown in full on
+// request. Every change also prunes finished items (answered,
 // delivered or owing no line, unclaimed) past the last 200 per repository
 // (items.ts, `prune`); nothing still owed or in flight is ever pruned.
 //
@@ -23,7 +27,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Draft, HistoryEntry, Item, StoreFile } from '../types'
+import type { Draft, HistoryEntry, HistoryFull, Item, StoreFile } from '../types'
 import {
   type Action,
   type AddOutcome,
@@ -33,13 +37,16 @@ import {
   addOrBump,
   applySettle,
   buildResponse,
-  deliveryLine,
+  deliveryText,
+  forDisplay,
+  fullOf,
   historyOf,
   isLineDue,
   isMineToDeliver,
   normaliseRepo,
   noteSession,
   openItems,
+  plain,
   prune,
   resolveOwner,
   shortOf,
@@ -52,15 +59,20 @@ import { START_DEADLINE_MS, pageState, requestPass, takeDeliveryDue } from './st
 import { withDeadline } from './artifact-store'
 
 const PANE = 'humantray'
+/** How many lines tall a free-text field is: room for a list or a short code block. */
+const ROWS = 3
 const TITLE = 'Humantray'
 const ADD = 'mcp__humantray__humantray_add'
 const LIST = 'mcp__humantray__humantray_list'
 
-// tray-3: a tray now carries History. A tray cached by an earlier version
-// reads as null and is rebuilt from the file at the next pass.
-const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-3' })
+// tray-4: History entries carry the answer's free-text parts as Markdown. A
+// tray cached by an earlier version reads as null and is rebuilt from the
+// file at the next pass.
+const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-4' })
 const view = atom({ plugin: 'humantray', key: 'view' } as const, 'open')
 const page = atom({ plugin: 'humantray', key: 'page' } as const, 0)
+/** The History entry shown in full: read from the store when "Show in full" is pressed. */
+const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as HistoryFull | null, { shape: 'full-1' })
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 
 const token = (): string => {
@@ -118,7 +130,7 @@ const ADD_SCHEMA = {
 
 const ADD_DESCRIPTION =
   'Put an item in the humantray for the person to answer later, without blocking. Returns { id, short, bumped } at once. ' +
-  'The answer arrives later as one line: "humantray HT-xxxxx (<header>): <answer>". ' +
+  'The answer arrives later as a line "humantray HT-xxxxx (<header>): <answer>", followed by any text the person typed, exactly as typed, under labels such as "Notes:". ' +
   'For a decision that must block before a risky action, use AskUserQuestion instead.'
 
 const LIST_DESCRIPTION =
@@ -216,7 +228,7 @@ async function settle($: EngineInterface, id: string, claim: string, where: Wher
 function send($: EngineInterface, item: Item, claim: string, where: Where) {
   inFlight.set(item.id, claim)
   void $.prompt
-    .submit({ text: deliveryLine(item) })
+    .submit({ text: deliveryText(item) })
     .then(
       entered => entered.drop === undefined,
       () => false,
@@ -511,19 +523,60 @@ export const register: Register = on => {
       return <Text dimColor>No humantray here: not in a git repository, or the store could not be read.</Text>
     }
     const showing = await read($, view)
-    // One History entry: read only, with no control (an answered item is never reopened).
+    // The free-text parts of an answer, each under its label, drawn as
+    // Markdown: History's list parts are already drawn text (historyOf); a
+    // full entry's are the stored text.
+    type Part = { label: string; text: string; length?: number; clipped?: boolean }
+    const partsOf = (id: string, parts: readonly Part[], drawn: boolean) =>
+      parts.flatMap(part => {
+        const nodes = []
+        nodes.push(
+          <Text key={`${id}:${part.label}:label`} dimColor>
+            {part.label}:
+          </Text>,
+        )
+        if (part.text !== '') {
+          nodes.push(<Markdown key={`${id}:${part.label}`} text={drawn ? part.text : forDisplay(part.text)} />)
+        }
+        if (part.clipped === true) {
+          const length = String(part.length ?? part.text.length)
+          nodes.push(
+            <Text key={`${id}:${part.label}:more`} dimColor>
+              {part.text === '' ? `(${length} characters: too long for the list)` : `(… cut short: ${length} characters in all)`}
+            </Text>,
+          )
+        }
+        return nodes
+      })
+    // One History entry: read only, with no control (an answered item is never
+    // reopened) but "Show in full" when anything was shortened.
     const historyCard = (entry: HistoryEntry) => (
       <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
         <Text bold>
-          [{entry.header}] {entry.question}
+          [{plain(entry.header)}] {plain(entry.question)}
         </Text>
         <Text dimColor>
           {entry.short}
           {entry.isMine ? '' : ' · another session'} · answered {when(entry.at)} · bumps: {String(entry.bumps)}
           {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
         </Text>
-        <Text>{entry.answer}</Text>
-        {entry.notes !== undefined && <Text dimColor>Notes: {entry.notes}</Text>}
+        {entry.answer !== '' && <Text>{plain(entry.answer)}</Text>}
+        {partsOf(entry.id, entry.parts, true)}
+        {entry.clipped && (
+          <Button
+            key={`${entry.id}:full`}
+            label="Show in full"
+            onPress={async () => {
+              const seen = await peek($)
+              const item = seen.error === undefined ? seen.ok.file.items.find(one => one.id === entry.id) : undefined
+              if (item === undefined) {
+                await toast($, `${entry.short} could not be read from the store`)
+                return
+              }
+              await update($, expanded, () => fullOf(item))
+            }}
+          />
+        )}
       </Box>
     )
     const toggle = (
@@ -532,11 +585,31 @@ export const register: Register = on => {
         label={showing === 'history' ? `Open items (${shown.items.length})` : `History (${shown.history.length})`}
         onPress={async () => {
           await update($, page, () => 0)
+          await update($, expanded, () => null)
           await update($, view, current => (current === 'history' ? 'open' : 'history'))
         }}
       />
     )
     if (showing === 'history') {
+      // One entry whole, as the store holds it, until Back.
+      const full = await read($, expanded)
+      if (full !== null) {
+        return (
+          <Box flexDirection="column" gap={1}>
+            {toggle}
+            <Button key="humantray:history:back" label="Back to History" onPress={() => update($, expanded, () => null)} />
+            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" paddingX={1}>
+              <Text bold>
+                [{plain(full.header)}] {plain(full.question)}
+              </Text>
+              <Text dimColor>{full.short}</Text>
+              {full.body_md !== '' && <Markdown key={`${full.id}:full:body`} text={forDisplay(full.body_md)} />}
+              {full.answer !== '' && <Text>{plain(full.answer)}</Text>}
+              {partsOf(`${full.id}:full`, full.parts, false)}
+            </Box>
+          </Box>
+        )
+      }
       if (shown.history.length === 0) {
         return (
           <Box flexDirection="column" gap={1}>
@@ -597,10 +670,12 @@ export const register: Register = on => {
       const held = await $.state.get({ ...drafts, id })
       const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
       const press = (action: Action) => () => answer($, id, action)
+      // Free text is several lines tall and kept exactly as typed, Markdown and all.
       const field = (name: 'other' | 'text' | 'feedback' | 'notes', label: string, onEnter?: () => Promise<void>) => (
         <Input
           key={`${id}:${name}`}
           label={label}
+          rows={ROWS}
           value={draft[name]}
           onInput={value => setDraft($, id, () => ({ [name]: value, error: '' }))}
           onSubmit={async value => {
@@ -614,7 +689,7 @@ export const register: Register = on => {
       if (item.type === 'ack') {
         controls.push(<Button key={`${id}:ack`} label="Acknowledge" variant="primary" onPress={press({ kind: 'ack' })} />)
       } else if (item.type === 'do') {
-        controls.push(field('feedback', 'Feedback (optional)'))
+        controls.push(field('feedback', 'Feedback (optional, Markdown)'))
         controls.push(
           <Box key={`${id}:outcomes`} flexDirection="row" gap={1}>
             <Button key={`${id}:done`} label="Done" variant="primary" onPress={press({ kind: 'do', outcome: 'done' })} />
@@ -629,7 +704,7 @@ export const register: Register = on => {
           </Box>,
         )
       } else if (item.type === 'question') {
-        controls.push(field('text', 'Answer', press({ kind: 'submit' })))
+        controls.push(field('text', 'Answer (Markdown)', press({ kind: 'submit' })))
       } else {
         const isMulti = item.multiSelect === true
         ;(item.options ?? []).forEach((option, index) => {
@@ -659,7 +734,8 @@ export const register: Register = on => {
         controls.push(
           <Input
             key={`${id}:other`}
-            label="Other"
+            label="Other (Markdown)"
+            rows={ROWS}
             value={draft.other}
             onInput={value =>
               setDraft($, id, current => ({
@@ -678,7 +754,7 @@ export const register: Register = on => {
           />,
         )
       }
-      if (item.notes === true) controls.push(field('notes', 'Notes (optional)'))
+      if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
       if (item.type === 'choice' || item.type === 'question') {
         controls.push(<Button key={`${id}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />)
       }
@@ -688,14 +764,14 @@ export const register: Register = on => {
       cards.push(
         <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
           <Text bold>
-            [{item.header}] {item.question}
+            [{plain(item.header)}] {plain(item.question)}
           </Text>
           <Text dimColor>
             {item.short}
             {from}
             {bumped}
           </Text>
-          {item.body_md !== '' && <Markdown key={`${id}:body`} text={item.body_md} />}
+          {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDisplay(item.body_md)} />}
           {controls}
           {draft.error !== '' && <Text color="error">{draft.error}</Text>}
         </Box>,

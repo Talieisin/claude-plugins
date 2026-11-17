@@ -1,5 +1,6 @@
-// Delivery: each answer reaches the owning session as one line, at least once
-// and never lost. A claim is written before the submit; the submit is never
+// Delivery: each answer reaches the owning session in one submit (a first
+// line naming the item, then any free text as typed), at least once and
+// never lost. A claim is written before the submit; the submit is never
 // awaited by a hook; a drop or a rejection releases the claim for a retry.
 
 import { describe, expect, test } from 'claude-code/testing'
@@ -17,6 +18,7 @@ import {
   type Step,
   TURN,
   answerOf,
+  RICH,
   answerOne,
   stored,
   world,
@@ -40,27 +42,27 @@ const LINES: Array<[string, Record<string, unknown>, Step[], string]> = [
     'choice, Other only',
     { type: 'choice', header: 'Colour', question: 'Which?', options: OPTIONS },
     [{ change: 'other', text: 'Purple' }, { press: 'submit' }],
-    '(Colour): Other: Purple',
+    '(Colour): Other\n\nOther:\nPurple',
   ],
   [
     'choice, multi with Other',
     { type: 'choice', header: 'Colour', question: 'Which?', options: OPTIONS, multiSelect: true },
     [{ press: 'opt:0' }, { press: 'opt:2' }, { change: 'other', text: 'Teal' }, { press: 'submit' }],
-    '(Colour): Red; Green; Other: Teal',
+    '(Colour): Red; Green; Other\n\nOther:\nTeal',
   ],
-  ['question', { type: 'question', header: 'Name', question: 'What?' }, [{ type: 'text', text: 'humantray' }], '(Name): humantray'],
+  ['question', { type: 'question', header: 'Name', question: 'What?' }, [{ type: 'text', text: 'humantray' }], '(Name): answered\n\nAnswer:\nhumantray'],
   [
-    'question, several lines',
+    'question, several lines: kept as typed, line ends made \\n',
     { type: 'question', header: 'Name', question: 'What?' },
-    [{ type: 'text', text: 'line one\n\n   line two\r\nline three' }],
-    '(Name): line one / line two / line three',
+    [{ type: 'text', text: 'line one\n\n   line two\r\nline three  ' }],
+    '(Name): answered\n\nAnswer:\nline one\n\n   line two\nline three  ',
   ],
   ['do, done', { type: 'do', header: 'Key', question: 'Rotate' }, [{ press: 'done' }], '(Key): done'],
   [
     'do, not done with feedback',
     { type: 'do', header: 'Key', question: 'Rotate' },
     [{ change: 'feedback', text: 'No access' }, { press: 'not_done' }],
-    '(Key): not done: No access',
+    '(Key): not done\n\nFeedback:\nNo access',
   ],
   ['approve', { type: 'approve', header: 'Plan', question: 'OK?' }, [{ press: 'approve' }], '(Plan): Approve'],
   ['reject', { type: 'approve', header: 'Plan', question: 'OK?' }, [{ press: 'reject' }], '(Plan): Reject'],
@@ -68,7 +70,7 @@ const LINES: Array<[string, Record<string, unknown>, Step[], string]> = [
 
 describe('the line', () => {
   for (const [name, call, steps, line] of LINES) {
-    test(`${name}: one line, once`, async ($, on) => {
+    test(`${name}: one submit, once`, async ($, on) => {
       const w = world(on)
       await $.session.start(START_EVENT)
       const item = await answerOne($, w, 'desktop', call, steps)
@@ -84,10 +86,51 @@ describe('the line', () => {
       const w = world(on)
       await $.session.start(START_EVENT)
       const item = await answerOne($, w, 'desktop', { ...call, notes: true }, [{ change: 'notes', text: 'see\nthe log' }, ...steps])
-      expect(w.submits).toEqual([`humantray ${item.short} ${line} | notes: see / the log`])
+      expect(w.submits).toEqual([`humantray ${item.short} ${line}\n\nNotes:\nsee\nthe log`])
     })
   }
+
+  test('a rich Markdown answer arrives whole, in one submit, exactly once', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const item = await answerOne($, w, 'desktop', { type: 'question', header: 'Plan', question: 'How?', notes: true }, [
+      { change: 'notes', text: RICH_NOTES },
+      { type: 'text', text: RICH },
+    ])
+    expect(item.response).toEqual({ text: RICH, notes: RICH_NOTES })
+    expect(w.submits).toEqual([`humantray ${item.short} (Plan): answered\n\nAnswer:\n${RICH}\n\nNotes:\n${RICH_NOTES}`])
+    // The first line is the one the skill tells a session to recognise.
+    expect(w.submits[0]?.split('\n')[0]).toBe(`humantray ${item.short} (Plan): answered`)
+    await $.turn.complete(TURN)
+    await $.session.start(START_EVENT)
+    expect(w.submits).toHaveLength(1)
+    expect(w.store().items[0]?.delivered).toBe(true)
+  })
+
+  test('an answer stored with its text untrimmed elsewhere (the page) is delivered as stored', async ($, on) => {
+    const w = world(on)
+    w.seed({
+      version: 1,
+      sessions: {},
+      items: [
+        stored({
+          id: '01AAAAAAAAAAAAAAAAAAAAAPAGE',
+          type: 'do',
+          header: 'Key',
+          status: 'done',
+          response: { outcome: 'not_done', feedback: '  - no access\n  - ask *ops*\n' },
+          response_at: START - 60_000,
+          response_by: 'page',
+        }),
+      ],
+    })
+    await $.session.start(START_EVENT)
+    await w.drain()
+    expect(w.submits).toEqual(['humantray HT-APAGE (Key): not done\n\nFeedback:\n  - no access\n  - ask *ops*\n'])
+  })
 })
+
+const RICH_NOTES = '  *see* the log\n\n```\ntail -f x\n```\n'
 
 /** Seeds one answered, undelivered approve item of the given session. */
 function answered(fields: Partial<Item> = {}): Item {

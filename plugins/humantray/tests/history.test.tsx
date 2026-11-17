@@ -60,7 +60,8 @@ describe('a ticked item leaves the main list and appears in History', () => {
       await ui.press({ key: TOGGLE })
       expect(await ui.find({ type: 'Text', text: '[Colour] Which?' })).toBeDefined()
       expect(await ui.find({ type: 'Text', text: /^Red$/ })).toBeDefined()
-      expect(await ui.find({ type: 'Text', text: 'Notes: see the log' })).toBeDefined()
+      expect(await ui.find({ type: 'Text', text: 'Notes:' })).toBeDefined()
+      expect((await ui.find({ key: `${id}:Notes` }))?.props.text).toBe('see the log')
       const line = await ui.find({ type: 'Text', text: /^HT-/ })
       expect(line?.text).toMatch(/bumps: 1 · delivered$/)
       expect(line?.text).not.toMatch(/another session/)
@@ -200,31 +201,54 @@ describe('History', () => {
   })
 
   for (const surface of ['terminal', 'desktop'] as const) {
-    test(`a 200-entry History of long text draws every entry across its pages, clipped, on ${surface}`, async ($, on) => {
+    test(`a 200-entry History of long text draws every entry across its pages, clipped at block boundaries, on ${surface}`, async ($, on) => {
       const w = world(on, { surfaces: [surface] })
+      // Forty 99-character paragraphs: the list keeps the first four whole.
+      const paragraphs = Array.from({ length: 40 }, (_, i) => `${String(i).padStart(2, '0')}${'a'.repeat(97)}`).join('\n\n')
       const long = finishedMany(200, {
         type: 'question',
         options: undefined,
         question: `Q ${'q'.repeat(499)}`,
         // Long enough to clip, and short enough for the store's 3 MiB read limit.
-        response: { text: 'a'.repeat(4_000), notes: 'n'.repeat(2_000) },
+        response: { text: paragraphs, notes: 'n'.repeat(2_000) },
       })
       w.seed(file(long))
       await $.session.start(START_EVENT)
       const ui = await $.ui.mount({ ...PANE, surface })
       expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
       await ui.press({ key: TOGGLE })
-      const answer = await ui.find({ type: 'Text', text: /^a+…$/ })
-      expect(answer?.text).toHaveLength(300)
-      expect((await ui.find({ type: 'Text', text: /^Notes: n+…$/ }))?.text).toHaveLength('Notes: '.length + 300)
+      const id = (await ui.find({ type: 'Text', text: /^HT-/ }))?.text.slice(3, 8) ?? ''
+      const entry = long.find(item => item.id.endsWith(id))?.id ?? ''
+      expect((await ui.find({ key: `${entry}:Answer` }))?.props.text).toBe(paragraphs.split('\n\n').slice(0, 4).join('\n\n'))
+      expect(await ui.find({ type: 'Text', text: `(… cut short: ${String(paragraphs.length)} characters in all)` })).toBeDefined()
+      // A part that is one block longer than the budget is not cut inside: none of it is drawn.
+      expect(await ui.find({ key: `${entry}:Notes` })).toBeUndefined()
+      expect(await ui.find({ type: 'Text', text: '(2000 characters: too long for the list)' })).toBeDefined()
       expect((await ui.find({ type: 'Text', text: /^\[Done\] Q q+…$/ }))?.text).toHaveLength('[Done] '.length + 200)
+      expect(await ui.findAll({ type: 'Button', text: 'Show in full' })).toHaveLength(50)
       const shown = await allPages(ui)
       expect(shown.map(one => one.length)).toEqual([50, 50, 50, 50])
       expect(new Set(shown.flat())).toEqual(new Set(long.map(item => item.short)))
       // And back: Previous from the last page shows the third.
       await ui.press({ key: 'humantray:history:previous' })
       expect(await ui.find({ type: 'Text', text: 'Page 3 of 4' })).toBeDefined()
+
+      // Any entry is reachable in full: the question, the answer and the notes whole.
+      const last = (await ui.findAll({ type: 'Text', text: /^HT-/ })).at(-1)?.text.slice(3, 8) ?? ''
+      const item = long.find(one => one.id.endsWith(last))
+      if (item === undefined) throw new Error('no entry on the page')
+      await ui.press({ key: `${item.id}:full` })
+      expect(await ui.find({ type: 'Text', text: `[Done] ${item.question}` })).toBeDefined()
+      expect((await ui.find({ key: `${item.id}:full:Answer` }))?.props.text).toBe(paragraphs)
+      expect((await ui.find({ key: `${item.id}:full:Notes` }))?.props.text).toBe('n'.repeat(2_000))
+      expect(await ui.find({ key: `${item.id}:Answer` })).toBeUndefined()
+      // Back returns to the same page of the list.
+      await ui.press({ key: 'humantray:history:back' })
+      expect(await ui.find({ type: 'Text', text: 'Page 3 of 4' })).toBeDefined()
+      expect(await ui.find({ key: `${item.id}:full:Answer` })).toBeUndefined()
       await ui.unmount()
+      // Nothing in the store was shortened.
+      expect(w.store().items.find(one => one.id === item.id)?.response).toEqual({ text: paragraphs, notes: 'n'.repeat(2_000) })
     })
   }
 })

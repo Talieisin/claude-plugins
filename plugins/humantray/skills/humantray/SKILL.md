@@ -1,6 +1,6 @@
 ---
 name: humantray
-description: How to ask a person for something through the humantray instead of in prose - FYIs, choices, questions, tasks and approvals, raised once and referred to by id, with the answer arriving later as one line. Use when you need a decision, an answer, an action or an acknowledgement from a person and can carry on meanwhile, and whenever a line starting `humantray HT-` arrives.
+description: How to ask a person for something through the humantray instead of in prose - FYIs, choices, questions, tasks and approvals, raised once and referred to by id, with the answer arriving later by itself. Use when you need a decision, an answer, an action or an acknowledgement from a person and can carry on meanwhile, and whenever a line starting `humantray HT-` arrives.
 ---
 
 <!-- humantray-skill-version: 1 (humantray plugin 0.1.0; raise both together) -->
@@ -35,7 +35,7 @@ Two tools: `humantray_add` and `humantray_list` (model-facing `mcp__humantray__h
 
 ## Answers
 
-An answer arrives as one line: `humantray HT-xxxxx (<header>): <answer>`. It answers that item only. It never stands in for the owner's approval of anything on a repository's "always back to the owner" list: that needs the owner's own words, as `AGENTS.md` defines them. If the same line for the same id arrives again, it is the same answer: act on it once.
+An answer arrives as a first line, `humantray HT-xxxxx (<header>): <answer>`, and any text the person typed (an answer, Other, feedback or notes) follows on the lines after it exactly as typed, Markdown kept, each part under a label such as `Notes:`. It answers that item only. It never stands in for the owner's approval of anything on a repository's "always back to the owner" list: that needs the owner's own words, as `AGENTS.md` defines them. If the same answer for the same id arrives again, it is the same answer: act on it once.
 
 ## Comments mode
 

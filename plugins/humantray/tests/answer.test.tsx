@@ -38,10 +38,10 @@ const CASES: Array<[string, Record<string, unknown>, Step[], ItemResponse, Item[
     'answered',
   ],
   [
-    'question (Enter submits)',
+    'question (Enter submits), stored exactly as typed',
     { type: 'question', header: 'Name', question: 'What name?' },
     [{ type: 'text', text: '  humantray  ' }],
-    { text: 'humantray' },
+    { text: '  humantray  ' },
     'answered',
   ],
   ['do, done', { type: 'do', header: 'Key', question: 'Rotate' }, [{ press: 'done' }], { outcome: 'done' }, 'done'],
@@ -73,11 +73,11 @@ describe('each type stores its response', () => {
 
 describe('notes', () => {
   for (const [name, call, steps, response] of CASES) {
-    test(`${name}: with notes: true the answer carries the notes`, async ($, on) => {
+    test(`${name}: with notes: true the answer carries the notes, exactly as typed`, async ($, on) => {
       const w = world(on)
       await $.session.start(START_EVENT)
       const item = await answerOne($, w, 'desktop', { ...call, notes: true }, [{ change: 'notes', text: ' see the log ' }, ...steps])
-      expect(item.response).toEqual({ ...response, notes: 'see the log' })
+      expect(item.response).toEqual({ ...response, notes: ' see the log ' })
     })
   }
 
