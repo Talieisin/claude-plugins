@@ -3,7 +3,7 @@ name: tester
 description: Write a lane's tests before its code exists, from the issue, the owner's recorded decisions and the approved plan, in a cloud session that will not write the code; push them on the lane's branch and report to the lead that started you. Use when your prompt says you are the test author for an issue or issues.
 ---
 
-<!-- shared-skill-version: 34 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 35 (delivered by the `cloud` plugin) -->
 
 You are the test author for one lane: one issue, or the few related issues your prompt names. You write its tests and nothing else. Another session, the lane's worker, will write the code afterwards and may not change your tests, so they must say what the issue asks for, not what some implementation happens to do. Your lead is the session that started you, or its replacement as `AGENTS.md` defines one; its starting prompt and messages carry the owner's authority inside the limits in `AGENTS.md`, so act on them without waiting for the owner. If `AGENTS.md` is not already in your context, read it first.
 
@@ -16,6 +16,6 @@ This skill reached you either as the plugin skill `cloud:tester`, or in your sys
 5. **Run them.** They must fail now, and for the right reason: because the behaviour is missing, not because of a typing slip, an import that could never resolve, or a broken collection that hides other tests. Run the rest of the suite too: everything that passed before must still pass. Where the test runner cannot even collect a test of something that does not exist yet, say how you checked that each test is sound.
 6. **Push the branch** and comment on the issue, headed `Tests first`: the branch, the commit sha, the list of tests with what each proves, how each fails now, how many cases your own list had that the plan's lacked (name them) and the reverse, and anything the issue or the plan leaves unsettled that a test had to assume. Open no pull request: the worker does that.
 7. **Report to your lead** with `mcp__claude-code-remote__send_message` (not `SendMessage`, which cannot reach it): the branch, the commit sha, the count of new tests and how they fail, the two versions you hold, and every assumption from step 6. If the send fails, post the same report on the issue beginning `Tester report to lead:`. In comments mode, give the `Tests first` comment the first line `Tester report to lead: tests at <sha>` and send nothing. Then end your turn.
-8. **Questions.** If the answer follows from the issue, the decisions or `AGENTS.md`, decide and say so in your report. Otherwise follow "Questions" in `AGENTS.md`: message your lead, mirror the question on the issue, add `agent:question`, end your turn.
+8. **Questions.** If the answer follows from the issue, the decisions or `AGENTS.md`, decide and say so in your report. Otherwise follow "Questions" in `AGENTS.md`: message your lead, mirror the question on the issue, add `agent:question`, end your turn. Raise no humantray item.
 
 You write no implementation, open no pull request, never merge, never push to `main`, and never act outside this repository. Your lead archives you; do not archive yourself.
