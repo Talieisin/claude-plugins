@@ -351,11 +351,17 @@ export const register: Register = on => {
   // After a /clear, /resume or /branch no session.start runs and $.state is
   // back to its defaults: rebuild from the file. Only a /clear or a /branch
   // continues this process's conversation, so only they hand its items over to
-  // the new id; a /resume, a compaction or an unknown source hands over nothing.
+  // the new id; a /resume, a compaction or an unknown source hands over nothing,
+  // and drops a hand-over an earlier failed pass left pending, so that it is
+  // never written with the wrong session as successor.
   on('classic.SessionStart', async ($, e, next) => {
     const ran = await next(e)
     const source: unknown = e.source
-    if ((source === 'clear' || source === 'fork') && lastSeen !== undefined) pendingHandover = lastSeen
+    if (source === 'clear' || source === 'fork') {
+      if (lastSeen !== undefined) pendingHandover = lastSeen
+    } else {
+      pendingHandover = undefined
+    }
     await sync($, true).catch(() => undefined)
     return ran
   }).catch(($, e, next) => next(e))
