@@ -75,11 +75,13 @@ something up.
 - A Claude Code plugin marketplace named `talieisin`
   (`.claude-plugin/marketplace.json`), public so that a cloud environment's
   setup script can install from it without a credential.
-- Three plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
+- Four plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
   author and retro skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
-  read-only scripts its local route calls. Neither of those has hooks; keep it so. `mise` (`plugins/mise/`) is the one plugin that
-  runs code by itself: a SessionStart hook and one script. It is versioned on its
-  own in its `plugin.json` and marketplace entry. A plugin that runs code (hooks) goes in its own folder under `plugins/`
+  read-only scripts its local route calls. Neither of those has hooks; keep it so. Two plugins
+  run code by themselves. `mise` (`plugins/mise/`): a SessionStart hook and one script. It is versioned on its
+  own in its `plugin.json` and marketplace entry. `humantray` (`plugins/humantray/`): a hooks module. It is
+  versioned on its own in the same way, and its skill carries its own marker,
+  `<!-- humantray-skill-version: N ... -->`. A plugin that runs code (hooks) goes in its own folder under `plugins/`
   so that turning it on is a separate, deliberate choice.
 - This repository is the source of truth for the skills. No other repository
   carries a copy, and a copy elsewhere would win over the plugin on the bare
@@ -148,11 +150,13 @@ matching file under `templates/` in the same pull request.
 
 ## Repository facts
 
-Derived at 92cf80b, 2026-11-16. Facts marked (checked) are re-verified by the lead before each batch. Only what the files and GitHub cannot tell an agent directly belongs here. This section is about this repository, and it is the only part of this file a lead may change.
+Derived at 616af11, 2026-11-17. Facts marked (checked) are re-verified by the lead before each batch. Only what the files and GitHub cannot tell an agent directly belongs here. This section is about this repository, and it is the only part of this file a lead may change.
 
 ### Commands
 
-- Full verification (checked): there is no test suite. Before opening a pull request: `claude plugin validate .` passes (a few seconds); `bash -n` passes on every script under `templates/` and `plugins/`; every `shared-skill-version` marker carries the same version and the `cloud` manifests match it; the `pull-request-skill-version` marker rose with any change to that skill and the `github` manifests agree with each other; the `mise` manifests agree with each other; and every path a skill, the README or `docs/setup.md` names exists.
+- Full verification (checked): the only test suite is the `humantray` mod's. Before opening a pull request: `claude plugin validate .` passes (a few seconds); `bash -n` passes on every script under `templates/` and `plugins/`; every `shared-skill-version` marker carries the same version and the `cloud` manifests match it; the `pull-request-skill-version` marker rose with any change to that skill and the `github` manifests agree with each other; the `mise` manifests agree with each other; the `humantray` manifests agree with each other and with the plugin version that the `humantray-skill-version` marker's comment names, and that marker rose with any change to the humantray skill; `claude plugin test plugins/humantray` passes (541 tests at 616af11, about 40 seconds); the mod's type check passes, as below; and every path a skill, the README or `docs/setup.md` names exists.
+- The mod's type check (checked): TypeScript 5.4 or newer (`tsc` 6.0.2 is on the cloud image's `PATH`). Write a `tsconfig.json` in a scratch directory outside the repository, with the `compilerOptions` of `plugins/humantray/tsconfig.json` and an `include` naming, by absolute path, the engine's `claude-code.d.ts` and the plugin's `hooks`, `types`, `tests` and `page` folders; then run `tsc -p <that directory>`. The engine's `claude-code.d.ts` is at the path the `plugin-authoring` skill names when it loads. Do not use `tsc -p plugins/humantray` as the check: it works only where the engine has laid its types in `plugins/humantray/.claude-plugin/types/`, which it does only when it loads the plugin from that folder.
+- For a change under `plugins/humantray/page/`, also: `node --experimental-strip-types plugins/humantray/tests/page-render.check.mjs` passes (a real browser; needs Playwright, which the cloud image has).
 - Provisioning a fresh checkout: nothing.
 
 ### Known failures and intermittents
@@ -164,8 +168,9 @@ Derived at 92cf80b, 2026-11-16. Facts marked (checked) are re-verified by the le
 - This repository is public, and so are its issues, pull requests and every comment a session posts on them. Write nothing in a file, a commit message, a branch name, an issue or a comment that should not be read by anyone. The ids and links of the sessions working here, which the skills have sessions post in comments (their own, and a lead's record of the sessions it started), are accepted.
 - The plugins a session runs under are the ones its environment installed, from `main` as it was then. A change on a branch does not change how the session making it behaves, and a merged change reaches new sessions only after the environment's setup script is re-saved.
 - Version markers must move together, as "Changing a skill" above says. A pull request that changes a skill and leaves a marker or a manifest behind is wrong even if every check passes.
-- A batch is one release. Every lane that changes a `cloud` skill moves the `shared-skill-version` markers and the `cloud` manifests to the same next version: the version on `main` when the batch started, plus one. The lead tells each worker that number in its starting prompt. Identical edits merge cleanly; different numbers conflict in every skill file. The same goes for the `pull-request-skill-version` marker and for the `mise` manifest.
-- There are no tests here and no test count. Where a skill asks a worker for a test count on a head, the worker reports instead that it ran the full verification on that head and that it passed; that report is what the lead's merge condition on checks rests on. A worker adds a test only where the change adds something a test can run.
+- A batch is one release. Every lane that changes a `cloud` skill moves the `shared-skill-version` markers and the `cloud` manifests to the same next version: the version on `main` when the batch started, plus one. The lead tells each worker that number in its starting prompt. Identical edits merge cleanly; different numbers conflict in every skill file. The same goes for the `pull-request-skill-version` marker, for the `mise` manifest, and for the `humantray-skill-version` marker and the `humantray` manifests.
+- The only tests here are the `humantray` mod's. A lane that changes `plugins/humantray/` reports the pass count of `claude plugin test plugins/humantray` on its head, with the rest of the full verification. Every other lane, where a skill asks for a test count on a head, reports instead that it ran the full verification on that head and that it passed; that report is what the lead's merge condition on checks rests on. A worker adds a test only where the change adds something a test can run.
+- Loading a plugin from a checkout (`--plugin-dir`) makes the engine write its types into that plugin's `.claude-plugin/types/`. They are generated, and the repository's `.gitignore` keeps them out of git: never commit them.
 
 ### Checks that run on a pull request
 

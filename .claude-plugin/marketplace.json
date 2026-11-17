@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "talieisin",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Talieisin's shared Claude Code plugins",
   "owner": {
     "name": "Talieisin"
@@ -24,6 +24,12 @@
       "description": "Installs the tools a repository pins with mise when a session starts, and puts them on PATH. Runs a SessionStart hook: one script, which only installs what the repository's own mise.toml names.",
       "source": "./plugins/mise",
       "version": "0.2.0"
+    },
+    {
+      "name": "humantray",
+      "description": "A tray of things a session needs from a person: FYIs, choices, questions, to-dos and approvals, answered whenever the person chooses and delivered to the session that asked. Runs a hooks module (TypeScript) in every session where it is installed. Items are kept under the repository's .git directory and never go into git; in a cloud session they are also copied to a private claude.ai page per repository (/humantray-page). The pane opens with /humantray-open; /humantray-viewer shows every repository's page on a computer that stays on.",
+      "source": "./plugins/humantray",
+      "version": "0.1.0"
     }
   ]
 }

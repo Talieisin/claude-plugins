@@ -11,6 +11,9 @@ LOG=/tmp/cloud-setup.log
 claude plugin marketplace add Talieisin/claude-plugins >> "$LOG" 2>&1 || echo "marketplace add failed" >> "$LOG"
 claude plugin install cloud@talieisin >> "$LOG" 2>&1 || echo "cloud plugin install failed" >> "$LOG"
 claude plugin install github@talieisin >> "$LOG" 2>&1 || echo "github plugin install failed" >> "$LOG"
+# Optional: the humantray plugin, a tray for what sessions need from you. It runs
+# code (a hooks module) in every session; see docs/setup.md before you turn it on.
+# claude plugin install humantray@talieisin >> "$LOG" 2>&1 || echo "humantray plugin install failed" >> "$LOG"
 date -u +"SETUP_SCRIPT_RAN %FT%TZ" >> "$LOG"
 
 # The environment caches the result of this script. After a new release of the
