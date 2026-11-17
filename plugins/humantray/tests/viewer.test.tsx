@@ -928,3 +928,56 @@ describe('the card body cut', () => {
     expect(await shownText(ui)).toContain('Paragraph 39')
   })
 })
+
+describe('re-read at 8e06312', () => {
+  vtest('a first send still in flight is not sent again by a tick', async ($, on) => {
+    const { w, a, sends, send } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    let open = () => undefined as void
+    const held = new Promise<void>(resolve => {
+      open = resolve
+    })
+    send.answer = async () => {
+      await held
+      return { isDelivered: true }
+    }
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const pressed = ui.press({ key: `v:${ID1}:approve` })
+    await w.clock.settle()
+    // A timer tick while the first send waits (under the send's time limit).
+    await w.clock.advance(TICK_MS)
+    open()
+    await pressed
+    await w.clock.settle()
+    expect(sends).toHaveLength(1)
+  })
+
+  vtest('a lease write that fails once keeps the viewer on, says so, and the next tick renews it', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    await turnOn($, w)
+    w.failStoreSet = key => key === 'viewer:lease'
+    // Past the lease's life, so the failed renewal leaves no fresh lease.
+    await tickOnce(w, LEASE_MS)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).toContain('The viewer lease could not be written')
+    w.failStoreSet = () => false
+    const before = a.calls.length
+    await tickOnce(w)
+    expect(a.calls.length).toBeGreaterThan(before)
+    expect(await shownText(ui)).not.toContain('could not be written')
+    expect(await shownText(ui)).toContain('Question 01')
+  })
+
+  vtest('a lease write that succeeds but reads back another instance stops the viewer', async ($, on) => {
+    const { w } = viewerWorld(on)
+    await turnOn($, w)
+    w.storeOverride = key => (key === 'viewer:lease' ? { instance: 'other', session: 'b', renewed: w.clock.now() - LEASE_MS - 1 } : undefined)
+    // Stale for the check at the start of the tick, so the tick writes its own; the read-back still names the other.
+    await tickOnce(w)
+    w.storeOverride = () => undefined
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).not.toContain('Viewer:')
+  })
+})

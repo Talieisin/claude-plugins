@@ -36,6 +36,10 @@ export type World = {
   logs: string[]
   /** Every $.session.id() fails, as an engine might. */
   failSessionId: boolean
+  /** Every $.session.id() waits for this first (a slow engine). */
+  sessionIdGate: Promise<void> | undefined
+  /** A $.store.set of this key fails, as a busy store might. */
+  failStoreSet: (key: string) => boolean
   /** Every row the plugin itself appended with $.session.append. */
   appended: unknown[]
   /** Answers a store read instead of the store, for a test (undefined: the store answers). */
@@ -107,6 +111,7 @@ export function world(
     return { value: text === undefined ? undefined : (JSON.parse(text) as unknown) }
   })
   on('store.set', (_, e) => {
+    if (w.failStoreSet(e.key)) throw new Error('store busy')
     kv.set(e.key, JSON.stringify(e.value))
     return { value: undefined }
   })
@@ -138,6 +143,8 @@ export function world(
     },
     logs: [],
     failSessionId: false,
+    sessionIdGate: undefined,
+    failStoreSet: () => false,
     appended: [],
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,
@@ -174,7 +181,8 @@ export function world(
     },
   }
 
-  on('session.id', () => {
+  on('session.id', async () => {
+    if (w.sessionIdGate !== undefined) await w.sessionIdGate
     if (w.failSessionId) throw new Error('the session id could not be read')
     return { value: w.sessionId }
   })

@@ -432,32 +432,42 @@ describe('a retry that applies an answer delivers it (F3)', () => {
 })
 
 describe('the hooks fail closed, and only a whole text is taken', () => {
-  test("prompt.submit's .catch: a hook that throws still stops a recognised envelope", async ($, on) => {
+  test('the hooks decide without waiting: with $.session.id() slow, both return at once with the envelope stopped, then take it', async ($, on) => {
+    const { w } = await asker($, on, [mirrored({ id: ID1, type: 'approve' }), mirrored({ id: ID2, type: 'approve' })])
+    let open = () => undefined as void
+    w.sessionIdGate = new Promise<void>(resolve => {
+      open = resolve
+    })
+    // Neither call may wait on the gate: if one did, the await would never resolve and the test would time out.
+    const sent = await $.prompt.submit(coldSubmit(wrapped(textOf(envelopeFor(ID1)))))
+    expect(sent.drop).toBe(`humantray: took an answer for HT-${ID1.slice(-5)} from the viewer`)
+    const got = await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID2)))))
+    expect(got.consumed).toBe(`humantray: took an answer for HT-${ID2.slice(-5)} from the viewer`)
+    expect(w.received).toEqual([])
+    w.sessionIdGate = undefined
+    open()
+    await settle(w)
+    expect(w.submits).toHaveLength(2)
+  })
+
+  test('a failing $.session.id(): the envelope is still stopped at once, the take is discarded with a log line, and a later copy is taken', async ($, on) => {
     const { w, a } = await asker($, on)
     w.failSessionId = true
     const sent = await $.prompt.submit(coldSubmit(wrapped(textOf(envelopeFor(ID1)))))
-    expect(sent.drop).toBe('humantray: took an answer from the viewer')
+    expect(sent.drop).toBeDefined()
+    const got = await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    expect(got.consumed).toBeDefined()
     await settle(w)
     expect(w.received).toEqual([])
     expect(responseWrites(a)).toEqual([])
-    // Not taken: the viewer sends it again, and a later copy is taken.
+    expect(w.logs.some(line => line.includes('was discarded'))).toBe(true)
     w.failSessionId = false
     await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
     await settle(w)
     expect(w.submits).toEqual([LINE1])
   })
 
-  test("session.receive's .catch: a hook that throws still consumes a recognised envelope", async ($, on) => {
-    const { w, a } = await asker($, on)
-    w.failSessionId = true
-    const got = await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
-    expect(got.consumed).toBe('humantray: took an answer from the viewer')
-    await settle(w)
-    expect(w.received).toEqual([])
-    expect(responseWrites(a)).toEqual([])
-  })
-
-  test('a .catch passes on what is not an envelope', async ($, on) => {
+  test('what is not an envelope passes on, whatever the session id does', async ($, on) => {
     const { w } = await asker($, on)
     w.failSessionId = true
     const text = 'an ordinary message from another session'

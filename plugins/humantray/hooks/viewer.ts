@@ -58,7 +58,7 @@ import { type RowRead, SESSION_ID, countsAsAnswer, isTitleFor, pickArtifact, row
 import { isCloud } from './store-pass'
 
 /** The viewer's tray in `$.state`; register.tsx declares the same atom to draw it. */
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-2' })
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
 
 /** How often the viewer reads the store. */
 export const TICK_MS = 20_000
@@ -256,15 +256,24 @@ async function stillHolds($: EngineInterface): Promise<boolean> {
   return holds(await readLease($), await $.clock.now())
 }
 
-/** Writes the lease for this instance, then reads it back: held only if it names this instance. */
-async function takeLease($: EngineInterface, now: number): Promise<boolean> {
+/**
+ * Writes the lease for this instance, then reads it back: `held` when it names
+ * this instance, `other` when a successful read-back names another one, and
+ * `failed` when the write or the read-back failed (tried again next tick).
+ */
+async function takeLease($: EngineInterface, now: number): Promise<'held' | 'other' | 'failed'> {
   try {
     await $.store.set(LEASE, { instance: INSTANCE, session: await $.session.id(), renewed: now } satisfies ViewerLease)
   } catch {
-    return false
+    return 'failed'
   }
-  return holds(await readLease($), now)
+  const back = await readLease($)
+  if (back === undefined) return 'failed'
+  return holds(back, now) ? 'held' : 'other'
 }
+
+/** The last lease write failed: shown in the pane until one succeeds. */
+let leaseFailed = false
 
 /** Whether this module instance is the viewer now. */
 export const isViewing = (): boolean => holding
@@ -478,14 +487,25 @@ function afterSend(entry: OutboxEntry, sent: { delivered: boolean; reason?: stri
  * it is still the same answer. False when the lease no longer holds.
  */
 async function sendEntry($: EngineInterface, entry: OutboxEntry): Promise<boolean> {
+  // One send of an answer at a time: a tick does not send again what is still in flight.
+  const flight = `${outboxKey(entry.artifact, entry.id)} ${entry.answer_id}`
+  if (inFlight.has(flight)) return true
   if (!(await stillHolds($))) return false
-  const sent = await sendText($, entry.to, entry.text)
-  const now = await $.clock.now()
-  await changeEntry($, outboxKey(entry.artifact, entry.id), current =>
-    current?.answer_id === entry.answer_id ? afterSend(current, sent, now) : 'keep',
-  )
+  inFlight.add(flight)
+  try {
+    const sent = await sendText($, entry.to, entry.text)
+    const now = await $.clock.now()
+    await changeEntry($, outboxKey(entry.artifact, entry.id), current =>
+      current?.answer_id === entry.answer_id ? afterSend(current, sent, now) : 'keep',
+    )
+  } finally {
+    inFlight.delete(flight)
+  }
   return true
 }
+
+/** The answers being sent now by this instance, by outbox key and answer id. */
+const inFlight = new Set<string>()
 
 /**
  * One tick: renews the lease (or stops, when another instance holds it),
@@ -525,11 +545,16 @@ async function tickOnce($: EngineInterface, options: TickOptions): Promise<void>
   const live = () => holding && epoch === began
   const now = await $.clock.now()
   const lease = await readLease($)
-  if (!holds(lease, now)) {
-    // Another instance holds it fresh: stop. Otherwise this instance's own lapsed: take it again.
-    if (lease !== undefined && lease.instance !== INSTANCE && now - lease.renewed < LEASE_MS) return stop($)
-    if (!(await takeLease($, now))) return stop($)
-  } else if (!(await takeLease($, now))) return stop($)
+  // Another instance holds it fresh: stop. Otherwise renew it (or take back this instance's own, lapsed).
+  if (!holds(lease, now) && lease !== undefined && lease.instance !== INSTANCE && now - lease.renewed < LEASE_MS) return stop($)
+  const taken = await takeLease($, now)
+  if (taken === 'other') return stop($)
+  leaseFailed = taken === 'failed'
+  if (leaseFailed && !holds(await readLease($), now)) {
+    // The renewal failed and the lease no longer holds: send nothing this tick, say so, try again next tick.
+    if (live()) await rebuild($, lastOutbox, lastStates, now)
+    return
+  }
   const config = await readConfig($)
   if (config === undefined) return stop($)
   // A /clear keeps the instance: the viewer's session is the current one.
@@ -581,6 +606,7 @@ async function tickOnce($: EngineInterface, options: TickOptions): Promise<void>
       continue
     }
     states.set(key, verdict.state)
+    if (inFlight.has(`${key} ${entry.answer_id}`)) continue
     if (now >= nextSendAt(entry)) {
       if (!live() || !(await sendEntry($, entry))) break
     }
@@ -678,7 +704,7 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
     me,
     now,
   ).map(entry => ({ ...entry, isMine: true }))
-  const tray: ViewerTray = { repos, history, answerable, found, at: now }
+  const tray: ViewerTray = { repos, history, answerable, found, leaseFailed, at: now }
   if (!holding) return
   await update($, viewerTray, () => tray)
 }
@@ -724,7 +750,7 @@ export async function resumeViewer($: EngineInterface): Promise<boolean> {
   if (config.session !== me) return false
   const ours = lease === undefined || now - lease.renewed >= LEASE_MS || lease.session === me || lease.instance === INSTANCE
   if (!ours) return false
-  if (!(await takeLease($, now))) return false
+  if ((await takeLease($, now)) !== 'held') return false
   holding = true
   startTimer($)
   await tick($, { find: true, history: true })
@@ -762,7 +788,9 @@ export async function viewerCommand($: EngineInterface, args: string): Promise<s
   } catch {
     return 'humantray viewer: the setting could not be saved.'
   }
-  if (!(await takeLease($, now))) return 'humantray viewer: could not take over as the viewer.'
+  const taken = await takeLease($, now)
+  if (taken === 'other') return 'humantray viewer: another session took over as the viewer.'
+  if (taken === 'failed') return 'humantray viewer: the viewer lease could not be written; try again.'
   if (!holding) {
     holding = true
     // A viewer turned on afresh starts from nothing it read before.

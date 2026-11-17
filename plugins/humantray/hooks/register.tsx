@@ -87,7 +87,7 @@ const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 // The viewer's (#32): its tray (built in viewer.ts, which declares the same
 // atom), its Open page, and a card shown in full.
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-2' })
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
 const viewerPage = atom({ plugin: 'humantray', key: 'vpage' } as const, 0)
 const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-1' })
 
@@ -328,18 +328,35 @@ async function storePass($: EngineInterface, kind: 'start' | 'turn') {
 }
 
 /**
- * Takes the envelopes a hook stopped (#32): notes them in the debug log, with
- * this session's id, then takes each one detached. Returns the reason the hook
- * gives. The note goes first: if it fails, the hook's `.catch` still stops
- * the delivery, and the viewer sends the answer again.
+ * Takes the envelopes a hook stopped (#32), deciding nothing and waiting on
+ * nothing: it starts the take detached and returns the reason the hook gives
+ * at once. Everything that can wait or fail (the session id, the debug note,
+ * the `to`, `artifact` and lineage checks) runs after the hook has returned
+ * (decided on #32). A taken envelope that fails those checks is discarded
+ * with a log line: it was delivered to this session, and the viewer sends a
+ * real one again.
  */
-async function takeAll($: EngineInterface, envelopes: ResponseEnvelope[], via: 'prompt.submit' | 'session.receive'): Promise<string> {
+function takeAll($: EngineInterface, envelopes: ResponseEnvelope[], via: 'prompt.submit' | 'session.receive'): string {
   const shorts = envelopes.map(envelope => shortOf(envelope.id)).join(', ')
-  const me = await $.session.id()
-  $.ui.log(`humantray: taking an answer from the viewer for ${shorts} in ${me} (${via})`, { to: 'debug' })
   armDelivery($)
-  for (const envelope of envelopes) void takeEnvelope($, envelope, via)
+  void takeDetached($, envelopes, via, shorts)
   return `humantray: took an answer for ${shorts} from the viewer`
+}
+
+/** The detached part of `takeAll`: the debug note, then each take. Never rejects. */
+async function takeDetached($: EngineInterface, envelopes: ResponseEnvelope[], via: 'prompt.submit' | 'session.receive', shorts: string) {
+  try {
+    const me = await $.session.id()
+    $.ui.log(`humantray: taking an answer from the viewer for ${shorts} in ${me} (${via})`, { to: 'debug' })
+  } catch (error) {
+    try {
+      $.ui.log(`humantray: an answer from the viewer for ${shorts} (${via}) was discarded: ${String(error)}`, { to: 'debug' })
+    } catch {
+      // Logging is best effort.
+    }
+    return
+  }
+  for (const envelope of envelopes) void takeEnvelope($, envelope, via)
 }
 
 /** The most characters of an open card's body the viewer draws before "Show in full" (#32). */
@@ -501,22 +518,25 @@ export const register: Register = on => {
 
   // A response envelope from the local viewer (#32). Test 0 on #32: a send that
   // starts a stopped container reaches `prompt.submit` only (origin `peer`); one
-  // to a running container reaches `session.receive` only. Either way it is
-  // recognised by origin and whole text alone (pure, waiting on nothing),
-  // stopped before the model sees it, and taken detached. Every other prompt
-  // and delivery passes untouched, and a hook that fails still stops an envelope.
-  on('prompt.submit', async ($, e, next) => {
+  // to a running container reaches `session.receive` only. Either way the hook
+  // decides on the origin and the anchored shape of the whole text alone: pure,
+  // with no await (decided on #32), so no slow call can let an envelope through.
+  // It is stopped before the model sees it, and everything else (the session
+  // id, logging, the routing checks) runs detached after the hook returned.
+  // Every other prompt and delivery passes untouched, and a hook that fails
+  // still stops an envelope.
+  on('prompt.submit', ($, e, next) => {
     const envelopes = isEnvelopeOrigin(e.origin) ? readEnvelopes(e.text) : undefined
     if (envelopes === undefined) return next(e)
-    return { drop: await takeAll($, envelopes, 'prompt.submit') }
+    return { drop: takeAll($, envelopes, 'prompt.submit') }
   }).catch(($, e, next) =>
     isEnvelopeOrigin(e.origin) && readEnvelopes(e.text) !== undefined ? { drop: 'humantray: took an answer from the viewer' } : next(e),
   )
 
-  on('session.receive', async ($, e, next) => {
+  on('session.receive', ($, e, next) => {
     const envelopes = e.agentId === undefined && isEnvelopeOrigin(e.origin) ? readEnvelopes(e.text) : undefined
     if (envelopes === undefined) return next(e)
-    return { consumed: await takeAll($, envelopes, 'session.receive') }
+    return { consumed: takeAll($, envelopes, 'session.receive') }
   }).catch(($, e, next) =>
     e.agentId === undefined && isEnvelopeOrigin(e.origin) && readEnvelopes(e.text) !== undefined
       ? { consumed: 'humantray: took an answer from the viewer' }
@@ -733,6 +753,11 @@ export const register: Register = on => {
           }}
         />
       )
+      const leaseNote = viewing.leaseFailed ? (
+        <Text key="v:lease" color="error">
+          The viewer lease could not be written; it is tried again every tick.
+        </Text>
+      ) : null
       const status = viewing.repos.flatMap(repo => {
         const notes = []
         if (repo.stale) notes.push(repo.readAt === null ? 'not read yet' : `last read ${when(repo.readAt)}`)
@@ -987,6 +1012,7 @@ export const register: Register = on => {
         <Box flexDirection="column" gap={1}>
           {vtoggle}
           {head}
+          {leaseNote}
           {status}
           {paging}
           {nodes.length === 0 ? <Text key="v:none" dimColor>No open items.</Text> : nodes}

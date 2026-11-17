@@ -367,6 +367,8 @@ export type ViewerTray = {
   answerable: number
   /** How finding the artifacts went. */
   found: 'ok' | 'unreadable' | 'none'
+  /** The last write of the viewer's lease failed; it is tried again every tick. */
+  leaseFailed: boolean
   /** When this was built. */
   at: number
 }
