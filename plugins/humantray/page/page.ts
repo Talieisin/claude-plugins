@@ -783,7 +783,9 @@ details.card[open] summary { margin-bottom: 10px; }
             // Single-select: picking an option clears Other, as the pane does.
             d.picked = [option.label];
             d.fields.set("other", "");
-            var other = card.querySelector('[data-field="other"]');
+            // The card this input is in now: a redraw may have kept an older card around it (patchAround).
+            var shown = input.closest(".card");
+            var other = shown ? shown.querySelector('[data-field="other"]') : null;
             if (other) other.value = "";
           }
         });
@@ -879,6 +881,50 @@ details.card[open] summary { margin-bottom: 10px; }
     return out;
   }
 
+  /*
+   * A redraw while a field in the list has focus (#42). Removing the focused
+   * field closes a phone's keyboard, and a focus() outside a tap does not
+   * reopen it. So the focused element and each element around it, up to the
+   * list, stay the same nodes; everything beside them is replaced by the
+   * fresh drawing, in its order. Returns false, changing nothing, when the
+   * fresh drawing has no element of that id at the same place (the card was
+   * answered, filtered out or changed type): the caller then redraws in full.
+   */
+  function patchAround(list, fresh, active) {
+    var twin = null;
+    var same = fresh.getElementsByTagName(active.nodeName);
+    for (var s = 0; s < same.length; s++) if (same[s].id === active.id) { twin = same[s]; break; }
+    if (!twin) return false;
+    var live = [];
+    var made = [];
+    for (var a = active; a && a !== list; a = a.parentNode) live.push(a);
+    for (var b = twin; b && b !== fresh; b = b.parentNode) made.push(b);
+    if (live.length !== made.length) return false;
+    for (var k = 0; k < live.length; k++) {
+      if (live[k].nodeName !== made[k].nodeName || live[k].id !== made[k].id) return false;
+    }
+    var parent = list;
+    var from = fresh;
+    for (var d = live.length - 1; d >= 0; d--) {
+      var kept = live[d];
+      var drawn = made[d];
+      var old = Array.prototype.slice.call(parent.childNodes);
+      for (var o = 0; o < old.length; o++) if (old[o] !== kept) parent.removeChild(old[o]);
+      while (from.firstChild !== drawn) parent.insertBefore(from.firstChild, kept);
+      from.removeChild(drawn);
+      while (from.firstChild) parent.appendChild(from.firstChild);
+      if (d > 0) sameAttributes(kept, drawn);
+      parent = kept;
+      from = drawn;
+    }
+    return true;
+  }
+  function sameAttributes(node, like) {
+    var names = Array.prototype.map.call(node.attributes, function (x) { return x.name; });
+    names.forEach(function (name) { if (!like.hasAttribute(name)) node.removeAttribute(name); });
+    Array.prototype.forEach.call(like.attributes, function (x) { if (node.getAttribute(x.name) !== x.value) node.setAttribute(x.name, x.value); });
+  }
+
   function render() {
     var list = document.getElementById("list");
     var notes = document.getElementById("notes");
@@ -917,13 +963,16 @@ details.card[open] summary { margin-bottom: 10px; }
       select.appendChild(option);
     });
 
-    // The field being typed in keeps its focus, caret and scroll across the redraw.
     var active = document.activeElement;
     var focus = active && active.id && list.contains(active)
       ? { id: active.id, start: active.selectionStart, end: active.selectionEnd, scroll: active.scrollTop }
       : null;
+    var fresh = el("div");
+    drawList(fresh, open, waiting, keep);
+    if (focus && patchAround(list, fresh, active)) return;
     list.textContent = "";
-    drawList(list, open, waiting, keep);
+    while (fresh.firstChild) list.appendChild(fresh.firstChild);
+    // The backstop, when the focused field's card has gone or changed shape: focus, caret and scroll by id, and the drafts.
     if (focus) {
       var again = document.getElementById(focus.id);
       if (again) {

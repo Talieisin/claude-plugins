@@ -335,6 +335,70 @@ try {
     })
     assert.ok(redraw < 750, `${name}: three redraws took ${Math.round(redraw)} ms`)
 
+    // #42: a snapshot while a field has focus keeps that field the same node (a phone keeps its keyboard),
+    // while the rest of the list, its own card included, is drawn afresh.
+    await page.focus('#f-01TESTPAGE000000000000MISM-text')
+    await page.keyboard.type('first ')
+    await page.evaluate(() => {
+      window.__focused = document.activeElement
+      window.__otherCard = document.getElementById('card-01TESTPAGE000000000000ACKK')
+      // Another row arrives, and the focused card's own item is raised again (so it also moves to the top).
+      window.__store.set('items/01TESTPAGE000000000000FCS1', {
+        ...window.__store.get('items/01TESTPAGE000000000000ACKK'), id: '01TESTPAGE000000000000FCS1', short: 'HT-0FCS1', question: 'Arrived while typing',
+      })
+      window.__store.set('items/01TESTPAGE000000000000MISM', { ...window.__store.get('items/01TESTPAGE000000000000MISM'), bumps: 1, updated: Date.now() })
+      window.__notify()
+    })
+    await page.keyboard.type('second')
+    const typing = await page.evaluate(() => {
+      const card = document.getElementById('card-01TESTPAGE000000000000MISM')
+      return {
+        sameNode: document.activeElement === window.__focused,
+        attached: document.contains(window.__focused),
+        value: window.__focused.value,
+        cardFirst: card.closest('.asker').querySelector('section.card') === card,
+        raised: card.querySelector('.top').textContent.includes('raised 2×'),
+        arrived: document.body.innerText.includes('Arrived while typing'),
+        otherRedrawn: document.getElementById('card-01TESTPAGE000000000000ACKK') !== window.__otherCard,
+        cards: document.querySelectorAll('#card-01TESTPAGE000000000000MISM').length,
+      }
+    })
+    assert.deepEqual(typing, {
+      sameNode: true, attached: true, value: 'first second', cardFirst: true, raised: true, arrived: true, otherRedrawn: true, cards: 1,
+    }, `${name}: the focused field is the same node across a snapshot`)
+    // The same for Other, deeper in a choice card; picking an option there then clears the Other on the page.
+    await page.focus('#f-01TESTPAGE000000000000SING-other')
+    await page.keyboard.type('other text')
+    await page.evaluate(() => { window.__focused = document.activeElement; window.__notify() })
+    assert.equal(await page.evaluate(() => document.activeElement === window.__focused && document.contains(window.__focused)), true,
+      `${name}: Other is the same node across a snapshot`)
+    await page.check('#o-01TESTPAGE000000000000SING-0')
+    assert.equal(await page.inputValue('#f-01TESTPAGE000000000000SING-other'), '', `${name}: picking an option clears Other in a kept card`)
+    // The backstop: when the focused field's card goes (answered in another tab), the list is drawn in full.
+    await page.evaluate(() => {
+      window.__store.set('items/01TESTPAGE000000000000FCS2', {
+        ...window.__store.get('items/01TESTPAGE000000000000MISM'), id: '01TESTPAGE000000000000FCS2', short: 'HT-0FCS2', question: 'Answered elsewhere', bumps: 0,
+      })
+      window.__notify()
+    })
+    await page.focus('#f-01TESTPAGE000000000000FCS2-text')
+    await page.keyboard.type('half typed')
+    await page.evaluate(() => {
+      const now = Date.now()
+      window.__store.set('responses/01TESTPAGE000000000000FCS2', {
+        schema: 1, id: '01TESTPAGE000000000000FCS2', answer_id: 'othertabanswer000001', response: { text: 'from the other tab' },
+        status: 'answered', answered_at: now, seen: { bumps: 0, updated: now }, by: 'page',
+      })
+      window.__notify()
+    })
+    const gone = await page.evaluate(() => ({
+      card: document.getElementById('card-01TESTPAGE000000000000FCS2') !== null,
+      waiting: [...document.querySelectorAll('section.card')].some(c => c.textContent.includes('Answered elsewhere') && c.textContent.includes('from the other tab')),
+      focusInList: document.getElementById('list').contains(document.activeElement),
+    }))
+    assert.deepEqual(gone, { card: false, waiting: true, focusInList: false }, `${name}: a card answered elsewhere leaves, focus and all`)
+    assert.equal(await page.inputValue('#f-01TESTPAGE000000000000MISM-text'), 'first second', `${name}: other drafts are kept`)
+
     if (name === 'desktop, light') {
       // Drafts survive a snapshot: the text, the picked option, the focus and the caret.
       await page.fill('#f-01TESTPAGE000000000000RICH-text', 'a long *Markdown* answer\n\n- one\n- two')
