@@ -335,6 +335,151 @@ try {
     })
     assert.ok(redraw < 750, `${name}: three redraws took ${Math.round(redraw)} ms`)
 
+    // #42: a snapshot while a field has focus keeps that field the same node (a phone keeps its keyboard),
+    // while the rest of the list, its own card included, is drawn afresh.
+    await page.focus('#f-01TESTPAGE000000000000MISM-text')
+    await page.keyboard.type('first ')
+    await page.evaluate(() => {
+      window.__focused = document.activeElement
+      window.__otherCard = document.getElementById('card-01TESTPAGE000000000000ACKK')
+      // Another row arrives, and the focused card's own item is raised again (so it also moves to the top).
+      window.__store.set('items/01TESTPAGE000000000000FCS1', {
+        ...window.__store.get('items/01TESTPAGE000000000000ACKK'), id: '01TESTPAGE000000000000FCS1', short: 'HT-0FCS1', question: 'Arrived while typing',
+      })
+      window.__store.set('items/01TESTPAGE000000000000MISM', { ...window.__store.get('items/01TESTPAGE000000000000MISM'), bumps: 1, updated: Date.now() })
+      window.__notify()
+    })
+    await page.keyboard.type('second')
+    const typing = await page.evaluate(() => {
+      const card = document.getElementById('card-01TESTPAGE000000000000MISM')
+      return {
+        sameNode: document.activeElement === window.__focused,
+        attached: document.contains(window.__focused),
+        value: window.__focused.value,
+        cardFirst: card.closest('.asker').querySelector('section.card') === card,
+        raised: card.querySelector('.top').textContent.includes('raised 2×'),
+        arrived: document.body.innerText.includes('Arrived while typing'),
+        otherRedrawn: document.getElementById('card-01TESTPAGE000000000000ACKK') !== window.__otherCard,
+        cards: document.querySelectorAll('#card-01TESTPAGE000000000000MISM').length,
+      }
+    })
+    assert.deepEqual(typing, {
+      sameNode: true, attached: true, value: 'first second', cardFirst: true, raised: true, arrived: true, otherRedrawn: true, cards: 1,
+    }, `${name}: the focused field is the same node across a snapshot`)
+    // The same for Other, deeper in a choice card; picking an option there then clears the Other on the page.
+    await page.focus('#f-01TESTPAGE000000000000SING-other')
+    await page.keyboard.type('other text')
+    await page.evaluate(() => { window.__focused = document.activeElement; window.__notify() })
+    assert.equal(await page.evaluate(() => document.activeElement === window.__focused && document.contains(window.__focused)), true,
+      `${name}: Other is the same node across a snapshot`)
+    await page.check('#o-01TESTPAGE000000000000SING-0')
+    assert.equal(await page.inputValue('#f-01TESTPAGE000000000000SING-other'), '', `${name}: picking an option clears Other in a kept card`)
+    // The backstop: when the focused field's card goes (answered in another tab), the list is drawn in full.
+    await page.evaluate(() => {
+      window.__store.set('items/01TESTPAGE000000000000FCS2', {
+        ...window.__store.get('items/01TESTPAGE000000000000MISM'), id: '01TESTPAGE000000000000FCS2', short: 'HT-0FCS2', question: 'Answered elsewhere', bumps: 0,
+      })
+      window.__notify()
+    })
+    await page.focus('#f-01TESTPAGE000000000000FCS2-text')
+    await page.keyboard.type('half typed')
+    await page.evaluate(() => {
+      const now = Date.now()
+      window.__store.set('responses/01TESTPAGE000000000000FCS2', {
+        schema: 1, id: '01TESTPAGE000000000000FCS2', answer_id: 'othertabanswer000001', response: { text: 'from the other tab' },
+        status: 'answered', answered_at: now, seen: { bumps: 0, updated: now }, by: 'page',
+      })
+      window.__notify()
+    })
+    const gone = await page.evaluate(() => ({
+      card: document.getElementById('card-01TESTPAGE000000000000FCS2') !== null,
+      waiting: [...document.querySelectorAll('section.card')].some(c => c.textContent.includes('Answered elsewhere') && c.textContent.includes('from the other tab')),
+      focusInList: document.getElementById('list').contains(document.activeElement),
+    }))
+    assert.deepEqual(gone, { card: false, waiting: true, focusInList: false }, `${name}: a card answered elsewhere leaves, focus and all`)
+    assert.equal(await page.inputValue('#f-01TESTPAGE000000000000MISM-text'), 'first second', `${name}: other drafts are kept`)
+
+    // #42, the reader's findings on PR #43: a focused option is drawn afresh when its item is raised, never kept with
+    // its old option. Each case: a choice item, an option clicked (so it has focus), the item raised with new options.
+    const opts = labels => labels.map(label => ({ label, description: label.toLowerCase() }))
+    const addChoice = (id, labels, multi) => page.evaluate(([id, options, multi]) => {
+      const row = { ...window.__store.get('items/01TESTPAGE000000000000SING'), id, short: `HT-${id.slice(-5)}`, question: `Choice ${id.slice(-4)}`, options }
+      if (multi) row.multiSelect = true
+      window.__store.set(`items/${id}`, row)
+      window.__notify()
+    }, [id, opts(labels), multi])
+    const raise = (id, patch) => page.evaluate(([id, patch]) => {
+      const row = window.__store.get(`items/${id}`)
+      window.__store.set(`items/${id}`, { ...row, ...patch, bumps: row.bumps + 1, updated: Date.now() })
+      window.__notify()
+    }, [id, patch])
+    const focusedOn = sel => page.evaluate(sel => document.activeElement === document.querySelector(sel), sel)
+    const stored = id => page.evaluate(id => window.__writes.filter(w => w.path === `responses/${id}`).map(w => w.data.response).pop(), id)
+
+    // Reordered single select: tap A, the item comes back as B, A; tapping what now reads B stores B.
+    const RO = '01TESTPAGE000000000000SNG2'
+    await addChoice(RO, ['A', 'B'], false)
+    await page.click(`#o-${RO}-0`)
+    assert.equal(await focusedOn(`#o-${RO}-0`), true, `${name}: the tapped option has focus`)
+    await raise(RO, { options: opts(['B', 'A']) })
+    await page.click(`#o-${RO}-0`)
+    await page.click(`#card-${RO} button.btn.primary`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(RO), { selected: ['B'] }, `${name}: a reordered single select stores what was tapped`)
+
+    // New labels: tap A, the item comes back as C, D; tapping what now reads C stores C.
+    const NL = '01TESTPAGE000000000000SNG3'
+    await addChoice(NL, ['A', 'B'], false)
+    await page.click(`#o-${NL}-0`)
+    await raise(NL, { options: opts(['C', 'D']) })
+    await page.click(`#o-${NL}-0`)
+    await page.click(`#card-${NL} button.btn.primary`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(NL), { selected: ['C'] }, `${name}: new labels store the label tapped`)
+
+    // Swapped multi select: tick X, the item comes back as Y, X; only X shows ticked, and unticking Y leaves X picked.
+    const SW = '01TESTPAGE000000000000MLT2'
+    await addChoice(SW, ['X', 'Y'], true)
+    await page.click(`#o-${SW}-0`)
+    await raise(SW, { options: opts(['Y', 'X']) })
+    const ticks = await page.evaluate(id => [0, 1].map(n => document.getElementById(`o-${id}-${n}`).checked), SW)
+    assert.deepEqual(ticks, [false, true], `${name}: a swapped multi select shows only what was ticked`)
+    await page.click(`#o-${SW}-0`)
+    await page.click(`#o-${SW}-0`)
+    await page.click(`#card-${SW} button.btn.primary`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(SW), { selected: ['X'] }, `${name}: ticking and unticking Y leaves X picked`)
+
+    // Focus an option, raise the item with new labels: the focused option, restored by id, carries the new label.
+    const NF = '01TESTPAGE000000000000MLT3'
+    await addChoice(NF, ['X', 'Y'], true)
+    await page.click(`#o-${NF}-1`)
+    await raise(NF, { options: opts(['P', 'Q']) })
+    const restored = await page.evaluate(id => ({
+      focus: document.activeElement && document.activeElement.id,
+      label: document.activeElement && document.activeElement.getAttribute('data-option'),
+      shown: document.activeElement && document.activeElement.closest('label').textContent,
+    }), NF)
+    assert.deepEqual(restored, { focus: `o-${NF}-1`, label: 'Q', shown: 'Qq' }, `${name}: a focused option is redrawn with its new label`)
+
+    // A kept Other reads the item as it is now: raised from multi to single select, typing in Other unpicks the option.
+    const MS = '01TESTPAGE000000000000MLT4'
+    await addChoice(MS, ['X', 'Y'], true)
+    await page.click(`#o-${MS}-0`)
+    await page.focus(`#f-${MS}-other`)
+    await page.evaluate(() => { window.__focused = document.activeElement })
+    await raise(MS, { multiSelect: false })
+    await page.keyboard.type('neither')
+    const single = await page.evaluate(id => ({
+      kept: document.activeElement === window.__focused,
+      kind: document.getElementById(`o-${id}-0`).type,
+      ticked: document.getElementById(`o-${id}-0`).checked,
+    }), MS)
+    assert.deepEqual(single, { kept: true, kind: 'radio', ticked: false }, `${name}: a kept Other follows the raised item's select mode`)
+    await page.click(`#card-${MS} button.btn.primary`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(MS), { selected: [], other: 'neither' }, `${name}: Other alone is stored`)
+
     if (name === 'desktop, light') {
       // Drafts survive a snapshot: the text, the picked option, the focus and the caret.
       await page.fill('#f-01TESTPAGE000000000000RICH-text', 'a long *Markdown* answer\n\n- one\n- two')
