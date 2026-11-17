@@ -24,10 +24,10 @@ export const COPY_PAGE = 9
 /** How a copy went: to the surface's clipboard, to this computer's by its tool, or not at all, and why. */
 export type CopyOutcome = { ok: true; via: 'surface' | 'tool' } | { ok: false; why: string }
 
-/** A copy button's label: its number among the card's blocks, the language, and the first line, cut. */
+/** A copy button's label: its number among the card's blocks (as the drawn "Code n" above each block), the language, and the first line, cut to fit a docked pane. */
 export const copyLabel = (block: CodeBlock, n: number): string => {
   const first = block.text.split('\n').find(line => line.trim() !== '') ?? ''
-  const shown = clip(plain(first.trim()).replace(/\t/g, ' '), 48)
+  const shown = clip(plain(first.trim()).replace(/\t/g, ' '), 36)
   return [`Copy ${String(n)}`, ...(block.lang === '' ? [] : [plain(block.lang)]), ...(shown === '' ? [] : [shown])].join(' · ')
 }
 

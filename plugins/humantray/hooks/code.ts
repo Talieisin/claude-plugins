@@ -99,7 +99,10 @@ export const cutColumns = (raw: string, from: number, extra = 0): string => {
 /** Where a line being parsed came from: the stored line's index, and the columns its containers took. */
 type Origin = { at: number; cut: number }
 
-type Walk = { raw: string[]; out: CodeBlock[] }
+/** A code block and the stored lines it spans, fence lines included: `start` to `end`, inclusive. */
+export type Placed = { block: CodeBlock; start: number; end: number }
+
+type Walk = { raw: string[]; out: Placed[] }
 
 const startsBlock = (line: string): boolean => FENCE.test(line) || HR.test(line) || ATX.test(line) || QUOTE.test(line) || ITEM.test(line)
 
@@ -120,13 +123,10 @@ const cells = (line: string): number => {
 
 const leading = (line: string): number => /^ */.exec(line)?.[0].length ?? 0
 
-const push = (walk: Walk, lines: string[], from: Origin[], extra: number, lang: string) => {
-  const text = lines.map((_, k) => {
-    const origin = from[k] as Origin
-    return cutColumns(walk.raw[origin.at] ?? '', origin.cut, extra)
-  })
+const push = (walk: Walk, from: Origin[], extra: number, lang: string, start: number, end: number) => {
+  const text = from.map(origin => cutColumns(walk.raw[origin.at] ?? '', origin.cut, extra))
   const joined = text.join('\n')
-  walk.out.push({ text: joined, lang, unsafe: UNSAFE.test(joined) })
+  walk.out.push({ block: { text: joined, lang, unsafe: UNSAFE.test(joined) }, start, end })
 }
 
 function list(walk: Walk, lines: string[], from: Origin[], i: number, depth: number): number {
@@ -209,16 +209,17 @@ function blocks(walk: Walk, lines: string[], from: Origin[], depth: number): voi
       const fence = m[1] ?? ''
       const lead = leading(line)
       const closing = new RegExp(`^ {0,3}${fence[0] === '~' ? '~' : '`'}{${fence.length},}[ \\t]*$`)
-      const content: string[] = []
+      const start = (from[i] as Origin).at
       const contentFrom: Origin[] = []
       i++
       while (i < lines.length && !closing.test(lines[i] ?? '')) {
-        content.push(lines[i] ?? '')
         contentFrom.push(from[i] as Origin)
         i++
       }
+      // The closing fence's line, or the last line of an unclosed one.
+      const end = i < lines.length ? (from[i] as Origin).at : (contentFrom[contentFrom.length - 1]?.at ?? start)
       i++
-      push(walk, content, contentFrom, lead, (m[2] ?? '').trim().split(/\s+/)[0] ?? '')
+      push(walk, contentFrom, lead, (m[2] ?? '').trim().split(/\s+/)[0] ?? '', start, end)
       continue
     }
     if (para > 0 && /^ {0,3}(=+|-+)[ \t]*$/.test(line)) {
@@ -275,7 +276,8 @@ function blocks(walk: Walk, lines: string[], from: Origin[], depth: number): voi
         content.pop()
         contentFrom.pop()
       }
-      push(walk, content, contentFrom, 4, '')
+      const first = contentFrom[0] as Origin
+      push(walk, contentFrom, 4, '', first.at, (contentFrom[contentFrom.length - 1] as Origin).at)
       continue
     }
     para++
@@ -283,8 +285,8 @@ function blocks(walk: Walk, lines: string[], from: Origin[], depth: number): voi
   }
 }
 
-/** The code blocks of stored Markdown, in the order the page draws them. */
-export const codeBlocksOf = (md: string): CodeBlock[] => {
+/** The code blocks of stored Markdown with the stored lines each spans, in order; the spans never overlap. */
+export const placedBlocksOf = (md: string): Placed[] => {
   const raw = splitLines(md)
   const walk: Walk = { raw, out: [] }
   blocks(
@@ -295,3 +297,6 @@ export const codeBlocksOf = (md: string): CodeBlock[] => {
   )
   return walk.out
 }
+
+/** The code blocks of stored Markdown, in the order the page draws them. */
+export const codeBlocksOf = (md: string): CodeBlock[] => placedBlocksOf(md).map(placed => placed.block)

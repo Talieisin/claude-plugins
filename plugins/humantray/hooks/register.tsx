@@ -50,6 +50,7 @@ import {
   clipBlocks,
   deliveryText,
   forDisplay,
+  forDrawing,
   fullOf,
   historyOf,
   isLineDue,
@@ -742,19 +743,30 @@ export const register: Register = on => {
         const count = { ...EMPTY_DRAFT, ...(held.value ?? {}) }.entered
         await $.ui.focus({ requestId: PANE, key: fieldKeyOf(key, name, count) }).catch(() => undefined)
       }
-      const field = (name: FieldName, label: string, onEnter?: () => Promise<void>) => (
-        <Input
-          key={fieldKey(name)}
-          label={label}
-          rows={ROWS}
-          value={draft[name]}
-          onInput={value => setDraft($, draftId, () => ({ [name]: value, error: '' }))}
-          onSubmit={async value => {
-            await entered(name, () => ({ [name]: value }))
-            if (onEnter !== undefined) await onEnter()
-          }}
-        />
+      // The label above the field, and the field the card's full width (#51,
+      // the owner's layout request): an Input's own label is drawn beside the
+      // field, which the desktop app squeezes into a narrow box.
+      const labelled = (name: FieldName, label: string, input: ReturnType<typeof h>) => (
+        <Box key={`${key}:${name}:field`} flexDirection="column" alignItems="stretch" width="100%">
+          <Text dimColor>{label}</Text>
+          {input}
+        </Box>
       )
+      const field = (name: FieldName, label: string, onEnter?: () => Promise<void>) =>
+        labelled(
+          name,
+          label,
+          <Input
+            key={fieldKey(name)}
+            rows={ROWS}
+            value={draft[name]}
+            onInput={value => setDraft($, draftId, () => ({ [name]: value, error: '' }))}
+            onSubmit={async value => {
+              await entered(name, () => ({ [name]: value }))
+              if (onEnter !== undefined) await onEnter()
+            }}
+          />,
+        )
 
       const controls = []
       if (item.type === 'ack') {
@@ -808,14 +820,17 @@ export const register: Register = on => {
           selected: !isMulti && value.trim() !== '' ? [] : current.selected,
         })
         controls.push(
-          <Input
-            key={fieldKey('other')}
-            label="Other (Markdown)"
-            rows={ROWS}
-            value={draft.other}
-            onInput={value => setDraft($, draftId, current => ({ ...other(value)(current), error: '' }))}
-            onSubmit={value => entered('other', other(value))}
-          />,
+          labelled(
+            'other',
+            'Other (Markdown)',
+            <Input
+              key={fieldKey('other')}
+              rows={ROWS}
+              value={draft.other}
+              onInput={value => setDraft($, draftId, current => ({ ...other(value)(current), error: '' }))}
+              onSubmit={value => entered('other', other(value))}
+            />,
+          ),
         )
       }
       if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
@@ -1012,7 +1027,7 @@ export const register: Register = on => {
         const item = rowToItem(row, '', card.url, card.version)
         const held = await $.state.get({ ...drafts, id: viewerDraftId(row.id) })
         const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
-        const body = clipBlocks(forDisplay(row.body_md), VIEWER_BODY)
+        const body = clipBlocks(forDrawing(row.body_md), VIEWER_BODY)
         const lines = []
         if (card.state === 'answerable') {
           if (card.reason !== undefined) {
@@ -1094,7 +1109,7 @@ export const register: Register = on => {
                 [{plain(item.header)}] {plain(item.question)}
               </Text>
               <Text dimColor>{item.short}</Text>
-              {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDisplay(item.body_md)} />}
+              {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDrawing(item.body_md)} />}
               {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
               {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
               {draft.error !== '' && <Text color="error">{draft.error}</Text>}
@@ -1279,7 +1294,7 @@ export const register: Register = on => {
             {from}
             {bumped}
           </Text>
-          {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDisplay(item.body_md)} />}
+          {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDrawing(item.body_md)} />}
           {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
           {controls}
           {draft.error !== '' && <Text color="error">{draft.error}</Text>}

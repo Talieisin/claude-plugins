@@ -76,9 +76,11 @@ describe('the copy buttons', () => {
         expect(copies.at(-1)).toEqual({ text, surface })
         expect(copies.at(-1)?.text.includes('\u200b')).toBe(false)
       }
-      // The body is still drawn with its display rewrites: only the copy is the stored text.
+      // The drawn body holds each block as stored too, so a surface's own copy is exact (#51).
       const body = (await ui.find({ key: `${id}:body` }))?.props.text as string
-      if (each.blocks.some(text => text.includes('<<EOF'))) expect(body).toContain('<<\u200bEOF')
+      for (const [k, text] of each.blocks.entries()) {
+        if (text !== '' && !(each.unsafe ?? []).includes(k)) expect(body).toContain(text)
+      }
       await ui.unmount()
     })
   }
@@ -109,7 +111,7 @@ describe('the copy buttons', () => {
 
   test('a label: number, language, first line cut; never the display rewrite', () => {
     expect(copyLabel({ text: '\n  cat <<EOF > /tmp/x\nEOF', lang: 'bash', unsafe: false }, 3)).toBe('Copy 3 · bash · cat <<EOF > /tmp/x')
-    expect(copyLabel({ text: 'x'.repeat(60), lang: '', unsafe: false }, 1)).toBe(`Copy 1 · ${'x'.repeat(47)}…`)
+    expect(copyLabel({ text: 'x'.repeat(60), lang: '', unsafe: false }, 1)).toBe(`Copy 1 · ${'x'.repeat(35)}…`)
   })
 })
 

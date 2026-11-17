@@ -17,7 +17,7 @@ import type {
   StoreFile,
 } from '../types'
 import { owesPush } from './row-shape'
-import { codeBlocksOf } from './code'
+import { codeBlocksOf, placedBlocksOf, splitLines } from './code'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -716,6 +716,56 @@ export const forDisplay = (md: string): string =>
     .replace(/&(?=#|colon;)/gi, `&${BREAK}`)
 
 /**
+ * Markdown as the pane and the viewer draw it (#51, decided for the owner on
+ * #51): `forDisplay` everywhere but inside code, where the code is drawn as
+ * stored, so that a surface's own copy of a code block (the desktop app has
+ * one) carries no U+200B. Code found by hand is never trusted to stay code
+ * (#40): each block `codeBlocksOf` finds is drawn again as a fresh fence of
+ * its own, at the top level, with a blank line before and after, and of
+ * backticks one longer than the longest run in the code, so nothing inside
+ * can end it; its language is kept only when plain. In the text between,
+ * every run of three or more backticks or tildes is broken after its first
+ * character, so no fence can open there. A wrong guess about where code is
+ * then changes only how something looks: no text is left unrewritten outside
+ * a fence drawn here. A block in a list item or a quote is drawn at the top
+ * level, and the list goes on after it. Each block is labelled `Code n`, as
+ * its copy button is numbered. Control characters are still replaced
+ * (`plain`), in code too, since a surface refuses them.
+ */
+export const forDrawing = (md: string): string => {
+  const placed = placedBlocksOf(md)
+  if (placed.length === 0) return breakFences(forDisplay(md))
+  const raw = splitLines(md)
+  const pieces: string[] = []
+  const text = (from: number, to: number) => {
+    const lines = raw.slice(from, to)
+    while (lines.length > 0 && (lines[0] ?? '').trim() === '') lines.shift()
+    while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') lines.pop()
+    if (lines.length > 0) pieces.push(breakFences(forDisplay(lines.join('\n'))))
+  }
+  let at = 0
+  placed.forEach((each, k) => {
+    text(at, each.start)
+    pieces.push(`*Code ${String(k + 1)}*`)
+    pieces.push(fenced(each.block.text, each.block.lang))
+    at = each.end + 1
+  })
+  text(at, raw.length)
+  return pieces.join('\n\n')
+}
+
+/** Every run of three or more backticks or tildes, broken after its first character: no fence opens. */
+const breakFences = (md: string): string => md.replace(/(`{3,}|~{3,})/g, run => `${run[0] as string}${BREAK}${run.slice(1)}`)
+
+/** Code as a fence of its own: backticks one longer than its longest run, a plain language or none. */
+const fenced = (code: string, lang: string): string => {
+  const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map(run => run.length))
+  const ticks = '`'.repeat(Math.max(3, longest + 1))
+  const info = /^[A-Za-z0-9_+.#-]{1,40}$/.test(lang) ? lang : ''
+  return `${ticks}${info}\n${code === '' ? '' : `${plain(code)}\n`}${ticks}`
+}
+
+/**
  * The answered items of every `repo` value in the store, from every session,
  * as History draws them: the current repository's first, then each other
  * value by name; within each, newest first. An item is this session's when
@@ -738,7 +788,7 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       const question = clip(oneLine(item.question), HISTORY_CLIP.question)
       // Cut what is drawn (forDisplay can lengthen it), so a page's size is bounded whatever was typed.
       const parts = partsOf(item).map(part => {
-        const cut = clipBlocks(forDisplay(part.text), HISTORY_CLIP.part)
+        const cut = clipBlocks(forDrawing(part.text), HISTORY_CLIP.part)
         return { label: part.label, text: cut.text, length: part.text.length, clipped: cut.clipped }
       })
       return {
@@ -776,7 +826,7 @@ export const FULL_BUDGET = 90_000
 export const fullOf = (item: Item): HistoryFull => {
   let left = FULL_BUDGET
   const cut = (text: string) => {
-    const drawn = clipBlocks(forDisplay(text), left)
+    const drawn = clipBlocks(forDrawing(text), left)
     left = Math.max(0, left - drawn.text.length)
     return { text: drawn.text, length: text.length, clipped: drawn.clipped }
   }
