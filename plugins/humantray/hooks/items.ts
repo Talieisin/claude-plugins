@@ -261,8 +261,11 @@ export const openItems = (file: StoreFile): Item[] =>
 export type AddOutcome = { item: Item; bumped: boolean }
 
 /**
- * Adds an item to the file, or bumps the open one with the same
- * (repo, session_id, key). A bump of another type is refused.
+ * Adds an item to the file, or bumps the open one with the same repo and key
+ * whose owner chain ends at this session: its own, or one it took over after
+ * a /clear or a /branch (never a /resume, which records no succession). The
+ * bumped item keeps its original session_id; delivery follows the chain to
+ * this session. A bump of another type is refused.
  */
 export const addOrBump = (
   file: StoreFile,
@@ -273,7 +276,7 @@ export const addOrBump = (
     item =>
       item.status === 'open' &&
       item.repo === context.repo &&
-      item.session_id === context.session_id &&
+      resolveOwner(file.sessions, item.session_id) === context.session_id &&
       item.key === input.key,
   )
   if (existing !== undefined) {

@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { ADD, DIR, FILE, HOUR, LIST, LOCK, START, START_EVENT, answerOf, stored, world } from './world'
+import { ADD, DIR, FILE, HOUR, LIST, LOCK, PANE, START, START_EVENT, answerOf, stored, world } from './world'
 
 const CHOICE = {
   tool: ADD,
@@ -152,6 +152,133 @@ describe('bumping', () => {
     const ran = await $.tool.call({ tool: ADD, type: 'question', header: 'X', question: 'Q', key: 'k' })
     expect(ran.deny).toBeDefined()
     expect(String(ran.deny)).toContain('open choice item')
+    expect(w.files.get(FILE)).toBe(before)
+  })
+})
+
+describe('bumping across /clear, /branch and /resume', () => {
+  const APPROVE = { tool: ADD, type: 'approve', header: 'Plan', question: 'Approve the plan?', key: 'plan' } as const
+
+  test('after a /clear the same key bumps the inherited item: same id, its session_id kept, answer delivered here', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const first = await $.tool.call({ ...APPROVE, body_md: 'one' })
+    const id = answerOf<{ id: string }>(first).id
+    w.sessionId = 'session-new'
+    await $.classic.SessionStart({ source: 'clear' })
+    await w.drain()
+    await w.clock.advance(1000)
+    const again = await $.tool.call({ ...APPROVE, body_md: 'two' })
+    expect(answerOf(again)).toEqual({ id, short: `HT-${id.slice(-5)}`, bumped: true })
+    const items = w.store().items
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ id, session_id: 'session-a', bumps: 1, body_md: 'two' })
+    expect(items[0]?.updated).toBeGreaterThan(items[0]?.created ?? Infinity)
+    const listed = await $.tool.call({ tool: LIST })
+    expect(answerOf<{ items: Array<{ id: string }> }>(listed).items.map(i => i.id)).toEqual([id])
+    // The answer still reaches the live session, by the chain from session-a.
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${id}:approve` })
+    await ui.unmount()
+    await w.drain()
+    expect(w.submits).toEqual([`humantray HT-${id.slice(-5)} (Plan): Approve`])
+    expect(w.store().items[0]?.delivered).toBe(true)
+  })
+
+  test('after a /branch (fork) the same key bumps, and so it does after two hand-overs', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(APPROVE)).id
+    w.sessionId = 'session-branch'
+    await $.classic.SessionStart({ source: 'fork' })
+    await w.drain()
+    const branched = await $.tool.call(APPROVE)
+    expect(answerOf(branched)).toMatchObject({ id, bumped: true })
+    w.sessionId = 'session-cleared'
+    await $.classic.SessionStart({ source: 'clear' })
+    await w.drain()
+    const cleared = await $.tool.call(APPROVE)
+    expect(answerOf(cleared)).toMatchObject({ id, bumped: true })
+    const items = w.store().items
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ session_id: 'session-a', bumps: 2 })
+  })
+
+  test('a hand-over not yet written (its pass failed) is written by the add, which then bumps', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(APPROVE)).id
+    w.holdLock('busy')
+    w.sessionId = 'session-new'
+    const clearing = $.classic.SessionStart({ source: 'clear' })
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1_000)
+      w.holdLock('busy')
+    }
+    await clearing
+    expect(w.store().sessions['session-a']?.successor).toBeUndefined()
+    w.dropLock()
+    const again = await $.tool.call(APPROVE)
+    expect(answerOf(again)).toMatchObject({ id, bumped: true })
+    expect(w.store().sessions['session-a']?.successor).toBe('session-new')
+    expect(w.store().items).toHaveLength(1)
+  })
+
+  test('after a /resume the same key adds a new item, and the first is left as it was', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(APPROVE)).id
+    w.sessionId = 'session-other'
+    await $.classic.SessionStart({ source: 'resume' })
+    await w.drain()
+    const again = await $.tool.call(APPROVE)
+    expect(answerOf<{ id: string; bumped: boolean }>(again).bumped).toBe(false)
+    expect(answerOf<{ id: string }>(again).id).not.toBe(id)
+    const items = w.store().items
+    expect(items).toHaveLength(2)
+    expect(items.find(item => item.id === id)).toMatchObject({ session_id: 'session-a', bumps: 0 })
+    expect(items.find(item => item.id !== id)?.session_id).toBe('session-other')
+  })
+
+  test("another session's item is never bumped: not one it handed over to someone else, not its successor's", async ($, on) => {
+    const w = world(on)
+    w.seed({
+      version: 1,
+      items: [
+        // session-x handed over to session-b, not to this session.
+        stored({ id: '01AAAAAAAAAAAAAAAAAAAAOTHER', type: 'ack', key: 'same', session_id: 'session-x' }),
+        // The item of session-a's successor: a hand-over runs one way only.
+        stored({ id: '01AAAAAAAAAAAAAAAAAAAALATER', type: 'ack', key: 'later', session_id: 'session-c' }),
+      ],
+      sessions: {
+        'session-x': { seen: START - HOUR, successor: 'session-b' },
+        'session-b': { seen: START - HOUR },
+        'session-a': { seen: START - HOUR, successor: 'session-c' },
+        'session-c': { seen: START - HOUR },
+      },
+    })
+    await $.session.start(START_EVENT)
+    const same = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q', key: 'same' })
+    expect(answerOf<{ bumped: boolean }>(same).bumped).toBe(false)
+    // session-a is back (a /resume to it), so it answers for itself again;
+    // session-c's item stays session-c's.
+    const later = await $.tool.call({ tool: ADD, type: 'ack', header: 'X', question: 'Q', key: 'later' })
+    expect(answerOf<{ bumped: boolean }>(later).bumped).toBe(false)
+    const items = w.store().items
+    expect(items).toHaveLength(4)
+    expect(items.filter(item => item.bumps > 0)).toEqual([])
+  })
+
+  test('an inherited open item under the same key with another type refuses the add, the file unchanged', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    await $.tool.call(APPROVE)
+    w.sessionId = 'session-new'
+    await $.classic.SessionStart({ source: 'clear' })
+    await w.drain()
+    const before = w.files.get(FILE)
+    const ran = await $.tool.call({ tool: ADD, type: 'question', header: 'X', question: 'Q', key: 'plan' })
+    expect(String(ran.deny)).toContain('open approve item')
     expect(w.files.get(FILE)).toBe(before)
   })
 })

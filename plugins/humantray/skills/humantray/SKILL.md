@@ -30,7 +30,6 @@ Two tools: `humantray_add` and `humantray_list` (model-facing `mcp__humantray__h
 ## Raising it again, and referring to it
 
 - To raise an open item again, call `humantray_add` with the same `key` and `type`: it bumps that item (same id, `bumped: true`). A bump replaces only `body_md` and `options`; the question, header and flags stay as first added, so put a changed ask in `body_md`. `key` defaults to the question. The same key with another type is refused.
-- A bump does not reach an item added before a `/clear` or `/branch`: there the same key adds a second item. Refer to the existing one by its id, from `humantray_list`, instead.
 - Never restate an item in prose. Refer to it as its `short` id, `HT-xxxxx`.
 - Do not call `humantray_list` every turn: answers arrive by themselves. Call it when you need to know which of your items are still open or not yet delivered.
 
