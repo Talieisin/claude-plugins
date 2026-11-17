@@ -560,14 +560,30 @@ export const PAGE_RULES = [{ path: '', read: 'owner', write: 'owner' }] as const
 const PUBLISHED = /^Published .* at (https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]+) \(Version\b/m
 
 /**
+ * The Artifact tool's refusal of a publish over a version of the artifact this
+ * session has not seen (#58), matched loosely: its kind (an error or a deny)
+ * and its wording (a straight or a curly apostrophe) were not recorded.
+ */
+const UNVIEWED = /viewed the live version/i
+
+/**
  * Publishes the page from `file`: a new private artifact, or a new version of
  * `url`. Never pinned. Returns the artifact's URL.
+ *
+ * Over an existing artifact the tool publishes only once this session has
+ * seen its live version, so the page is read first (#58). A failed read does
+ * not stop the publish. A refusal because a version was not seen is
+ * `unviewed`: a newer version may have been published since, so the caller
+ * looks again before it publishes again; this never retries by itself.
  */
 export async function publishPage(
   $: EngineInterface,
   file: string,
   url: string | undefined,
-): Promise<{ kind: 'ok'; url: string } | { kind: 'refused'; text: string } | { kind: 'unavailable'; why: string }> {
+): Promise<
+  { kind: 'ok'; url: string } | { kind: 'unviewed'; text: string } | { kind: 'refused'; text: string } | { kind: 'unavailable'; why: string }
+> {
+  if (url !== undefined) await callTool($, { tool: 'Artifact', action: 'read', url })
   const input: Record<string, unknown> & { tool: string } = {
     tool: 'Artifact',
     action: 'publish',
@@ -578,6 +594,9 @@ export async function publishPage(
   if (url === undefined) input.icon = 'inbox'
   else input.url = url
   const reply = await callTool($, input)
+  if ((reply.kind === 'needs-person' || reply.kind === 'denied' || reply.kind === 'error') && UNVIEWED.test(reply.text)) {
+    return { kind: 'unviewed', text: reply.text }
+  }
   if (reply.kind === 'needs-person' || reply.kind === 'denied' || reply.kind === 'error') return { kind: 'refused', text: reply.text }
   if (reply.kind === 'unavailable') return reply
   const published = PUBLISHED.exec(reply.text)
