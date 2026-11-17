@@ -70,6 +70,14 @@ import { rowToItem } from './rows'
 import { isViewing, resumeViewer, sendAgain, tick, viewerAnswer, viewerCommand } from './viewer'
 
 const PANE = 'humantray'
+type FieldName = 'other' | 'text' | 'feedback' | 'notes'
+/**
+ * A free-text field's key: the card's key and the field's name, then the
+ * card's count of Enters once there has been one (#48).
+ */
+function fieldKeyOf(card: string, name: FieldName, entered: number): string {
+  return entered > 0 ? `${card}:${name}:${String(entered)}` : `${card}:${name}`
+}
 /** How many lines tall a free-text field is: room for a list or a short code block. */
 const ROWS = 3
 const TITLE = 'Humantray'
@@ -663,15 +671,26 @@ export const register: Register = on => {
     // item's id) and the viewer's (#32; by `v:` and the id) alike.
     const controlsFor = (item: Item, key: string, draftId: string, draft: Draft, press: (action: Action) => () => Promise<void>) => {
       // Free text is several lines tall and kept exactly as typed, Markdown and all.
-      const field = (name: 'other' | 'text' | 'feedback' | 'notes', label: string, onEnter?: () => Promise<void>) => (
+      // The engine empties a field on Enter, and the same `value` drawn again
+      // does not refill it (#48), so a field's key carries the card's count of
+      // Enters: after one the field is drawn afresh, holding the draft, and the
+      // focus is put back on it before anything else Enter does.
+      const fieldKey = (name: FieldName) => fieldKeyOf(key, name, draft.entered)
+      const entered = async (name: FieldName, change: (current: Draft) => Partial<Draft>) => {
+        await setDraft($, draftId, current => ({ ...change(current), error: '', entered: current.entered + 1 }))
+        const held = await $.state.get({ ...drafts, id: draftId })
+        const count = { ...EMPTY_DRAFT, ...(held.value ?? {}) }.entered
+        await $.ui.focus({ requestId: PANE, key: fieldKeyOf(key, name, count) }).catch(() => undefined)
+      }
+      const field = (name: FieldName, label: string, onEnter?: () => Promise<void>) => (
         <Input
-          key={`${key}:${name}`}
+          key={fieldKey(name)}
           label={label}
           rows={ROWS}
           value={draft[name]}
           onInput={value => setDraft($, draftId, () => ({ [name]: value, error: '' }))}
           onSubmit={async value => {
-            await setDraft($, draftId, () => ({ [name]: value, error: '' }))
+            await entered(name, () => ({ [name]: value }))
             if (onEnter !== undefined) await onEnter()
           }}
         />
@@ -723,26 +742,19 @@ export const register: Register = on => {
             </Button>,
           )
         })
+        // Other text clears a single choice's pick.
+        const other = (value: string) => (current: Draft) => ({
+          other: value,
+          selected: !isMulti && value.trim() !== '' ? [] : current.selected,
+        })
         controls.push(
           <Input
-            key={`${key}:other`}
+            key={fieldKey('other')}
             label="Other (Markdown)"
             rows={ROWS}
             value={draft.other}
-            onInput={value =>
-              setDraft($, draftId, current => ({
-                other: value,
-                error: '',
-                selected: !isMulti && value.trim() !== '' ? [] : current.selected,
-              }))
-            }
-            onSubmit={value =>
-              setDraft($, draftId, current => ({
-                other: value,
-                error: '',
-                selected: !isMulti && value.trim() !== '' ? [] : current.selected,
-              }))
-            }
+            onInput={value => setDraft($, draftId, current => ({ ...other(value)(current), error: '' }))}
+            onSubmit={value => entered('other', other(value))}
           />,
         )
       }

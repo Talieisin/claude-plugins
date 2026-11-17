@@ -49,6 +49,7 @@ export const EMPTY_DRAFT: Draft = {
   feedback: '',
   notes: '',
   error: '',
+  entered: 0,
 }
 
 /** What `humantray_add` takes, once validated. */
