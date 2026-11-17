@@ -8,7 +8,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Item, ItemRow, ResponseRow } from '../types'
 import { parseDocs, parseListing, parseWrite } from '../hooks/artifact-store'
 import { isPrunable } from '../hooks/items'
-import { fingerprint, itemToRow, owesPush } from '../hooks/row-shape'
+import { WRITER_VERSION, fingerprint, itemToRow, owesPush } from '../hooks/row-shape'
 import {
   checkItemRow,
   checkMeta,
@@ -50,6 +50,15 @@ describe('item rows', () => {
       expect(back.session_id).toBe('local-id')
       expect(back.row).toEqual({ artifact: URL_A, version: 4, sent: fingerprint(back as Item & Required<Pick<Item, 'remote'>>) })
     }
+  })
+
+  test('rows and a meta/page written by 0.1.0 still read: the writer version is only stamped (0.2.0)', () => {
+    const row = itemToRow(withRemote({ id: ID, type: 'approve' }))
+    expect(row.writer_version).toBe(WRITER_VERSION)
+    expect(WRITER_VERSION).toBe('0.2.0')
+    const read = checkItemRow({ ...row, writer_version: '0.1.0' })
+    expect('ok' in read && read.ok.writer_version).toBe('0.1.0')
+    expect(checkMeta({ ...meta(1), plugin_version: '0.1.0' }, REPO)).toBeDefined()
   })
 
   test('a row says its asker takes response envelopes (envelope: 1, #32); a row without it, or a newer value, still reads', () => {
