@@ -1,0 +1,2 @@
+# Types the Claude Code engine writes beside a plugin it loads from a folder.
+plugins/*/.claude-plugin/types/

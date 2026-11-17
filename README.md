@@ -1,9 +1,10 @@
 # claude-plugins
 
-Claude Code plugins from Talieisin. Three so far: `cloud`, for running batches of
+Claude Code plugins from Talieisin. Four so far: `cloud`, for running batches of
 GitHub issues in cloud sessions; `github`, the pull-request skill it relies on,
-which is also useful on its own; and `mise`, an optional hook that installs a
-repository's pinned tools.
+which is also useful on its own; `mise`, an optional hook that installs a
+repository's pinned tools; and `humantray`, an optional tray for what sessions
+need from you.
 
 ## `cloud`: batches of GitHub issues, done by cloud sessions
 
@@ -20,7 +21,7 @@ GitHub issues to merged pull requests:
   stronger Claude model, Codex) can actually be reached;
 - a **retro** judges past batches and proposes changes to the skills.
 
-Neither of those two has hooks: nothing runs by itself. (A third, optional plugin, `mise`, does have one; see below.) The `github` plugin ships three
+Neither of those two has hooks: nothing runs by itself. (The two optional plugins, `mise` and `humantray`, do run code; see below.) The `github` plugin ships three
 read-only scripts that its skill calls on your own machine.
 
 | Skill | Used by |
@@ -31,6 +32,23 @@ read-only scripts that its skill calls on your own machine.
 | `cloud:tester` | A session the lead starts to write a lane's tests before its code, at the deepest review depth |
 | `cloud:retro` | A session you start to review past batches |
 | `github:pull-request` | All of them, and you: a pull request from open to merged. One set of rules and two routes, `gh` and GraphQL on your own machine, REST in a cloud session where those do not work |
+
+## `humantray`: what sessions need from you, in one place
+
+Optional. Instead of burying a question or a "please do this" in the middle of
+their text, sessions add it to a tray: an FYI, a choice, a question, a to-do or
+an approval. The session does not wait. You answer when you choose, and the
+answer goes back to the session that asked, once.
+
+- **Locally** the tray is a pane beside the chat (`/humantray-open`) and a band
+  above the prompt.
+- **In cloud sessions** the items are also copied to a private page on your
+  claude.ai account, one per repository, once you have made it. A local session on a computer that
+  stays on can show those pages in its pane (`/humantray-viewer`).
+
+It runs code: a hooks module, loaded in every session where the plugin is
+installed. Items never go into git. How to turn it on, and its limits, are in
+[`docs/setup.md`](docs/setup.md#a-tray-for-what-sessions-need-from-you-humantray).
 
 ## Quick start
 
@@ -60,7 +78,8 @@ The full walk-through, with what is optional and how to keep it working, is in
 | `plugins/github/` | The `github` plugin: the pull-request skill, its two routes and its scripts |
 | `docs/setup.md` | How to set a repository and an environment up |
 | `templates/` | Files to copy: `AGENTS.md` (your authorisation and the repository's facts), labels, setup script, tracking issue, the optional start-from-a-label workflow |
-| `plugins/mise/` | Optional `mise` plugin: installs a repository's pinned tools when a session starts. The only plugin here with a hook |
+| `plugins/mise/` | Optional `mise` plugin: installs a repository's pinned tools when a session starts. Runs a SessionStart hook |
+| `plugins/humantray/` | Optional `humantray` plugin: the tray, its skill, the source of its page, and its tests. Runs a hooks module |
 | `AGENTS.md` | For anyone, human or agent, changing this repository |
 
 ## Status
@@ -69,7 +88,7 @@ These skills were worked out over a series of test batches on toy repositories
 and are still changing. They are versioned: every `cloud` skill file carries a
 `shared-skill-version` marker and the pull-request skill a
 `pull-request-skill-version` marker, and a lead names both versions in its first
-comment. Expect rough edges, and read
+comment. The humantray skill carries its own `humantray-skill-version` marker. Expect rough edges, and read
 [the limits in `docs/setup.md`](docs/setup.md#part-2-optional) before relying on
 the less-used routes.
 

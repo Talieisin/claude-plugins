@@ -5,7 +5,8 @@ a batch of GitHub issues to merged pull requests, with a worker session per
 piece of work and a reader session per pull request.
 
 Part 1 is everything you need. Part 2 is optional extras, each independent of
-the others. Part 3 is how to keep it working.
+the others, among them `humantray`, a tray for what sessions need from you.
+Part 3 is how to keep it working.
 
 Nothing here needs Talieisin's own tooling. Where we use something of our own
 (mise for pinned tools, for instance) it is in Part 2 and marked as optional.
@@ -156,9 +157,115 @@ That works, and costs the lead a good deal of context, so prefer step 1.
 Only if the repository must run on exact tool versions. See
 the optional [`mise` plugin](../plugins/mise/README.md), which installs a
 repository's pinned tools when a session starts. Nothing is copied into the
-repository. It is the one plugin here that runs code by itself, so read its
+repository. It runs code by itself (as does `humantray`, below), so read its
 script first. Its page also says what to do if you use a version manager other
 than mise.
+
+### A tray for what sessions need from you: `humantray`
+
+Sessions add what they need from you to a tray instead of writing it into their
+text: an FYI to acknowledge, a choice, a question, something for you to do, or
+a proposal to approve. Adding an item does not stop the session. You answer
+when you choose, and the answer is delivered to the session that asked, once,
+with anything you typed kept as written. Raising the same thing again bumps the
+item that is open, so one ask stays one item.
+
+**It runs code.** The plugin is a hooks module (TypeScript) that Claude Code
+loads in every session where the plugin is installed, so turning it on is a
+choice of its own, as with `mise`. Read
+[`plugins/humantray/hooks/`](../plugins/humantray/hooks/) first if you want to
+know what it does. Hooks modules are an early-access part of Claude Code and may
+change between releases; this version was built on Claude Code 2.1.326.
+
+**On your own computer.** Install it once:
+
+```bash
+claude plugin marketplace add Talieisin/claude-plugins
+claude plugin install humantray@talieisin
+```
+
+or, from a checkout of this repository, start a session with
+`claude --plugin-dir <checkout>/plugins/humantray`. In a git repository, the
+pane opens by itself when a session adds an item; `/humantray-open` opens it
+again (`/humantray` is the skill, not the pane). A band above the prompt counts
+what is open. Finished items move to History, which keeps the last 200 per
+repository. A `claude -p` run draws nothing, so a session there asks as it
+always did.
+
+**In a cloud environment.** Add one line to the setup script, after the others
+(it is in [`templates/setup-script.sh`](../templates/setup-script.sh),
+commented out):
+
+```bash
+claude plugin install humantray@talieisin
+```
+
+A cloud session draws no pane of its own, so its items are shown elsewhere, in
+two places that read the same store:
+
+- **The page, per repository.** Run `/humantray-page` once in a cloud session in
+  that repository. It finds the private page titled `humantray: <owner>/<repo>`
+  on your claude.ai account and links it, or creates it if there is none.
+  `/humantray-page <link>` makes the artifact you name this repository's page.
+  If that artifact holds no humantray data, the command publishes the page into
+  it as a new version, replacing what it showed, so name only an artifact meant
+  for this. It refuses one that holds another repository's page, or whose data
+  it cannot read. You can answer items on the page. Nothing republishes the
+  page by itself: a humantray release that changes the page reaches it only
+  when `/humantray-page` is run again, in a cloud session that has the
+  release. No session pins it: pin it yourself in claude.ai if you want it to
+  hand. Until a repository has a page, its cloud sessions do not use the tray
+  and ask as they did before.
+- **The viewer, on a computer that stays on.** In a local session on that
+  computer, with the plugin installed, start Claude Code with
+  `claude --remote-control` (or
+  `claude --plugin-dir <checkout>/plugins/humantray --remote-control`), then
+  run `/humantray-viewer`. It finds the humantray pages on your account and says
+  which repositories it found. If it says the list could not be read, give a
+  page's link instead (`/humantray-viewer <link>`); naming repositories
+  (`/humantray-viewer <owner>/<repo>`) helps only when the list was too long.
+  Its pane shows the open items of those pages, grouped by repository, then
+  lead, then the session that asked, and reads them again about every 20
+  seconds. An answer you give there is sent as a
+  message to the session that asked. One viewer runs per computer;
+  `/humantray-viewer off` stops it. This is the main way to follow cloud
+  sessions; the page is the fallback when the viewer is not running.
+
+A lead uses the tray only with `cloud` 0.35.0 or later, and only for what its
+skill allows: an FYI, a step you agreed to take part in, or a chance to object
+to a decision it has already recorded. Workers raise only what their lead names;
+readers and test authors raise nothing. Questions that are yours to decide still
+reach you as Part 1 describes: a comment, the `needs:owner` label and a
+question in the lead's session.
+
+**Limits.**
+
+- **Items never go into git, in a public or private repository.** On your
+  computer they are kept in `humantray/items.json` under the repository's git
+  common directory (`.git/` in an ordinary clone; `git rev-parse
+  --git-common-dir` names it), shared by all its worktrees. Git never commits or
+  pushes that file. In a cloud session with a
+  page, each item's text and your answers are also copied to that private page
+  on your claude.ai account, for a public repository as for a private one.
+  Nothing is posted to GitHub, except in comments mode below. There is no copy
+  in git for private repositories either.
+- **Items are plain text,** in that file and on the page. Put nothing
+  secret in an item. In a public repository an item may quote text that anyone
+  wrote in an issue or a pull request. The page draws Markdown but never runs
+  HTML or scripts from an item, and shows images as links without loading them.
+  Keep the page's link out of anything public.
+- **No pane on mobile yet.** The pane and the band draw in the terminal and the
+  desktop app. On a phone, open the repository's page.
+- **An answer given on the page** reaches a cloud session that is idle only at
+  its next turn, even while a viewer is running.
+- **Comments mode.** A session that may talk to you only through GitHub
+  comments (a lead started from a label, and the sessions it starts) adds no
+  items. It asks as its role says. A session with no role posts a signed
+  comment whose first line is `humantray (<type>):`, and only your own words
+  answer it.
+- **No answer from the tray is your approval** of anything on the "always back
+  to the owner" list in `AGENTS.md`. That still needs your own words, as
+  `AGENTS.md` defines them.
 
 ### Starting a lead from a label, with nobody at a keyboard
 
@@ -305,7 +412,8 @@ script and save. Then check: the next lead's first comment names the versions
 it holds.
 
 **How to tell what a session got.** In the session, `claude plugin list` shows
-`cloud@talieisin` and `github@talieisin` with their versions, and `cat /tmp/cloud-setup.log` shows what the
+`cloud@talieisin` and `github@talieisin` (and `humantray@talieisin`, if you added
+it) with their versions, and `cat /tmp/cloud-setup.log` shows what the
 setup script did. If the plugin is missing, the log says why.
 
 **If a lead says it does not hold the skill,** the environment's setup script
@@ -316,7 +424,8 @@ the environment you edited, and check that nothing blocks `github.com`.
 
 | What | Where |
 |---|---|
-| The skills | This repository, `plugins/cloud/skills/` and `plugins/github/skills/` |
+| The skills | This repository, `plugins/cloud/skills/`, `plugins/github/skills/` and `plugins/humantray/skills/` |
+| A repository's humantray page, if you use one | Your claude.ai account, as a private page titled `humantray: <owner>/<repo>` |
 | What sessions may do, and a repository's facts | That repository's `AGENTS.md` |
 | The setup script | The cloud environment, on claude.ai (not in any repository) |
 | The routine, if you use one | Your claude.ai account, under Scheduled |
