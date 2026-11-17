@@ -206,11 +206,15 @@ two places that read the same store:
 - **The page, per repository.** Run `/humantray-page` once in a cloud session in
   that repository. It finds the private page titled `humantray: <owner>/<repo>`
   on your claude.ai account and links it, or creates it if there is none.
-  `/humantray-page <link>` makes the artifact you name this repository's page.
-  If that artifact holds no humantray data, the command publishes the page into
-  it as a new version, replacing what it showed, so name only an artifact meant
-  for this. It refuses one that holds another repository's page, or whose data
-  it cannot read. You can answer items on the page. Nothing republishes the
+  `/humantray-page <link>` makes the artifact you name this repository's page,
+  but only an artifact already meant for it: one already marked as this
+  repository's page, or one of yours titled `humantray: <owner>/<repo>`. A
+  titled one that is not yet marked has the page published into it as a new
+  version, replacing what it showed. The command refuses anything else, and
+  publishes and writes nothing to it: an unrelated page (even one with no
+  data), a page marked for another repository or by a newer humantray, an
+  artifact it cannot find from your account, and one whose data it cannot
+  read. You can answer items on the page. Nothing republishes the
   page by itself: a humantray release that changes the page reaches it only
   when `/humantray-page` is run again, in a cloud session that has the
   release. No session pins it: pin it yourself in claude.ai if you want it to
