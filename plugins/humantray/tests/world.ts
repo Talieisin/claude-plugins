@@ -26,6 +26,8 @@ export type World = {
   isRepo: boolean
   /** Every prompt the mod submitted, in order. */
   submits: string[]
+  /** Every delivery from another session that reached the model, in order. */
+  received: string[]
   /** How the engine answers a submit; by default the prompt enters. */
   answerSubmit: (e: PromptSubmitInput) => PromptSubmitResult | Promise<PromptSubmitResult>
   /** A hook to run inside each submit, before it answers (to look at the disk). */
@@ -96,6 +98,7 @@ export function world(
     surfaces: options.surfaces ?? ['desktop'],
     isRepo: options.isRepo ?? true,
     submits: [],
+    received: [],
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,
     failMoveOfTemporary: false,
@@ -154,6 +157,11 @@ export function world(
     if (w.failToast) return { deny: 'the surface went away' }
     w.toasts.push(e.text)
     return { value: undefined }
+  })
+  // A delivery from another session that no plugin took is queued for the model, as it arrived.
+  on('session.receive', (_, e) => {
+    w.received.push(e.text)
+    return { text: e.text }
   })
   on('prompt.submit', async (_, e) => {
     w.submits.push(e.text)

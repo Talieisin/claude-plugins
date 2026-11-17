@@ -12,7 +12,7 @@
 import type { EngineInterface } from 'claude-code'
 
 import type { Item, ItemRow, MetaPage, ResponseRow } from '../types'
-import { type RowRead, checkItemRow, checkMeta, checkResponseRow, isTitleFor, itemToRow, pickArtifact, titleFor } from './rows'
+import { type RowRead, ROW_SCHEMA, checkItemRow, checkMeta, checkResponseRow, countsAsAnswer, isTitleFor, itemToRow, pickArtifact, titleFor } from './rows'
 
 /** How long one tool call may take before the caller stops waiting for it. */
 export const CALL_MS = 5_000
@@ -275,18 +275,104 @@ export async function readSessionRows(
   return rowsOf(read.docs)
 }
 
-/** The finished item rows, newest answer first, up to 1000. */
+/** The finished item rows, newest answer first, up to `limit` (1000 by default). */
 export async function readFinishedRows(
   $: EngineInterface,
   url: string,
+  limit = 1000,
 ): Promise<{ kind: 'ok'; rows: Array<{ row: ItemRow; version: number }>; skipped: number } | { kind: 'unavailable'; why: string }> {
   const read = await queryDocs($, url, 'items', {
     where: [['status', 'in', ['acknowledged', 'done', 'answered']]],
     order_by: { field: 'response_at', direction: 'desc' },
-    limit: 1000,
+    limit,
   })
   if (read.kind !== 'ok') return { kind: 'unavailable', why: read.kind === 'unavailable' ? read.why : read.kind }
   return rowsOf(read.docs)
+}
+
+/** The open item rows of every session, up to 1000 (the viewer, #32). */
+export async function readOpenRows(
+  $: EngineInterface,
+  url: string,
+): Promise<{ kind: 'ok'; rows: Array<{ row: ItemRow; version: number }>; skipped: number } | { kind: 'unavailable'; why: string }> {
+  const read = await queryDocs($, url, 'items', { where: [['status', '==', 'open']], limit: 1000 })
+  if (read.kind !== 'ok') return { kind: 'unavailable', why: read.kind === 'unavailable' ? read.why : read.kind }
+  return rowsOf(read.docs)
+}
+
+/**
+ * The item rows with these ids, read in chunks of 30 (the `in` limit), and
+ * the ids the store answered without: a successful read that lacks an id is
+ * the store's own "no such document" for it. Rows that cannot be read are
+ * neither found nor missing.
+ */
+export async function readRowsByIds(
+  $: EngineInterface,
+  url: string,
+  ids: string[],
+): Promise<
+  | { kind: 'ok'; rows: Map<string, { row: ItemRow; version: number }>; missing: Set<string>; unreadable: Set<string> }
+  | { kind: 'unavailable'; why: string }
+> {
+  const rows = new Map<string, { row: ItemRow; version: number }>()
+  const seen = new Set<string>()
+  const unreadable = new Set<string>()
+  for (let at = 0; at < ids.length; at += 30) {
+    const chunk = ids.slice(at, at + 30)
+    const read = await queryDocs($, url, 'items', { where: [['id', 'in', chunk]], limit: 100 })
+    if (read.kind !== 'ok') return { kind: 'unavailable', why: read.kind === 'unavailable' ? read.why : read.kind }
+    for (const doc of read.docs) {
+      if (!chunk.includes(doc.id)) continue
+      seen.add(doc.id)
+      const row = checkItemRow(doc.data)
+      if ('ok' in row && row.ok.id === doc.id) rows.set(doc.id, { row: row.ok, version: doc.version })
+      else unreadable.add(doc.id)
+    }
+  }
+  const missing = new Set(ids.filter(id => !seen.has(id)))
+  return { kind: 'ok', rows, missing, unreadable }
+}
+
+/** What writing an answer under rule 4 came to. */
+export type ResponseWritten =
+  /** This answer is now the response row. */
+  | { kind: 'written'; version: number }
+  /** An answer that counts was there already: nothing was written. */
+  | { kind: 'counted' }
+  | { kind: 'needs-person' }
+  | { kind: 'unavailable'; why: string }
+
+/**
+ * Writes an answer to `responses/<id>` under #33's rule 4, as a mod does: read
+ * it; when absent, create it (an unpinned set, which the server makes
+ * create-only); when present but not an answer that counts (malformed, a newer
+ * schema's, or the one the item refused), replace it pinned to the version
+ * read; when an answer that counts is there, write nothing. A create that
+ * loses a race ("already exists") or a pinned write that finds the row moved
+ * reads again, up to three times.
+ */
+export async function writeResponse(
+  $: EngineInterface,
+  url: string,
+  row: Record<string, unknown> & { id: string },
+  refused: { answer_id: string } | undefined,
+): Promise<ResponseWritten> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const read = await getDoc($, url, 'responses', row.id)
+    if (read.kind === 'needs-person') return read
+    if (read.kind === 'unavailable') return read
+    if (read.kind === 'gone') return { kind: 'unavailable', why: 'the artifact is gone' }
+    const doc = read.docs[0]
+    if (doc !== undefined && countsAsAnswer(checkResponseRow(doc.data), { response_refused: refused })) {
+      return { kind: 'counted' }
+    }
+    const written = await setDoc($, url, 'responses', row.id, { ...row, schema: ROW_SCHEMA }, doc?.version)
+    if (written.kind === 'ok') return { kind: 'written', version: written.version }
+    if (written.kind === 'needs-person' || written.kind === 'unavailable') return written
+    if (written.kind === 'refused') return { kind: 'unavailable', why: 'the store refused the write' }
+    // exists, stale or missing: someone else wrote it; read again.
+  }
+  return { kind: 'unavailable', why: 'the response row kept changing' }
 }
 
 function rowsOf(docs: Doc[]): { kind: 'ok'; rows: Array<{ row: ItemRow; version: number }>; skipped: number } {
@@ -359,6 +445,45 @@ export async function listTitled(
     token = read.next
   }
   return { kind: 'unavailable', why: 'the listing did not end within 25 pages' }
+}
+
+/**
+ * Every artifact of the person's whose title begins `humantray: `, any
+ * repository (the viewer, #32), or why the listing could not be read to its end.
+ */
+export async function listHumantrays(
+  $: EngineInterface,
+): Promise<{ kind: 'ok'; listed: Listed[] } | { kind: 'unavailable'; why: string }> {
+  const found: Listed[] = []
+  let token: string | undefined
+  for (let page = 0; page < 25; page++) {
+    const input: Record<string, unknown> & { tool: string } = { tool: 'Artifact', action: 'list', limit: 200, scope: 'mine' }
+    if (token !== undefined) input.page_token = token
+    const reply = await callTool($, input)
+    if (reply.kind !== 'ok') return { kind: 'unavailable', why: reply.kind === 'unavailable' ? reply.why : reply.text }
+    const read = parseListing(reply.text)
+    if (read === undefined) return { kind: 'unavailable', why: 'an unrecognised listing' }
+    for (const each of read.listed) if (/^humantray: \S/i.test(each.title.trim())) found.push(each)
+    if (read.next === undefined) return { kind: 'ok', listed: found }
+    token = read.next
+  }
+  return { kind: 'unavailable', why: 'the listing did not end within 25 pages' }
+}
+
+/**
+ * Reads `meta/page` for any repository (the viewer, #32): the record when it
+ * is a humantray store, none when absent or not one, or unavailable.
+ */
+export async function readAnyMeta(
+  $: EngineInterface,
+  url: string,
+): Promise<{ kind: 'ok'; meta: MetaPage | undefined } | { kind: 'unavailable'; why: string }> {
+  const read = await getDoc($, url, 'meta', 'page')
+  if (read.kind === 'gone') return { kind: 'ok', meta: undefined }
+  if (read.kind !== 'ok') return { kind: 'unavailable', why: read.kind === 'unavailable' ? read.why : 'needs a person' }
+  const data = read.docs[0]?.data
+  const repo = data !== undefined && typeof data.repo === 'string' ? data.repo : ''
+  return { kind: 'ok', meta: repo === '' ? undefined : checkMeta(data, repo) }
 }
 
 /** Reads `meta/page`: the record, none (absent or not humantray's for this repository), or unavailable. */

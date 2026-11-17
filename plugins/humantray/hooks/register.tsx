@@ -55,8 +55,10 @@ import {
 } from './items'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
-import { START_DEADLINE_MS, pageState, requestPass, takeDeliveryDue } from './store-pass'
+import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
 import { withDeadline } from './artifact-store'
+import { isEnvelopeOrigin, readEnvelope } from './envelope'
+import { takeEnvelope } from './receive'
 
 const PANE = 'humantray'
 /** How many lines tall a free-text field is: room for a list or a short code block. */
@@ -307,7 +309,17 @@ async function sync($: EngineInterface, deliver: boolean) {
  */
 async function storePass($: EngineInterface, kind: 'start' | 'turn') {
   await requestPass($, kind)
-  if (takeDeliveryDue()) await sync($, true).catch(() => undefined)
+  // Any delivery the pass started (onDeliveryDue, below) is part of this pass.
+  await deliveryIdle()
+}
+
+/**
+ * Every store pass that applies an answer (a turn, a retry, the receiver)
+ * runs the delivery pass at once, not at the next turn (#32, F3). Armed from
+ * each hook that can start a pass, with that hook's `$`.
+ */
+function armDelivery($: EngineInterface) {
+  onDeliveryDue(() => sync($, true).catch(() => undefined))
 }
 
 async function setDraft($: EngineInterface, id: string, change: (draft: Draft) => Partial<Draft>) {
@@ -366,6 +378,7 @@ async function answer($: EngineInterface, id: string, action: Action) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    armDelivery($)
     await $.tool.register({
       name: 'humantray_add',
       description: ADD_DESCRIPTION,
@@ -426,12 +439,42 @@ export const register: Register = on => {
   })
 
   on('turn.start', ($, e, next) => {
+    armDelivery($)
     if (e.agentId === undefined) void storePass($, 'turn')
     return next(e)
   })
 
+  // A response envelope from the local viewer (#32). Test 0 on #32: a send that
+  // starts a stopped container reaches `prompt.submit` only (origin `peer`); one
+  // to a running container reaches `session.receive` only. Either way it is
+  // recognised by origin and whole text alone (pure, waiting on nothing),
+  // stopped before the model sees it, and taken detached. Every other prompt
+  // and delivery passes untouched, and a hook that fails still stops an envelope.
+  on('prompt.submit', ($, e, next) => {
+    const envelope = isEnvelopeOrigin(e.origin) ? readEnvelope(e.text) : undefined
+    if (envelope === undefined) return next(e)
+    armDelivery($)
+    void takeEnvelope($, envelope, 'prompt.submit')
+    return { drop: `humantray: took an answer for ${shortOf(envelope.id)} from the viewer` }
+  }).catch(($, e, next) =>
+    isEnvelopeOrigin(e.origin) && readEnvelope(e.text) !== undefined ? { drop: 'humantray: took an answer from the viewer' } : next(e),
+  )
+
+  on('session.receive', ($, e, next) => {
+    const envelope = e.agentId === undefined && isEnvelopeOrigin(e.origin) ? readEnvelope(e.text) : undefined
+    if (envelope === undefined) return next(e)
+    armDelivery($)
+    void takeEnvelope($, envelope, 'session.receive')
+    return { consumed: `humantray: took an answer for ${shortOf(envelope.id)} from the viewer` }
+  }).catch(($, e, next) =>
+    e.agentId === undefined && isEnvelopeOrigin(e.origin) && readEnvelope(e.text) !== undefined
+      ? { consumed: 'humantray: took an answer from the viewer' }
+      : next(e),
+  )
+
   on('turn.complete', async ($, e, next) => {
     if (e.agentId !== undefined) return next(e)
+    armDelivery($)
     const ran = await next(e)
     await sync($, true).catch(() => undefined)
     void storePass($, 'turn')

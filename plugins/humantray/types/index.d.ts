@@ -133,6 +133,11 @@ export type ItemRow = {
   lead_session_id: string | null
   /** The plugin version that wrote the row. */
   writer_version: string
+  /**
+   * The response envelope version the asker's mod takes (#32), 1 here. The
+   * local viewer answers by envelope only an item whose row carries it.
+   */
+  envelope?: number
 }
 
 /**
@@ -160,6 +165,27 @@ export type ResponseRow = {
    * on #26).
    */
   by: 'page' | 'viewer'
+}
+
+/**
+ * A response envelope (#32): one answer the local viewer sends to the asker
+ * with `$.session.send`, as three lines (hooks/envelope.ts). The body is a
+ * response row plus where it is going.
+ */
+export type ResponseEnvelope = Omit<ResponseRow, 'by'> & {
+  /**
+   * Always the viewer here (decision B on #32). Not proof that a person
+   * answered: `to`, `artifact` and ownership are routing checks and
+   * authenticate nothing. Any of the owner's sessions that can read the store
+   * could compose one, and any local plugin could send it. That is why an
+   * answer line never stands in for the owner's approval of anything on a
+   * repository's "always back to the owner" list (decision 3 on #26).
+   */
+  by: 'viewer'
+  /** The asker's routable `session_…` id: the address the envelope was sent to. */
+  to: string
+  /** The link of the artifact the viewer read the item from. */
+  artifact: string
 }
 
 /** `meta/page`: what marks an artifact as a repository's humantray store. */
