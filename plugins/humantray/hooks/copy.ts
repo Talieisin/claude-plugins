@@ -6,15 +6,16 @@
 // OSC 52. In this engine a remote surface has no copy path yet, so a press
 // from the desktop app or VS Code, which draw a session running on this
 // computer, falls back to this computer's own clipboard tool (`pbcopy`,
-// `wl-copy`, `xclip`, `xsel`, or PowerShell's `Set-Clipboard`), given the
-// text on standard input with no shell. Never from a cloud session, whose
-// machine is not the person's, and never for a phone, where this computer's
-// clipboard would not reach the person: the toast says so, and points to the
-// humantray page, whose copy works there.
+// `wl-copy`, `xsel`, `xclip`, or PowerShell's `Set-Clipboard`), given the
+// text on standard input; nothing of the text is ever in a command line.
+// Never from a cloud session or a hosted one, whose machine is not the
+// person's, and never for a phone, where this computer's clipboard would not
+// reach the person: the toast says so, and points to the humantray page,
+// whose copy works there.
 
 import type { EngineInterface, RenderSurface } from 'claude-code'
 
-import type { CodeBlock } from './code'
+import { type CodeBlock, plainLang } from './code'
 import { clip, plain } from './items'
 import { isCloud } from './store-pass'
 
@@ -28,7 +29,8 @@ export type CopyOutcome = { ok: true; via: 'surface' | 'tool' } | { ok: false; w
 export const copyLabel = (block: CodeBlock, n: number): string => {
   const first = block.text.split('\n').find(line => line.trim() !== '') ?? ''
   const shown = clip(plain(first.trim()).replace(/\t/g, ' '), 36)
-  return [`Copy ${String(n)}`, ...(block.lang === '' ? [] : [plain(block.lang)]), ...(shown === '' ? [] : [shown])].join(' · ')
+  const lang = plainLang(block.lang)
+  return [`Copy ${String(n)}`, ...(lang === '' ? [] : [lang]), ...(shown === '' ? [] : [shown])].join(' · ')
 }
 
 /** The toast after a copy. */
@@ -58,18 +60,20 @@ export const clipboardTools = (platform: string | undefined): Tool[] => {
   if (platform === 'macos') return [{ argv: ['pbcopy'], env: { LC_CTYPE: 'UTF-8' } }]
   if (platform === 'windows') return [powershell('powershell.exe')]
   if (platform === 'wsl') return [powershell('powershell.exe')]
-  if (platform === 'linux') return [{ argv: ['wl-copy'] }, { argv: ['xclip', '-selection', 'clipboard'] }, { argv: ['xsel', '--clipboard', '--input'] }]
+  if (platform === 'linux') {
+    // wl-copy and xclip fork a process that goes on serving the clipboard and
+    // keeps the output streams open, so a run that reads to their end would
+    // wait out its time limit and report a failure although the copy was made.
+    // Their output goes to /dev/null (a fixed script; the text is on stdin).
+    // xsel closes its streams, so it comes before xclip.
+    const detached = (command: string): Tool => ({ argv: ['sh', '-c', `exec ${command} >/dev/null 2>&1`] })
+    return [detached('wl-copy'), { argv: ['xsel', '--clipboard', '--input'] }, detached('xclip -selection clipboard')]
+  }
   return []
 }
 
 /** Copies with this computer's clipboard tool: the first that runs and exits 0. */
-async function copyByTool($: EngineInterface, text: string): Promise<boolean> {
-  let platform: string | undefined
-  try {
-    platform = (await $.session.info()).platform
-  } catch {
-    platform = undefined
-  }
+async function copyByTool($: EngineInterface, text: string, platform: string | undefined): Promise<boolean> {
   for (const tool of clipboardTools(platform)) {
     try {
       const ran = await $.process.run(tool.argv, { stdin: text, timeoutMs: 5_000, ...(tool.env === undefined ? {} : { env: tool.env }) })
@@ -102,6 +106,17 @@ export async function copyBlock($: EngineInterface, surface: RenderSurface | und
   if (await isCloud($)) {
     return { ok: false, why: `this app has no clipboard route here (${reason}), and this session's machine is in the cloud, not yours` }
   }
-  if (await copyByTool($, block.text)) return { ok: true, via: 'tool' }
+  // The machine and the hosting, where the engine says (an engine before
+  // 2.1.326 may not): a hosted session's machine is the server, not yours.
+  let info: { platform?: string; isHosted?: boolean } | undefined
+  try {
+    info = await $.session.info()
+  } catch {
+    info = undefined
+  }
+  if (info?.isHosted === true) {
+    return { ok: false, why: `this app has no clipboard route here (${reason}), and this session runs on a hosted server, not your computer` }
+  }
+  if (await copyByTool($, block.text, info?.platform)) return { ok: true, via: 'tool' }
   return { ok: false, why: `this app has no clipboard route here (${reason}), and no clipboard tool ran on this computer` }
 }

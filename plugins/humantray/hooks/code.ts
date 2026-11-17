@@ -99,8 +99,15 @@ export const cutColumns = (raw: string, from: number, extra = 0): string => {
 /** Where a line being parsed came from: the stored line's index, and the columns its containers took. */
 type Origin = { at: number; cut: number }
 
-/** A code block and the stored lines it spans, fence lines included: `start` to `end`, inclusive. */
-export type Placed = { block: CodeBlock; start: number; end: number }
+/**
+ * A code block and the stored lines it spans, fence lines included: `start`
+ * to `end`, inclusive; and `cut`, the columns its containers (list items,
+ * quotes) take from its first line.
+ */
+export type Placed = { block: CodeBlock; start: number; end: number; cut: number }
+
+/** A fence's language as it may be drawn or shown: plain and at most 40 characters, else none. */
+export const plainLang = (lang: string): string => (/^[A-Za-z0-9_+.#-]{1,40}$/.test(lang) ? lang : '')
 
 type Walk = { raw: string[]; out: Placed[] }
 
@@ -123,10 +130,10 @@ const cells = (line: string): number => {
 
 const leading = (line: string): number => /^ */.exec(line)?.[0].length ?? 0
 
-const push = (walk: Walk, from: Origin[], extra: number, lang: string, start: number, end: number) => {
+const push = (walk: Walk, from: Origin[], extra: number, lang: string, start: number, end: number, cut: number) => {
   const text = from.map(origin => cutColumns(walk.raw[origin.at] ?? '', origin.cut, extra))
   const joined = text.join('\n')
-  walk.out.push({ block: { text: joined, lang, unsafe: UNSAFE.test(joined) }, start, end })
+  walk.out.push({ block: { text: joined, lang, unsafe: UNSAFE.test(joined) }, start, end, cut })
 }
 
 function list(walk: Walk, lines: string[], from: Origin[], i: number, depth: number): number {
@@ -210,6 +217,7 @@ function blocks(walk: Walk, lines: string[], from: Origin[], depth: number): voi
       const lead = leading(line)
       const closing = new RegExp(`^ {0,3}${fence[0] === '~' ? '~' : '`'}{${fence.length},}[ \\t]*$`)
       const start = (from[i] as Origin).at
+      const cut = (from[i] as Origin).cut
       const contentFrom: Origin[] = []
       i++
       while (i < lines.length && !closing.test(lines[i] ?? '')) {
@@ -219,7 +227,7 @@ function blocks(walk: Walk, lines: string[], from: Origin[], depth: number): voi
       // The closing fence's line, or the last line of an unclosed one.
       const end = i < lines.length ? (from[i] as Origin).at : (contentFrom[contentFrom.length - 1]?.at ?? start)
       i++
-      push(walk, contentFrom, lead, (m[2] ?? '').trim().split(/\s+/)[0] ?? '', start, end)
+      push(walk, contentFrom, lead, (m[2] ?? '').trim().split(/\s+/)[0] ?? '', start, end, cut)
       continue
     }
     if (para > 0 && /^ {0,3}(=+|-+)[ \t]*$/.test(line)) {
@@ -277,7 +285,7 @@ function blocks(walk: Walk, lines: string[], from: Origin[], depth: number): voi
         contentFrom.pop()
       }
       const first = contentFrom[0] as Origin
-      push(walk, contentFrom, 4, '', first.at, (contentFrom[contentFrom.length - 1] as Origin).at)
+      push(walk, contentFrom, 4, '', first.at, (contentFrom[contentFrom.length - 1] as Origin).at, first.cut)
       continue
     }
     para++

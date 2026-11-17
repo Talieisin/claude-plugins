@@ -25,6 +25,10 @@ function copyWorld(
     surface?: RenderSurface
     copy?: { isCopied: true } | { isCopied: false; reason: 'no-surface' | 'no-clipboard' | 'refused' }
     platform?: 'macos' | 'windows' | 'wsl' | 'linux' | 'unknown'
+    /** The engine says the session is hosted (its machine is the server). */
+    hosted?: boolean
+    /** `$.session.info` fails, as an engine without it would. */
+    noInfo?: boolean
     tools?: Record<string, number | 'missing'>
     env?: Record<string, string>
   } = {},
@@ -37,10 +41,14 @@ function copyWorld(
     copies.push({ text: e.text, ...(e.surface === undefined ? {} : { surface: e.surface }) })
     return { value: options.copy ?? { isCopied: true } }
   })
-  on('session.info', (_, e, next) => (options.platform === undefined ? next(e) : { value: { platform: options.platform, isHosted: false } as never }))
+  on('session.info', (_, e, next) => {
+    if (options.noInfo === true) return { deny: 'no session.info in this engine' }
+    return options.platform === undefined ? next(e) : { value: { platform: options.platform, isHosted: options.hosted === true } as never }
+  })
   const tools = options.tools ?? {}
   w.runOther = e => {
-    const name = e.argv[0] ?? ''
+    // A detached tool runs as `sh -c 'exec <tool> … >/dev/null 2>&1'`: name it by the tool.
+    const name = e.argv[0] === 'sh' ? (/^exec (\S+)/.exec(e.argv[2] ?? '')?.[1] ?? 'sh') : (e.argv[0] ?? '')
     if (!['pbcopy', 'wl-copy', 'xclip', 'xsel', 'powershell.exe'].includes(name)) return undefined
     ran.push(e)
     return tools[name] ?? 'missing'
@@ -112,6 +120,10 @@ describe('the copy buttons', () => {
   test('a label: number, language, first line cut; never the display rewrite', () => {
     expect(copyLabel({ text: '\n  cat <<EOF > /tmp/x\nEOF', lang: 'bash', unsafe: false }, 3)).toBe('Copy 3 · bash · cat <<EOF > /tmp/x')
     expect(copyLabel({ text: 'x'.repeat(60), lang: '', unsafe: false }, 1)).toBe(`Copy 1 · ${'x'.repeat(35)}…`)
+    // A language is shown only when it is plain and at most 40 characters, as the drawn fence keeps it.
+    expect(copyLabel({ text: 'ls', lang: 'a'.repeat(41), unsafe: false }, 2)).toBe('Copy 2 · ls')
+    expect(copyLabel({ text: 'ls', lang: 'x<b>', unsafe: false }, 2)).toBe('Copy 2 · ls')
+    expect(copyLabel({ text: 'ls', lang: 'a'.repeat(40), unsafe: false }, 2)).toBe(`Copy 2 · ${'a'.repeat(40)} · ls`)
   })
 })
 
@@ -151,15 +163,63 @@ describe('where the copy goes', () => {
     expect(w.toasts.at(-1)).toBe(`Humantray: copied block 1 of ${short} (3 lines) to this computer's clipboard`)
   })
 
-  test('VS Code on Linux: the first clipboard tool that runs and exits 0', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'vscode', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux', tools: { 'wl-copy': 'missing', xclip: 1, xsel: 0 } })
+  test('VS Code on Linux: wl-copy, then xsel, then xclip; the first that runs and exits 0', async ($, on) => {
+    const { w, ran } = copyWorld(on, { surface: 'vscode', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux', tools: { 'wl-copy': 'missing', xsel: 1, xclip: 0 } })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
     const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
     await ui.press({ key: `${id}:copy:1` })
-    expect(ran.map(r => r.argv)).toEqual([['wl-copy'], ['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']])
+    expect(ran.map(r => r.argv)).toEqual([
+      ['sh', '-c', 'exec wl-copy >/dev/null 2>&1'],
+      ['xsel', '--clipboard', '--input'],
+      ['sh', '-c', 'exec xclip -selection clipboard >/dev/null 2>&1'],
+    ])
     for (const r of ran) expect(r.stdin).toBe(TEXT)
     expect(w.toasts.at(-1)).toContain("to this computer's clipboard")
+  })
+
+  test('xclip and wl-copy run with their output sent to /dev/null, so the run ends when the copy is made: the forked server keeps no stream open', () => {
+    // xclip's child goes on serving the clipboard; with its streams piped a run
+    // that reads to their end waits out its limit and reports a failure though
+    // the copy was made (seen under Xvfb: over 3 s piped, 21 ms detached).
+    for (const tool of clipboardTools('linux')) {
+      if (tool.argv[0] === 'sh') {
+        expect(tool.argv[1]).toBe('-c')
+        expect(tool.argv[2]).toMatch(/^exec (wl-copy|xclip -selection clipboard) >\/dev\/null 2>&1$/)
+      }
+    }
+  })
+
+  test('a tool that fails (cannot start, or times out) moves on to the next; the toast tells the truth', async ($, on) => {
+    const { w, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux', tools: { 'wl-copy': 'missing', xsel: 'missing', xclip: 'missing' } })
+    await $.session.start(START_EVENT)
+    const { id, short } = await addDo($, BODY)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${id}:copy:1` })
+    expect(ran).toHaveLength(3)
+    expect(w.toasts.at(-1)).toBe(
+      `Humantray: block 1 of ${short} not copied: this app has no clipboard route here (no-clipboard), and no clipboard tool ran on this computer. Copy it from the humantray page.`,
+    )
+  })
+
+  test('a hosted session (its machine is the server, not yours): no tool is run; the toast says why', async ($, on) => {
+    const { w, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'macos', hosted: true, tools: { pbcopy: 0 } })
+    await $.session.start(START_EVENT)
+    const { id } = await addDo($, BODY)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${id}:copy:1` })
+    expect(ran).toEqual([])
+    expect(w.toasts.at(-1)).toContain('this session runs on a hosted server, not your computer')
+  })
+
+  test('an engine without $.session.info: no platform, so no tool; nothing throws, and the toast says no tool ran', async ($, on) => {
+    const { w, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, noInfo: true, tools: { pbcopy: 0 } })
+    await $.session.start(START_EVENT)
+    const { id } = await addDo($, BODY)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${id}:copy:1` })
+    expect(ran).toEqual([])
+    expect(w.toasts.at(-1)).toContain('no clipboard tool ran on this computer')
   })
 
   test('the desktop app with no clipboard tool at all: said so; nothing claimed', async ($, on) => {
@@ -210,7 +270,11 @@ describe('where the copy goes', () => {
 
   test('the tools by platform', () => {
     expect(clipboardTools('macos').map(t => t.argv[0])).toEqual(['pbcopy'])
-    expect(clipboardTools('linux').map(t => t.argv[0])).toEqual(['wl-copy', 'xclip', 'xsel'])
+    expect(clipboardTools('linux').map(t => t.argv.join(' '))).toEqual([
+      'sh -c exec wl-copy >/dev/null 2>&1',
+      'xsel --clipboard --input',
+      'sh -c exec xclip -selection clipboard >/dev/null 2>&1',
+    ])
     expect(clipboardTools('windows')[0]?.argv.at(-1)).toContain('Set-Clipboard -Value ([Console]::In.ReadToEnd())')
     expect(clipboardTools('wsl')[0]?.argv[0]).toBe('powershell.exe')
     expect(clipboardTools('unknown')).toEqual([])

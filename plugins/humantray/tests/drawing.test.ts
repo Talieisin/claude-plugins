@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { codeBlocksOf } from '../hooks/code'
+import { UNSAFE, codeBlocksOf } from '../hooks/code'
 import { blocksOf, clipBlocks, forDisplay, forDrawing, plain } from '../hooks/items'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 
@@ -62,7 +62,8 @@ describe('forDrawing', () => {
     test(`code is drawn as stored, in fences of its own, with no U+200B: ${each.name}`, () => {
       const drawn = forDrawing(each.md)
       const { fences, between } = split(drawn)
-      expect(fences).toEqual(each.blocks.map(text => plain(text)))
+      // As stored, but every control character a person cannot see drawn as U+FFFD (bidi controls too).
+      expect(fences).toEqual(each.blocks.map(text => plain(text).replace(new RegExp(UNSAFE.source, 'g'), '\ufffd')))
       for (const fence of fences) expect(fence.includes(ZWSP)).toBe(false)
       for (const text of between) inert(text)
     })
@@ -101,7 +102,7 @@ describe('forDrawing', () => {
       const { fences, between } = split(forDrawing(md))
       for (const text of between) inert(text)
       // Whatever was taken for code is exactly a block the walk found.
-      expect(fences).toEqual(codeBlocksOf(md).map(block => plain(block.text)))
+      expect(fences).toEqual(codeBlocksOf(md).map(block => plain(block.text).replace(new RegExp(UNSAFE.source, 'g'), '\ufffd')))
     })
   }
 
@@ -130,6 +131,52 @@ describe('forDrawing', () => {
     }
     // Each fence is a block of its own.
     expect(blocksOf(drawn).filter(block => block.startsWith('```')).length).toBe(12)
+  })
+
+  // The text after a block that sat in a list item is drawn less that item's
+  // indentation: at the top level it stays prose and a list, never an indented
+  // code block (whose native copy would carry the rewrites). Each expected
+  // text was also parsed with commonmark.js 0.31.2: its only code blocks are
+  // the ones drawn here.
+  const F = '```'
+  const DEDENTED: Array<[string, string, string]> = [
+    [
+      'a 10th step (content at column 4)',
+      ['10. Build:', '', `    ${F}bash`, '    echo 10', `    ${F}`, '', '    Expect, in order:', '', '    - Note the step.', '', '11. Next.'].join('\n'),
+      `10. Build:\n\n*Code 1*\n\n${F}bash\necho 10\n${F}\n\nExpect, in order:\n\n- Note the step.\n\n11. Next.`,
+    ],
+    [
+      'an item written `-   `',
+      ['-   Build:', '', `    ${F}`, '    echo x', `    ${F}`, '', '    After text', '', '    - sub'].join('\n'),
+      `-   Build:\n\n*Code 1*\n\n${F}\necho x\n${F}\n\nAfter text\n\n- sub`,
+    ],
+    [
+      'a nested list',
+      ['- Step', '  - sub', '', `    ${F}`, '    echo nested', `    ${F}`, '', '    After text', '', '    - deeper', '', '- Next step'].join('\n'),
+      `- Step\n  - sub\n\n*Code 1*\n\n${F}\necho nested\n${F}\n\nAfter text\n\n- deeper\n\n- Next step`,
+    ],
+  ]
+  for (const [name, md, expected] of DEDENTED) {
+    test(`the text after a block in a list item is not drawn as code: ${name}`, () => {
+      expect(forDrawing(md)).toBe(expected)
+    })
+  }
+
+  test('no text line is left four or more columns in after a blank line, for any fixture', () => {
+    for (const each of [...CODE_CASES, ...DEDENTED.map(([name, md]) => ({ name, md }))]) {
+      const { between } = split(forDrawing(each.md))
+      for (const text of between) {
+        const lines = text.split('\n')
+        lines.forEach((line, k) => {
+          if (k > 0 && lines[k - 1] === '' && /^ {4}/.test(line)) expect({ name: each.name, line }).toEqual({ name: each.name, line: 'not indented' })
+        })
+      }
+    }
+  })
+
+  test('a block holding a bidi control is drawn with U+FFFD in its place, so a native copy cannot carry it', () => {
+    const { fences } = split(forDrawing('```\necho abc \u202e ok\n```'))
+    expect(fences).toEqual(['echo abc \ufffd ok'])
   })
 
   test('control characters are replaced in code too, since a surface refuses them', () => {

@@ -17,7 +17,7 @@ import type {
   StoreFile,
 } from '../types'
 import { owesPush } from './row-shape'
-import { codeBlocksOf, placedBlocksOf, splitLines } from './code'
+import { UNSAFE, codeBlocksOf, cutColumns, placedBlocksOf, plainLang, splitLines } from './code'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -691,6 +691,9 @@ export const clipBlocks = (md: string, max: number): { text: string; clipped: bo
 export const plain = (text: string): string =>
   text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '\ufffd')
 
+/** What a control character is drawn as. */
+const REPLACEMENT = '\ufffd'
+
 /** An invisible break: it splits a piece of syntax without changing what shows. */
 const BREAK = '\u200b'
 
@@ -737,32 +740,42 @@ export const forDrawing = (md: string): string => {
   if (placed.length === 0) return breakFences(forDisplay(md))
   const raw = splitLines(md)
   const pieces: string[] = []
-  const text = (from: number, to: number) => {
-    const lines = raw.slice(from, to)
+  // The text after a block that sat in a list item or a quote is drawn less
+  // the indentation that container gave it, so that, now at the top level, it
+  // stays prose and a list, never an indented code block.
+  const text = (from: number, to: number, dedent: number) => {
+    const lines = raw.slice(from, to).map(line => (dedent > 0 ? cutColumns(line, 0, dedent) : line))
     while (lines.length > 0 && (lines[0] ?? '').trim() === '') lines.shift()
     while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') lines.pop()
     if (lines.length > 0) pieces.push(breakFences(forDisplay(lines.join('\n'))))
   }
   let at = 0
+  let dedent = 0
   placed.forEach((each, k) => {
-    text(at, each.start)
+    text(at, each.start, dedent)
     pieces.push(`*Code ${String(k + 1)}*`)
     pieces.push(fenced(each.block.text, each.block.lang))
     at = each.end + 1
+    dedent = each.cut
   })
-  text(at, raw.length)
+  text(at, raw.length, dedent)
   return pieces.join('\n\n')
 }
 
 /** Every run of three or more backticks or tildes, broken after its first character: no fence opens. */
 const breakFences = (md: string): string => md.replace(/(`{3,}|~{3,})/g, run => `${run[0] as string}${BREAK}${run.slice(1)}`)
 
-/** Code as a fence of its own: backticks one longer than its longest run, a plain language or none. */
+/**
+ * Code as a fence of its own: backticks one longer than its longest run, a
+ * plain language or none. Every control character a person cannot see (C0 but
+ * tab and the line ends, DEL, C1, and the bidi controls: `UNSAFE`) is drawn as
+ * U+FFFD, so that a surface's own copy of the block cannot carry one either.
+ */
 const fenced = (code: string, lang: string): string => {
   const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map(run => run.length))
   const ticks = '`'.repeat(Math.max(3, longest + 1))
-  const info = /^[A-Za-z0-9_+.#-]{1,40}$/.test(lang) ? lang : ''
-  return `${ticks}${info}\n${code === '' ? '' : `${plain(code)}\n`}${ticks}`
+  const shown = plain(code).replace(new RegExp(UNSAFE.source, 'g'), REPLACEMENT)
+  return `${ticks}${plainLang(lang)}\n${code === '' ? '' : `${shown}\n`}${ticks}`
 }
 
 /**

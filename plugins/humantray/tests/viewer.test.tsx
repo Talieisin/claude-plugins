@@ -383,6 +383,25 @@ describe('reading and drawing', () => {
     expect(await drawnLength(ui)).toBeLessThan(100_000)
   })
 
+  vtest('50 open items whose fences carry 2,000-character language words: every card on the page keeps its text and its answer controls (#51)', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    // Nine fences a body, each info word 2,000 characters: the reader's case on PR #56.
+    const body = Array.from({ length: 9 }, (_, k) => `\`\`\`${'L'.repeat(2_000)}\nstep ${String(k)}\n\`\`\``).join('\n\n')
+    const ids: string[] = []
+    for (let n = 0; n < 50; n++) {
+      const id = `01AAAAAAAAAAAAAAAAAAAB${String(n).padStart(4, '0')}`
+      ids.push(id)
+      put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
+    }
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const keys = (await ui.findAll({ type: 'Button' })).map(b => String((b as unknown as { key?: string }).key ?? ''))
+    expect(keys.filter(key => key.endsWith(':done'))).toHaveLength(10)
+    expect(keys.filter(key => /:copy:\d+$/.test(key))).toHaveLength(90)
+    for (const b of await ui.findAll({ type: 'Button' })) expect(((b as unknown as { props?: { label?: string } }).props?.label ?? '').length).toBeLessThan(100)
+    expect(await drawnLength(ui)).toBeLessThan(100_000)
+  })
+
   vtest('humantray_list in the viewer session lists no store items', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
