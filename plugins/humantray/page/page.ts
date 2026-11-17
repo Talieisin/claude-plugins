@@ -620,6 +620,10 @@ details.card[open] summary { margin-bottom: 10px; }
     }
     return draft;
   }
+  function openItem(id) {
+    for (var i = 0; i < state.open.length; i++) if (state.open[i].id === id) return state.open[i];
+    return null;
+  }
   function fieldOf(id, name) {
     var draft = state.drafts.get(id);
     var value = draft ? draft.fields.get(name) : undefined;
@@ -729,8 +733,10 @@ details.card[open] summary { margin-bottom: 10px; }
     field.addEventListener("input", function () {
       var draft = draftOf(item.id);
       draft.fields.set(name, field.value);
+      // The item as it is now: a kept field outlives the drawing that made it (patchAround), and a raise can change the item.
+      var current = openItem(item.id) || item;
       // Single-select: typing in Other clears a picked option, as the pane does.
-      if (name === "other" && item.multiSelect !== true && field.value.trim() !== "") {
+      if (name === "other" && current.multiSelect !== true && field.value.trim() !== "") {
         draft.picked = [];
         var card = field.closest(".card");
         if (card) Array.prototype.forEach.call(card.querySelectorAll("input[data-option]"), function (x) { x.checked = false; });
@@ -882,15 +888,20 @@ details.card[open] summary { margin-bottom: 10px; }
   }
 
   /*
-   * A redraw while a field in the list has focus (#42). Removing the focused
-   * field closes a phone's keyboard, and a focus() outside a tap does not
-   * reopen it. So the focused element and each element around it, up to the
-   * list, stay the same nodes; everything beside them is replaced by the
-   * fresh drawing, in its order. Returns false, changing nothing, when the
-   * fresh drawing has no element of that id at the same place (the card was
-   * answered, filtered out or changed type): the caller then redraws in full.
+   * A redraw while a text field in the list has focus (#42). Removing the
+   * focused field closes a phone's keyboard, and a focus() outside a tap does
+   * not reopen it. So the focused textarea and each element around it, up to
+   * the list, stay the same nodes; everything beside them is replaced by the
+   * fresh drawing, in its order. Only a textarea is kept: it is the only
+   * element here that holds a keyboard, and anything else (an option, a
+   * button) carries its item's data, which a raise can change, so it is
+   * drawn afresh. Returns false, changing nothing, when the focus is not in
+   * a textarea, or the fresh drawing has no textarea of that id at the same
+   * place (the card was answered, filtered out or changed type): the caller
+   * then redraws in full.
    */
   function patchAround(list, fresh, active) {
+    if (active.nodeName !== "TEXTAREA") return false;
     var twin = null;
     var same = fresh.getElementsByTagName(active.nodeName);
     for (var s = 0; s < same.length; s++) if (same[s].id === active.id) { twin = same[s]; break; }
@@ -972,7 +983,7 @@ details.card[open] summary { margin-bottom: 10px; }
     if (focus && patchAround(list, fresh, active)) return;
     list.textContent = "";
     while (fresh.firstChild) list.appendChild(fresh.firstChild);
-    // The backstop, when the focused field's card has gone or changed shape: focus, caret and scroll by id, and the drafts.
+    // Otherwise (focus not in a textarea, or its card gone or changed shape): focus, caret and scroll by id, and the drafts (#41).
     if (focus) {
       var again = document.getElementById(focus.id);
       if (again) {
