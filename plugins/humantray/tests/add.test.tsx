@@ -641,3 +641,15 @@ describe('the lock', () => {
     expect(String(ran.deny)).not.toContain('busy')
   })
 })
+
+describe('registering at session start', () => {
+  test('a command the engine refuses (/humantray beside the humantray skill, 2.1.326) skips nothing else', async ($, on) => {
+    const w = world(on)
+    w.refuseCommand = name => name === 'humantray'
+    await $.session.start(START_EVENT)
+    expect(w.commands).toEqual(['humantray-viewer', 'humantray-page'])
+    const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Still works?' })
+    expect(answerOf<{ short: string }>(added).short).toMatch(/^HT-/)
+    expect(w.store().items).toHaveLength(1)
+  })
+})

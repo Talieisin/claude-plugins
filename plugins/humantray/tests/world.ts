@@ -36,6 +36,10 @@ export type World = {
   logs: string[]
   /** Every $.session.id() fails, as an engine might. */
   failSessionId: boolean
+  /** The engine refuses to register a command of this name. */
+  refuseCommand: (name: string) => boolean
+  /** Every command registered, in order. */
+  commands: string[]
   /** Every $.session.id() waits for this first (a slow engine). */
   sessionIdGate: Promise<void> | undefined
   /** A $.store.set of this key fails, as a busy store might. */
@@ -143,6 +147,8 @@ export function world(
     },
     logs: [],
     failSessionId: false,
+    refuseCommand: () => false,
+    commands: [],
     sessionIdGate: undefined,
     failStoreSet: () => false,
     appended: [],
@@ -199,7 +205,11 @@ export function world(
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('classic.SessionStart', () => ({}))
   on('tool.register', (_, e) => ({ value: { tool: `mcp__humantray__${e.name}` } }))
-  on('command.register', (_, e) => ({ value: { command: e.name } }))
+  on('command.register', (_, e) => {
+    if (w.refuseCommand(e.name)) throw new Error(`"/${e.name}" refused: it is the plugin's /humantray:humantray`)
+    w.commands.push(e.name)
+    return { value: { command: e.name } }
+  })
   on('ui.open', (_, e) => {
     w.opened.push(e.id)
     return { value: { isPlaced: true } }

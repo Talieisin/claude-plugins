@@ -443,27 +443,45 @@ async function answer($: EngineInterface, id: string, action: Action) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     armDelivery($)
-    await $.tool.register({
-      name: 'humantray_add',
-      description: ADD_DESCRIPTION,
-      inputSchema: ADD_SCHEMA,
-      isDeferred: false,
-    })
-    await $.tool.register({
-      name: 'humantray_list',
-      description: LIST_DESCRIPTION,
-      inputSchema: { type: 'object', properties: {} },
-      isDeferred: false,
-    })
-    await $.command.register({ name: 'humantray', description: 'Open the humantray pane' })
-    await $.command.register({
-      name: 'humantray-viewer',
-      description: 'Show every repository\'s humantray here and answer it (local sessions); "off" to stop',
-    })
-    await $.command.register({
-      name: 'humantray-page',
-      description: "Create or link this repository's humantray page (an artifact); give a link to use that one",
-    })
+    // Each in its own try: one the engine refuses must not skip the rest of the
+    // start. On 2.1.326, with the plugin's own `humantray` skill installed,
+    // `/humantray` is refused as the skill's `/humantray:humantray`.
+    try {
+      await $.tool.register({ name: 'humantray_add', description: ADD_DESCRIPTION, inputSchema: ADD_SCHEMA, isDeferred: false })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.tool.register({
+        name: 'humantray_list',
+        description: LIST_DESCRIPTION,
+        inputSchema: { type: 'object', properties: {} },
+        isDeferred: false,
+      })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({ name: 'humantray', description: 'Open the humantray pane' })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({
+        name: 'humantray-viewer',
+        description: 'Show every repository\'s humantray here and answer it (local sessions); "off" to stop',
+      })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({
+        name: 'humantray-page',
+        description: "Create or link this repository's humantray page (an artifact); give a link to use that one",
+      })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
     await sync($, true).catch(() => undefined)
     // The store pass: at most START_DEADLINE_MS here; the rest goes on detached.
     await withDeadline($, storePass($, 'start'), START_DEADLINE_MS).catch(() => undefined)
