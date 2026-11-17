@@ -88,6 +88,7 @@ export function itemToRow(item: Item & Required<Pick<Item, 'remote'>>, base: Rec
     session_id: item.remote.session_id,
     session_title: item.remote.session_title,
     parent_session_id: item.remote.parent_session_id,
+    // Self-declared, for grouping in the views only (#27): never read for routing or trust.
     lead_session_id: item.remote.lead_session_id,
     writer_version: WRITER_VERSION,
     envelope: ENVELOPE_VERSION,

@@ -39,6 +39,8 @@ export type ArtifactWorld = {
   calls: Call[]
   /** What get_session answers; undefined fails the call. */
   session: { id: string; title: string | null; parent: string | null } | undefined
+  /** The arguments of every get_session call, in order. */
+  sessionCalls: Array<Record<string, unknown>>
   /** Answer every ArtifactData call with a deny that needs a person (a local mod). */
   needsPerson: boolean
   /** Fail the next n ArtifactData calls with a reply of no known shape. */
@@ -85,6 +87,7 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
     artifacts: [],
     calls: [],
     session: { id: ME, title: 'worker for #1', parent: LEAD },
+    sessionCalls: [],
     needsPerson: false,
     garble: 0,
     hold: undefined,
@@ -110,6 +113,7 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
   }
 
   on('mcp.call', (_, e) => {
+    if (e.server === 'claude-code-remote' && e.tool === 'get_session') a.sessionCalls.push({ ...e.args })
     if (e.server !== 'claude-code-remote' || e.tool !== 'get_session' || a.session === undefined) {
       throw new Error('MCP tool call failed')
     }

@@ -40,6 +40,10 @@ export type World = {
   refuseCommand: (name: string) => boolean
   /** Every command registered, in order. */
   commands: string[]
+  /** The engine refuses to register a tool of this name. */
+  refuseTool: (name: string) => boolean
+  /** Every tool registered, in order. */
+  tools: string[]
   /** Every $.session.id() waits for this first (a slow engine). */
   sessionIdGate: Promise<void> | undefined
   /** A $.store.set of this key fails, as a busy store might. */
@@ -149,6 +153,8 @@ export function world(
     failSessionId: false,
     refuseCommand: () => false,
     commands: [],
+    refuseTool: () => false,
+    tools: [],
     sessionIdGate: undefined,
     failStoreSet: () => false,
     appended: [],
@@ -204,7 +210,11 @@ export function world(
   on('turn.start', (_, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_, e) => ({ text: e.answer }))
   on('classic.SessionStart', () => ({}))
-  on('tool.register', (_, e) => ({ value: { tool: `mcp__humantray__${e.name}` } }))
+  on('tool.register', (_, e) => {
+    if (w.refuseTool(e.name)) throw new Error(`the tool ${e.name} was refused`)
+    w.tools.push(e.name)
+    return { value: { tool: `mcp__humantray__${e.name}` } }
+  })
   on('command.register', (_, e) => {
     if (w.refuseCommand(e.name)) throw new Error(`"/${e.name}" refused: it is the plugin's /humantray:humantray`)
     w.commands.push(e.name)

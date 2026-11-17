@@ -26,7 +26,7 @@
 
 import type { EngineInterface } from 'claude-code'
 
-import type { Item, RemoteLineage, ResponseRow, StoreFile } from '../types'
+import type { Item, LeadRecord, RemoteLineage, ResponseRow, StoreFile } from '../types'
 import {
   type Link,
   deleteDocs,
@@ -42,6 +42,7 @@ import {
   withDeadline,
 } from './artifact-store'
 import { normaliseRepo, prune, resolveOwner } from './items'
+import { type ShownFrom, isLeadRecord, leadKey, restoredSelf, shownUnder } from './lineage'
 import { owesPush } from './row-shape'
 import {
   SESSION_ID,
@@ -139,6 +140,12 @@ let delivering: Promise<void> = Promise.resolve()
 let adoptedHere = false
 /** When this process last tried to find the page or to adopt (its clock). */
 let lastFind: number | undefined
+/**
+ * This session's `humantray_config` record (#27): undefined until read from
+ * `$.store`, null when none is kept there. `lineage` itself always stays as
+ * `get_session` gave it: only the heading items are shown under changes.
+ */
+let leadRecord: LeadRecord | null | undefined
 
 /** Whether this is a cloud session, where the store pass runs. */
 export async function isCloud($: EngineInterface): Promise<boolean> {
@@ -216,6 +223,40 @@ export async function ensureLineage($: EngineInterface): Promise<RemoteLineage |
   return lineage
 }
 
+/** This session's `humantray_config` record: null when none is kept, undefined when `$.store` could not be read. */
+export async function loadLeadRecord($: EngineInterface, routable: string): Promise<LeadRecord | null | undefined> {
+  if (leadRecord !== undefined) return leadRecord
+  try {
+    const held = await $.store.get(leadKey(routable))
+    leadRecord = isLeadRecord(held) ? held : null
+  } catch {
+    return undefined
+  }
+  return leadRecord
+}
+
+/** Keeps a record in `$.store`, then in this process. False, with nothing changed, when the store refused it. */
+export async function saveLeadRecord($: EngineInterface, routable: string, record: LeadRecord): Promise<boolean> {
+  try {
+    await $.store.set(leadKey(routable), record)
+  } catch {
+    return false
+  }
+  leadRecord = record
+  return true
+}
+
+/** The heading this session's items are shown under now, or undefined while the lineage or the record cannot be read. */
+export async function shownNow(
+  $: EngineInterface,
+): Promise<{ lineage: RemoteLineage; lead: string; from: ShownFrom } | undefined> {
+  const known = await ensureLineage($)
+  if (known === undefined) return undefined
+  const record = await loadLeadRecord($, known.session_id)
+  if (record === undefined) return undefined
+  return { lineage: known, ...shownUnder(known, record ?? undefined) }
+}
+
 async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   if (!(await isCloud($))) return 'done'
   if (kind === 'start') blocked = false
@@ -251,9 +292,29 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
     if (adoptable.kind === 'unavailable') outcome = 'failed'
     else adoptedHere = true
   }
+  // The heading new items are shown under (#27). With no record kept (a
+  // replaced container), `self` alone is restored from this session's rows;
+  // a kept record, a clear included, is never replaced here.
+  let record = await loadLeadRecord($, routable)
+  if (
+    record === null &&
+    adoptable?.kind === 'ok' &&
+    // A row that could not be read may be the newest: restore nothing then.
+    adoptable.skipped === 0 &&
+    restoredSelf(
+      adoptable.rows.map(each => each.row),
+      routable,
+      known.parent_session_id,
+    )
+  ) {
+    const restored: LeadRecord = { lead: routable, at: now, from: 'restored' }
+    if (await saveLeadRecord($, routable, restored)) record = restored
+  }
+  // While the record cannot be read, items wait for their lineage rather than take a wrong heading.
+  const shown = record === undefined ? undefined : { ...known, lead_session_id: shownUnder(known, record ?? undefined).lead }
   const target = link
   const recorded = await mutate<{ items: Item[]; changed: boolean }>($, file => {
-    let changed = backfillLineage(file, me, known) > 0
+    let changed = shown !== undefined && backfillLineage(file, me, shown) > 0
     if (adoptable?.kind === 'ok' && target !== undefined) {
       const adopted = adoptRows(file, adoptable.rows, me, routable, target.url)
       // An adopted answer not yet delivered is delivered by the caller's pass.
