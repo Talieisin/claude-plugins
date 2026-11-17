@@ -447,3 +447,27 @@ describe('review findings on PR #50', () => {
     expect(a.calls.filter(c => c.tool === 'Artifact').length).toBe(lists)
   })
 })
+
+describe('the re-reads at e0460f6', () => {
+  test("the call's own page find delivers nothing, though it adopts an answer waiting to be delivered; the next turn delivers it", async ($, on) => {
+    const w = world(on, CLOUD)
+    const a = artifactWorld(on, { read: path => w.files.get(path) })
+    // A replaced container: no file, and no page yet at the start.
+    await $.session.start(START_EVENT)
+    await settle(w)
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', meta(START - 1000))
+    a.put(
+      URL_A,
+      `items/${ID1}`,
+      priorRow(ID1, START - 100, LEAD, { type: 'approve', status: 'answered', response: { selected: ['Approve'] }, response_at: START - 50 }),
+    )
+    expect(answerOf<Shown>(await config($)).page).toBe('queued')
+    await settle(w)
+    expect(w.store().items.map(item => item.id)).toEqual([ID1])
+    expect(w.submits).toEqual([])
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(w.submits).toEqual([`humantray HT-${ID1.slice(-5)} (Seeded): Approve`])
+  })
+})
