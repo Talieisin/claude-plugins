@@ -27,7 +27,7 @@ const CONFIG_DESCRIPTION =
   'Pass lead: "self" or a routable session id (session_…) to show new items under that heading, null to go back to the default, or nothing to read. ' +
   'Returns { session_id, parent_session_id, shown_under, shown_under_from, page }. ' +
   "This sets display grouping only: it does not say whose instructions this session follows, which is the repository's AGENTS.md's to say. " +
-  'Set it only on the instruction of your lead as AGENTS.md defines one, or on the owner\'s brief. Cloud sessions only.'
+  'Set it only on the instruction of your lead as AGENTS.md defines one, on the owner\'s brief, or, for a lead, as cloud:lead\'s humantray.md says. Cloud sessions only.'
 
 const CONFIG_SCHEMA = {
   type: 'object',

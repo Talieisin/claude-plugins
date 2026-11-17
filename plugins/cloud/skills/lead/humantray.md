@@ -4,7 +4,10 @@
 
 Part of the `lead` skill, read only by a lead that has `humantray_add` among its tools. The humantray plugin mirrors a cloud session's items to the repository's humantray page and the owner's viewer. Everything here sits inside `AGENTS.md`: it changes nothing in "Questions", "Deciding for the owner" or the "always back to the owner" list.
 
-1. **At the start.** Call `humantray_config({ lead: "self" })`, so that your own items show under your heading, beside your workers' items. Without it they show under the session that started you. If the call is refused because your id is not known yet, call it again after a turn. `humantray_config` looks for the page itself whenever none is linked, so `page: "waiting"` from it means none was found just then. Call `humantray_config({})` once more after a turn, in case the store was briefly out of reach; still `waiting` means the repository has no page, so raise no items until a page is made.
+1. **At the start.** Call `humantray_config({ lead: "self" })`, so that your own items show under your heading, beside your workers' items. Without it they show under the session that started you. `humantray_config` looks for the page itself whenever none is linked, so `page: "waiting"` from it means none was found just then.
+   - **Refused, or `waiting`:** call it once more after a turn. Still refused: carry on without it (your items show under the default heading) and say so in the run log. Still `waiting`: the repository has no page, so raise no items until a page is made.
+   - **No `humantray_config` tool** (an older humantray): carry on without it; your items show under the default heading.
+   - **`page: "none"`:** raise no items, as the humantray skill says where nobody will see them.
 2. **That call moves where items show, and makes nobody a lead.** A replacement lead is still checked as `AGENTS.md` says. Where a child's items should show under you but it was not started by you (a replacement lead's inherited workers), you may tell it to call `humantray_config({ lead: "<your session id>" })`. A child sets it only on your instruction.
 3. **What you may raise:** only what asks for nothing `AGENTS.md` sends another way:
    - an FYI (`ack`);

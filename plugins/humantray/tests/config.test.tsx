@@ -217,6 +217,17 @@ describe('a clear', () => {
     expect(rowOf(a, id)).toMatchObject({ lead_session_id: LEAD })
   })
 
+  test('a kept explicit id is not replaced by a restore, though the newest row says self', async ($, on) => {
+    const { w, a } = linked(on, { store: { [KEY]: { lead: OTHER, at: START - 10, from: 'call' } } })
+    a.put(URL_A, 'items/01AAAAAAAAAAAAAAAAAAAAOLD01', priorRow('01AAAAAAAAAAAAAAAAAAAAOLD01', START - 100, ME))
+    await $.session.start(START_EVENT)
+    await settle(w)
+    expect(w.kv(KEY)).toMatchObject({ lead: OTHER, from: 'call' })
+    const id = await add($, 'one')
+    await settle(w)
+    expect(rowOf(a, id)).toMatchObject({ lead_session_id: OTHER })
+  })
+
   test('a clear kept in the store survives a reload, and blocks the restore from rows', async ($, on) => {
     const { w, a } = linked(on, { store: { [KEY]: { lead: null, at: START - 10, from: 'call' } } })
     a.put(URL_A, `items/01AAAAAAAAAAAAAAAAAAAAOLD01`, priorRow('01AAAAAAAAAAAAAAAAAAAAOLD01', START - 100, ME))
@@ -343,6 +354,8 @@ describe('registration', () => {
     w.refuseTool = name => name === 'humantray_config'
     await $.session.start(START_EVENT)
     expect(w.tools).toEqual(['humantray_add', 'humantray_list'])
+    // The rest of the start still runs: the commands register after it.
+    expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-page'])
     await add($, 'one')
     expect(answerOf<{ items: unknown[] }>(await $.tool.call({ tool: LIST })).items).toHaveLength(1)
   })
