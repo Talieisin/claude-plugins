@@ -25,6 +25,9 @@
 // there back into the file, where the same claim and settle deliver them.
 // `/humantray-page` creates or links that page; no hook ever publishes.
 //
+// Every card's code blocks can be copied (#51, copy.ts): the stored text of
+// each, never the drawn text with its display rewrites.
+//
 // On the owner's computer, `/humantray-viewer` makes one local session the
 // viewer (viewer.ts, #32): it reads every repository's page, draws it here
 // grouped by repository, lead and asker, and answers by sending a response
@@ -34,7 +37,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Draft, HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
+import type { CodeBlock, Draft, HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
 import {
   type Action,
   type AddOutcome,
@@ -61,7 +64,9 @@ import {
   ulid,
   validateAdd,
 } from './items'
+import { codeBlocksOf } from './code'
 import { registerConfig, registerConfigTool } from './config-tool'
+import { COPY_PAGE, copyBlock, copyLabel, copyToast } from './copy'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
@@ -93,13 +98,14 @@ const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 
 const view = atom({ plugin: 'humantray', key: 'view' } as const, 'open')
 const page = atom({ plugin: 'humantray', key: 'page' } as const, 0)
 /** The History entry shown in full: read from the store when "Show in full" is pressed. */
-const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as HistoryFull | null, { shape: 'full-2' })
+// full-3: a full entry carries its body's code blocks for copying (#51).
+const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as HistoryFull | null, { shape: 'full-3' })
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 // The viewer's (#32): its tray (built in viewer.ts, which declares the same
 // atom), its Open page, and a card shown in full.
 const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
 const viewerPage = atom({ plugin: 'humantray', key: 'vpage' } as const, 0)
-const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-1' })
+const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-2' })
 
 const token = (): string => {
   const bytes = new Uint8Array(8)
@@ -369,8 +375,13 @@ async function takeDetached($: EngineInterface, envelopes: ResponseEnvelope[], v
   for (const envelope of envelopes) void takeEnvelope($, envelope, via)
 }
 
-/** The most characters of an open card's body the viewer draws before "Show in full" (#32). */
-const VIEWER_BODY = 3_000
+/**
+ * The most characters of an open card's body the viewer draws before "Show in
+ * full" (#32). 6,000 (decided for the owner on #51), so that a runbook part's
+ * steps, one list and so one block, show on the card: ten cards stay at
+ * 60,000, with their copy buttons capped (COPY_PAGE), under a drawing's 100,000.
+ */
+const VIEWER_BODY = 6_000
 /** Cards on one page of the viewer's Open list, so a page stays far under a surface's limit. */
 const VIEWER_PAGE = 10
 
@@ -674,6 +685,48 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Input, Link, Markdown, Text } = $.ui.resolve(e)
+    // A card's code blocks, one copy button each (#51): the stored text, never
+    // the drawn. At most COPY_PAGE at once, so a card full of fences stays
+    // small; a button pages through the rest. `draftId` keeps the page shown.
+    const copyList = async (key: string, draftId: string, short: string, blocks: readonly CodeBlock[]) => {
+      const offered = blocks.flatMap((block, k) => (block.text === '' ? [] : [{ block, n: k + 1 }]))
+      if (offered.length === 0) return null
+      const held = await $.state.get({ ...drafts, id: draftId })
+      const at = { ...EMPTY_DRAFT, ...(held.value ?? {}) }.codeAt
+      const pages = Math.ceil(offered.length / COPY_PAGE)
+      const from = (((at % pages) + pages) % pages) * COPY_PAGE
+      const shown = offered.slice(from, from + COPY_PAGE)
+      const rows = shown.map(({ block, n }) =>
+        block.unsafe ? (
+          <Text key={`${key}:copy:${String(n)}`} dimColor>
+            {`Code block ${String(n)} holds control characters: not offered for copy`}
+          </Text>
+        ) : (
+          <Button
+            key={`${key}:copy:${String(n)}`}
+            label={copyLabel(block, n)}
+            onPress={async press => {
+              const outcome = await copyBlock($, press.surface, block)
+              await toast($, copyToast(outcome, block, n, short)).catch(() => undefined)
+            }}
+          />
+        ),
+      )
+      if (pages > 1) {
+        rows.push(
+          <Button
+            key={`${key}:copy:more`}
+            label={`Code blocks ${String(from + 1)}–${String(from + shown.length)} of ${String(offered.length)}: show the next`}
+            onPress={() => setDraft($, draftId, current => ({ codeAt: current.codeAt + 1 }))}
+          />,
+        )
+      }
+      return (
+        <Box key={`${key}:copy`} flexDirection="column">
+          {rows}
+        </Box>
+      )
+    }
     // One card's controls, by type: the local pane's (keys and drafts by the
     // item's id) and the viewer's (#32; by `v:` and the id) alike.
     const controlsFor = (item: Item, key: string, draftId: string, draft: Draft, press: (action: Action) => () => Promise<void>) => {
@@ -826,6 +879,7 @@ export const register: Register = on => {
                   {`(… cut short: ${String(full.body.length)} characters in all)`}
                 </Text>
               )}
+              {await copyList(`v:${full.id}:full`, `vfull:${full.id}`, full.short, full.copy ?? [])}
             </Box>
           </Box>
         )
@@ -1005,6 +1059,8 @@ export const register: Register = on => {
             {body.clipped && (
               <Button key={`${key}:full`} label="Show in full" onPress={() => update($, viewerExpanded, () => fullOf(item))} />
             )}
+            {/* Every block of the whole body, cut or not: a step can be copied without "Show in full". */}
+            {await copyList(key, viewerDraftId(row.id), row.short, codeBlocksOf(row.body_md))}
             {lines}
             {draft.error !== '' && <Text color="error">{draft.error}</Text>}
           </Box>,
@@ -1039,6 +1095,7 @@ export const register: Register = on => {
               </Text>
               <Text dimColor>{item.short}</Text>
               {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDisplay(item.body_md)} />}
+              {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
               {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
               {draft.error !== '' && <Text color="error">{draft.error}</Text>}
             </Box>,
@@ -1141,6 +1198,7 @@ export const register: Register = on => {
               <Text dimColor>{full.short}</Text>
               {full.body.text !== '' && <Markdown key={`${full.id}:full:body`} text={full.body.text} />}
               {full.body.clipped && more(`${full.id}:full:body:more`, full.body)}
+              {await copyList(`${full.id}:full`, `full:${full.id}`, full.short, full.copy ?? [])}
               {full.answer !== '' && <Text>{plain(full.answer)}</Text>}
               {partsOf(`${full.id}:full`, full.parts)}
             </Box>
@@ -1222,6 +1280,7 @@ export const register: Register = on => {
             {bumped}
           </Text>
           {item.body_md !== '' && <Markdown key={`${id}:body`} text={forDisplay(item.body_md)} />}
+          {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
           {controls}
           {draft.error !== '' && <Text color="error">{draft.error}</Text>}
         </Box>,

@@ -10,7 +10,9 @@ import { readEnvelope } from '../hooks/envelope'
 import { fingerprint, itemToRow } from '../hooks/row-shape'
 import { FIND_MS, GIVE_UP_MS, LEASE_MS, MAX_LISTED, TICK_MS, isGivenUp, lastActive, nextSendAt, repoMatches, settleEntry } from '../hooks/viewer'
 import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
-import { COMMAND, LIST, PANE, START, START_EVENT, answerOf, stored, world } from './world'
+import { codeBlocksOf } from '../hooks/code'
+import { RUNBOOK } from './code-fixtures'
+import { ADD, COMMAND, LIST, PANE, START, START_EVENT, answerOf, stored, world } from './world'
 
 type On = Parameters<typeof world>[0]
 
@@ -102,6 +104,12 @@ async function tickOnce(w: ReturnType<typeof world>, ms = TICK_MS) {
 async function shownText(ui: { findAll: (q: { type?: string }) => Promise<Array<{ text?: string }>> }) {
   const texts = [...(await ui.findAll({ type: 'Text' })), ...(await ui.findAll({ type: 'Markdown' }))]
   return texts.map(t => t.text ?? '').join('\n')
+}
+
+/** Every character a drawing holds that counts toward a surface's limit: texts, Markdown and Button labels (#51). */
+async function drawnLength(ui: { findAll: (q: { type?: string }) => Promise<Array<{ text?: string; props?: { label?: string } }>> }) {
+  const buttons = await ui.findAll({ type: 'Button' })
+  return (await shownText(ui)).length + buttons.reduce((sum, b) => sum + (b.props?.label ?? '').length, 0)
 }
 
 describe('the pure rules', () => {
@@ -351,8 +359,28 @@ describe('reading and drawing', () => {
     const cards = await ui.findAll({ type: 'Box' })
     const cardCount = cards.filter(b => String((b as unknown as { key?: string }).key ?? '').endsWith(':card')).length
     expect(cardCount).toBeLessThanOrEqual(10)
-    expect((await shownText(ui)).length).toBeLessThan(100_000)
+    expect(await drawnLength(ui)).toBeLessThan(100_000)
     expect((await ui.findAll({ key: 'v:next' })).length).toBe(1)
+  })
+
+  vtest('50 open items whose 20,000-character bodies are all short fences: copy buttons capped per card, the page still under the limit (#51)', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    // A fence per 60 characters, each with a long first line: as many copy labels as a body can make.
+    const fence = (k: number) => `\`\`\`sh\n${'x'.repeat(40)}${String(k).padStart(4, '0')}\n\`\`\``
+    const body = Array.from({ length: 360 }, (_, k) => fence(k)).join('\n\n').slice(0, 20_000)
+    for (let n = 0; n < 50; n++) {
+      const id = `01AAAAAAAAAAAAAAAAAAAB${String(n).padStart(4, '0')}`
+      put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
+    }
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const buttons = await ui.findAll({ type: 'Button' })
+    const copies = buttons.filter(b => /:copy:\d+$/.test(String((b as unknown as { key?: string }).key ?? '')))
+    expect(copies.length).toBe(10 * 9)
+    expect(buttons.filter(b => String((b as unknown as { key?: string }).key ?? '').endsWith(':copy:more')).length).toBe(10)
+    // The labels are counted: ninety of them, each over 40 characters.
+    expect((await drawnLength(ui)) - (await shownText(ui)).length).toBeGreaterThan(90 * 40)
+    expect(await drawnLength(ui)).toBeLessThan(100_000)
   })
 
   vtest('humantray_list in the viewer session lists no store items', async ($, on) => {
@@ -929,14 +957,14 @@ describe('the lease before every outbox write and send', () => {
 })
 
 describe('the card body cut', () => {
-  vtest('a body over 3,000 characters is drawn cut, with Show in full; the whole shows on request', async ($, on) => {
+  vtest('a body over 6,000 characters is drawn cut, with Show in full; the whole shows on request', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'ack', body_md: Array.from({ length: 40 }, (_, n) => `Paragraph ${n} ${'word '.repeat(30)}`).join('\n\n') }))
     await turnOn($, w)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     const body = (await ui.findAll({ key: `v:${ID1}:body` }))[0] as unknown as { text?: string } | undefined
-    expect((body?.text ?? '').length).toBeLessThanOrEqual(3_000)
-    expect((body?.text ?? '').length).toBeGreaterThan(1_000)
+    expect((body?.text ?? '').length).toBeLessThanOrEqual(6_000)
+    expect((body?.text ?? '').length).toBeGreaterThan(3_000)
     await ui.press({ key: `v:${ID1}:full` })
     await w.clock.settle()
     expect(await shownText(ui)).toContain('Paragraph 39')
@@ -1052,5 +1080,59 @@ describe('acceptance findings (#32)', () => {
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('Applied; waiting')
     expect(sends).toEqual([])
+  })
+})
+
+describe('copying code from a viewer card (#51)', () => {
+  const blocks = codeBlocksOf(RUNBOOK)
+  const copier = (on: On) => {
+    const copies: string[] = []
+    on('ui.copy', (_, e) => {
+      copies.push(e.text)
+      return { value: { isCopied: true as const } }
+    })
+    return copies
+  }
+
+  vtest('every block of the whole body is offered, cut or not, and copies the stored text; so does "Show in full"', async ($, on) => {
+    const { w, a } = viewerWorld(on, { surfaces: ['terminal'] })
+    const copies = copier(on)
+    // A lead-in past the card's budget, so that the whole runbook is cut away.
+    put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: `${'Lead-in words. '.repeat(450)}\n\n${RUNBOOK}` }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await ui.find({ key: `v:${ID1}:body` }))?.props.text).not.toContain('docker build')
+    await ui.press({ key: `v:${ID1}:copy:1` })
+    expect(copies.at(-1)).toBe(blocks[0]?.text)
+    expect(copies.at(-1)).toContain('\tEOF')
+    await ui.press({ key: `v:${ID1}:copy:more` })
+    await ui.press({ key: `v:${ID1}:copy:12` })
+    expect(copies.at(-1)).toBe(blocks[11]?.text)
+    await ui.press({ key: `v:${ID1}:full` })
+    await w.clock.settle()
+    await ui.press({ key: `v:${ID1}:full:copy:3` })
+    expect(copies.at(-1)).toBe(blocks[2]?.text)
+    for (const text of copies) expect(text.includes('\u200b')).toBe(false)
+  })
+
+  vtest('a runbook part now shows whole on the card: its steps are under the 6,000-character budget', async ($, on) => {
+    const { w, a } = viewerWorld(on, { surfaces: ['terminal'] })
+    put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: RUNBOOK }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await ui.find({ key: `v:${ID1}:body` }))?.props.text).toContain('step6')
+    expect(await ui.find({ key: `v:${ID1}:full` })).toBeUndefined()
+  })
+
+  vtest("the viewer session's own items (This session) copy as the local pane's do", async ($, on) => {
+    const { w } = viewerWorld(on, { surfaces: ['terminal'] })
+    const copies = copier(on)
+    await turnOn($, w)
+    const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'do', header: 'Mine', question: 'Mine', body_md: RUNBOOK })).id
+    await w.clock.settle()
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ type: 'Text', text: 'This session' })).toBeDefined()
+    await ui.press({ key: `${id}:copy:2` })
+    expect(copies.at(-1)).toBe(blocks[1]?.text)
   })
 })

@@ -8,6 +8,7 @@
 // copied here.
 
 import type { On } from 'claude-code'
+import { PAGE_VERSION } from '../hooks/rows'
 
 export const ME = 'session_FAKEFAKEFAKEFAKEFAKEME01'
 export const LEAD = 'session_FAKEFAKEFAKEFAKEFAKELEAD1'
@@ -264,8 +265,8 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
   return a
 }
 
-/** A valid `meta/page` for the test repository. */
-export const meta = (created_at: number, page_version = 1) => ({
+/** A valid `meta/page` for the test repository, of the page this version publishes unless told otherwise. */
+export const meta = (created_at: number, page_version = PAGE_VERSION) => ({
   schema: 1,
   kind: 'humantray',
   repo: REPO,

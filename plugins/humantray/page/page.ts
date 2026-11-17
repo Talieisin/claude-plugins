@@ -60,8 +60,15 @@ main, .group, .asker { display: flex; flex-direction: column; gap: 12px; min-wid
 .card h2 { font-size: 15px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .body { min-width: 0; overflow-wrap: anywhere; }
 code { font-family: var(--mono); font-size: 12.5px; background: var(--chip); border-radius: 4px; padding: 0 4px; }
-pre { background: var(--chip); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 0 0 6px; }
+pre { background: var(--chip); border-radius: 8px; padding: 8px 10px; overflow-x: auto; margin: 0 0 6px; tab-size: 4; }
 pre code { padding: 0; background: none; }
+.code { margin: 0 0 6px; min-width: 0; }
+.code pre { margin: 0; }
+.code-bar { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 2px; }
+.code-lang { margin-right: auto; font-family: var(--mono); }
+.copy { font: inherit; font-size: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 6px; padding: 1px 10px; cursor: pointer; }
+.copied { color: var(--ok); }
+.copied.bad { color: var(--bad); }
 .meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .opts { display: flex; flex-direction: column; gap: 6px; }
 .opt { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; cursor: pointer; min-width: 0; }
@@ -136,7 +143,11 @@ details.card[open] summary { margin-bottom: 10px; }
     tab: "open", kind: "all", asker: "", open: [], responses: new Map(), history: [], newer: 0, bad: 0,
     loaded: false, failed: "", busy: new Map(), results: new Map(),
     /* What the person has typed or picked on each open card, kept across every redraw until it is saved. */
-    drafts: new Map()
+    drafts: new Map(),
+    /* A code block's copy that just ran, by its button's id: how it went, and until when it is said (#51). */
+    copied: new Map(),
+    /* The History cards the person opened, by item id. */
+    unfolded: new Set()
   };
   var db = null;
 
@@ -447,7 +458,123 @@ details.card[open] summary { margin-bottom: 10px; }
     parent.appendChild(el("div", { className: "table" }, [el("table", null, [el("thead", null, [row(head, "th")]), body])]));
     return i;
   }
-  function list(lines, i, parent, depth) {
+  /* A line with each tab expanded to the next tab stop of 4: for deciding structure only. */
+  function expandTabs(line) {
+    if (line.indexOf("\t") < 0) return line;
+    var out = "";
+    for (var k = 0; k < line.length; k++) {
+      var ch = line.charAt(k);
+      out += ch === "\t" ? "    ".slice(out.length % 4) : ch;
+    }
+    return out;
+  }
+  /*
+   * A stored line less "from" columns (whatever they hold), then less up to
+   * "extra" more columns of spaces and tabs; a tab cut through leaves its
+   * remaining columns as spaces. As cutColumns in hooks/code.ts.
+   */
+  function cutColumns(raw, from, extra) {
+    var col = 0, i = 0, pad = 0, width;
+    while (i < raw.length && col < from) {
+      width = raw.charAt(i) === "\t" ? 4 - (col % 4) : 1;
+      i++;
+      if (col + width > from) { pad = col + width - from; col = from; break; }
+      col += width;
+    }
+    var left = extra;
+    var eaten = Math.min(pad, left);
+    pad -= eaten; left -= eaten; col += eaten;
+    while (left > 0 && pad === 0 && i < raw.length && (raw.charAt(i) === " " || raw.charAt(i) === "\t")) {
+      width = raw.charAt(i) === "\t" ? 4 - (col % 4) : 1;
+      i++;
+      if (width > left) { pad = width - left; col += left; left = 0; break; }
+      left -= width; col += width;
+    }
+    return " ".repeat(pad) + raw.slice(i);
+  }
+  /*
+   * A code block holding a control character a person cannot see (C0 but tab,
+   * DEL, C1, a bidi control) is drawn but not offered for copy (decided for the
+   * owner on #51): a pasted escape can reach the terminal.
+   */
+  var UNSAFE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/;
+  /*
+   * One code block, drawn from the stored lines it came from, with a bar above
+   * it: the language, and a Copy button that copies the same text. The text is
+   * held here, never read back from the page, and reaches the page only
+   * through textContent.
+   */
+  function codeBlock(ctx, from, extra, lang, parent) {
+    var text = from.map(function (o) { return cutColumns(ctx.raw[o.at] || "", o.cut, extra); }).join("\n");
+    var code = el("code", { text: text });
+    var pre = el("pre", null, [code]);
+    if (lang) pre.setAttribute("data-lang", lang);
+    var bar = el("div", { className: "code-bar" });
+    if (lang) bar.appendChild(el("span", { className: "code-lang", text: lang }));
+    ctx.n++;
+    if (ctx.scope && text !== "") {
+      var id = "copy-" + ctx.scope + "-" + ctx.n;
+      if (UNSAFE.test(text)) {
+        bar.appendChild(el("span", { className: "copied bad", text: "Holds control characters: not offered for copy" }));
+      } else {
+        var shown = state.copied.get(id);
+        if (shown && shown.until <= Date.now()) { state.copied.delete(id); shown = undefined; }
+        if (shown) bar.appendChild(el("span", { className: shown.ok ? "copied" : "copied bad", role: "status", text: shown.ok ? "Copied" : "Not copied: your browser refused. Select the code and copy it." }));
+        var b = el("button", { type: "button", className: "copy", id: id, text: "Copy", "aria-label": lang ? "Copy the " + lang + " code" : "Copy the code" });
+        b.addEventListener("click", function () { copyCode(id, text, code); });
+        bar.appendChild(b);
+      }
+    }
+    parent.appendChild(el("div", { className: "code" }, [bar, pre]));
+  }
+  /* Copies with the copy event, for a browser that refuses the clipboard API: true once the event carried the text. */
+  function copyByEvent(text) {
+    var carried = false;
+    var put = function (e) {
+      if (!e.clipboardData) return;
+      e.clipboardData.setData("text/plain", text);
+      e.preventDefault();
+      carried = true;
+    };
+    document.addEventListener("copy", put);
+    var ran = false;
+    try { ran = document.execCommand("copy"); } catch (e) { ran = false; }
+    document.removeEventListener("copy", put);
+    return ran && carried;
+  }
+  /*
+   * Copies a code block's text: the clipboard API, else the copy event. If the
+   * browser refuses both, the code is selected for the person's own copy, and
+   * the bar says the copy was not made (it never claims the code is still
+   * selected: a redraw drops the selection).
+   */
+  function copyCode(id, text, code) {
+    var shown = function (ok) {
+      state.copied.set(id, { ok: ok, until: Date.now() + (ok ? 2000 : 8000) });
+      render();
+      setTimeout(render, ok ? 2100 : 8100);
+    };
+    var fallback = function () {
+      if (copyByEvent(text)) { shown(true); return; }
+      shown(false);
+      /* Select the code as drawn now (the redraw replaced it), once, so the person can copy it at once. */
+      var again = document.getElementById(id);
+      var box = again ? again.closest(".code") : null;
+      var fresh = box ? box.querySelector("code") : code;
+      try {
+        var range = document.createRange();
+        range.selectNodeContents(fresh);
+        var selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      } catch (e) { /* nothing to select */ }
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(text).then(function () { shown(true); }, fallback);
+    } else fallback();
+  }
+
+  function list(ctx, lines, from, i, parent, depth) {
     var first = ITEM.exec(lines[i]);
     var ordered = /\d/.test(first[2]);
     var marker = ordered ? first[2].slice(-1) : first[2];
@@ -461,34 +588,39 @@ details.card[open] summary { margin-bottom: 10px; }
       if (ordered ? !/\d/.test(m[2]) || m[2].slice(-1) !== marker : m[2] !== marker) break;
       var pad = m[3] ? m[3].length : 1;
       var width = m[1].length + m[2].length + (pad > 4 ? 1 : pad);
-      var body = [m[4] !== undefined ? m[4] : ""];
+      var content = m[4] !== undefined ? m[4] : "";
+      var body = [content];
+      var bodyFrom = [{ at: from[i].at, cut: from[i].cut + lines[i].length - content.length }];
       var blank = false;
       i++;
       while (i < lines.length) {
         var line = lines[i];
-        if (BLANK.test(line)) { body.push(""); blank = true; i++; continue; }
+        if (BLANK.test(line)) { body.push(""); bodyFrom.push({ at: from[i].at, cut: from[i].cut + width }); blank = true; i++; continue; }
         var indent = /^ */.exec(line)[0].length;
-        if (indent >= width) { body.push(line.slice(width)); blank = false; i++; continue; }
-        if (!blank && !startsBlock(line)) { body.push(line.trim()); i++; continue; }
+        if (indent >= width) { body.push(line.slice(width)); bodyFrom.push({ at: from[i].at, cut: from[i].cut + width }); blank = false; i++; continue; }
+        /* A lazy line: parsed trimmed, but only its leading columns are taken (#51). */
+        if (!blank && !startsBlock(line)) { body.push(line.trim()); bodyFrom.push({ at: from[i].at, cut: from[i].cut + indent }); i++; continue; }
         break;
       }
       var trailing = 0;
-      while (body.length > 1 && body[body.length - 1] === "") { body.pop(); trailing++; }
+      while (body.length > 1 && body[body.length - 1] === "") { body.pop(); bodyFrom.pop(); trailing++; }
       if (trailing > 0 && i < lines.length && ITEM.test(lines[i])) loose = true;
-      items.push(body);
+      items.push({ body: body, from: bodyFrom });
     }
-    items.forEach(function (body) {
+    items.forEach(function (entry) {
+      var body = entry.body;
       var li = el("li");
       var task = /^\[([ xX])\][ \t]+/.exec(body[0]);
       if (task) {
         body[0] = body[0].slice(task[0].length);
+        entry.from[0] = { at: entry.from[0].at, cut: entry.from[0].cut + task[0].length };
         var box = el("input", { type: "checkbox", disabled: "", "aria-label": task[1] === " " ? "not done" : "done" });
         box.checked = task[1] !== " ";
         li.className = "task";
         li.appendChild(box);
       }
       var holder = el("div");
-      blocks(body, holder, depth + 1);
+      blocks(ctx, body, entry.from, holder, depth + 1);
       while (holder.firstChild) {
         var child = holder.firstChild;
         if (!loose && child.nodeName === "P") {
@@ -501,7 +633,7 @@ details.card[open] summary { margin-bottom: 10px; }
     parent.appendChild(node);
     return i;
   }
-  function blocks(lines, parent, depth) {
+  function blocks(ctx, lines, from, parent, depth) {
     if (depth > 12) { parent.appendChild(el("p", { text: lines.join("\n") })); return; }
     var para = [];
     function flush() {
@@ -521,17 +653,14 @@ details.card[open] summary { margin-bottom: 10px; }
         var fence = m[1];
         var lead = /^ */.exec(line)[0].length;
         var closing = new RegExp("^ {0,3}" + (fence.charAt(0) === "~" ? "~" : "\\x60") + "{" + fence.length + ",}[ \\t]*$");
-        var code = [];
+        var codeFrom = [];
         i++;
         while (i < lines.length && !closing.test(lines[i])) {
-          code.push(lines[i].replace(new RegExp("^ {0," + lead + "}"), ""));
+          codeFrom.push(from[i]);
           i++;
         }
         i++;
-        var pre = el("pre", null, [el("code", { text: code.join("\n") })]);
-        var lang = m[2].trim().split(/\s+/)[0];
-        if (lang) pre.setAttribute("data-lang", lang);
-        parent.appendChild(pre);
+        codeBlock(ctx, codeFrom, lead, m[2].trim().split(/\s+/)[0], parent);
         continue;
       }
       if (para.length > 0 && /^ {0,3}(=+|-+)[ \t]*$/.test(line)) {
@@ -552,21 +681,22 @@ details.card[open] summary { margin-bottom: 10px; }
       if (QUOTE.test(line)) {
         flush();
         var quoted = [];
+        var quotedFrom = [];
         while (i < lines.length) {
           var q = QUOTE.exec(lines[i]);
-          if (q) quoted.push(q[1]);
-          else if (!BLANK.test(lines[i]) && !BLANK.test(quoted[quoted.length - 1]) && !startsBlock(lines[i])) quoted.push(lines[i]);
+          if (q) { quoted.push(q[1]); quotedFrom.push({ at: from[i].at, cut: from[i].cut + lines[i].length - q[1].length }); }
+          else if (!BLANK.test(lines[i]) && !BLANK.test(quoted[quoted.length - 1]) && !startsBlock(lines[i])) { quoted.push(lines[i]); quotedFrom.push(from[i]); }
           else break;
           i++;
         }
         var quote = el("blockquote");
-        blocks(quoted, quote, depth + 1);
+        blocks(ctx, quoted, quotedFrom, quote, depth + 1);
         parent.appendChild(quote);
         continue;
       }
       if ((m = ITEM.exec(line)) && (para.length === 0 || (m[4] !== undefined && (!/\d/.test(m[2]) || /^1[.)]$/.test(m[2]))))) {
         flush();
-        i = list(lines, i, parent, depth);
+        i = list(ctx, lines, from, i, parent, depth);
         continue;
       }
       if (line.indexOf("|") >= 0 && i + 1 < lines.length && DELIMS.test(lines[i + 1])) {
@@ -580,9 +710,10 @@ details.card[open] summary { margin-bottom: 10px; }
       }
       if (para.length === 0 && /^ {4}/.test(line)) {
         var indented = [];
-        while (i < lines.length && (/^ {4}/.test(lines[i]) || BLANK.test(lines[i]))) { indented.push(lines[i].replace(/^ {4}/, "")); i++; }
-        while (indented.length > 0 && BLANK.test(indented[indented.length - 1])) indented.pop();
-        parent.appendChild(el("pre", null, [el("code", { text: indented.join("\n") })]));
+        var indentedFrom = [];
+        while (i < lines.length && (/^ {4}/.test(lines[i]) || BLANK.test(lines[i]))) { indented.push(lines[i]); indentedFrom.push(from[i]); i++; }
+        while (indented.length > 0 && BLANK.test(indented[indented.length - 1])) { indented.pop(); indentedFrom.pop(); }
+        codeBlock(ctx, indentedFrom, 4, "", parent);
         continue;
       }
       para.push(line);
@@ -590,10 +721,20 @@ details.card[open] summary { margin-bottom: 10px; }
     }
     flush();
   }
-  /* Draws Markdown into a new block; the text itself is never changed. */
-  function markdown(source) {
+  /*
+   * Draws Markdown into a new block; the text itself is never changed. Lines
+   * end at CR, CRLF or LF. Structure is decided on lines whose tabs are
+   * expanded to tab stops of 4; each line remembers the stored line it came
+   * from and the columns its containers took (#51), so that a code block is
+   * drawn, and copied, from the stored text: tabs, trailing spaces and all.
+   * hooks/code.ts walks the same way for the pane and the viewer.
+   * scope names the place, for the copy buttons' ids; none, none are drawn.
+   */
+  function markdown(source, scope) {
     var box = el("div", { className: "md" });
-    blocks(String(source).replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n"), box, 0);
+    var raw = String(source).split(/\r\n?|\n/);
+    var ctx = { raw: raw, scope: scope || "", n: 0 };
+    blocks(ctx, raw.map(expandTabs), raw.map(function (_, at) { return { at: at, cut: 0 }; }), box, 0);
     return box;
   }
   function sessionLink(id, label) {
@@ -757,7 +898,7 @@ details.card[open] summary { margin-bottom: 10px; }
     var draft = state.drafts.get(item.id);
     card.appendChild(chips(item));
     card.appendChild(el("h2", { text: item.question }));
-    if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md)]));
+    if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md, "o-" + item.id + "-body")]));
     if (rec(item.response_refused) && str(item.response_refused.reason)) {
       card.appendChild(el("div", { className: "note bad", text: "Your last answer was not taken: " + item.response_refused.reason }));
     }
@@ -812,21 +953,21 @@ details.card[open] summary { margin-bottom: 10px; }
   }
 
   /* An answer as the person gave it: each free-text field drawn as Markdown. */
-  function answerNode(r, when) {
+  function answerNode(r, when, scope) {
     var box = el("div", { className: "ans" });
     box.appendChild(el("div", { className: "ans-when", text: when }));
     if (!rec(r)) return box;
     if (r.acknowledged === true) box.appendChild(el("p", { text: "Acknowledged" }));
     else if (r.outcome === "done" || r.outcome === "not_done") {
       box.appendChild(el("p", { text: r.outcome === "done" ? "Done" : "Not done" }));
-      if (str(r.feedback)) box.appendChild(markdown(r.feedback));
-    } else if (str(r.text)) box.appendChild(markdown(r.text));
+      if (str(r.feedback)) box.appendChild(markdown(r.feedback, scope + "-feedback"));
+    } else if (str(r.text)) box.appendChild(markdown(r.text, scope + "-text"));
     else {
       var picked = Array.isArray(r.selected) ? r.selected.filter(str) : [];
       if (picked.length > 0) box.appendChild(el("p", { text: picked.join("; ") }));
-      if (str(r.other)) { box.appendChild(el("div", { className: "ans-label", text: "Other" })); box.appendChild(markdown(r.other)); }
+      if (str(r.other)) { box.appendChild(el("div", { className: "ans-label", text: "Other" })); box.appendChild(markdown(r.other, scope + "-other")); }
     }
-    if (str(r.notes)) { box.appendChild(el("div", { className: "ans-label", text: "Notes" })); box.appendChild(markdown(r.notes)); }
+    if (str(r.notes)) { box.appendChild(el("div", { className: "ans-label", text: "Notes" })); box.appendChild(markdown(r.notes, scope + "-notes")); }
     return box;
   }
   function waitingCard(item, answer) {
@@ -836,7 +977,7 @@ details.card[open] summary { margin-bottom: 10px; }
     if (answer.newer) {
       card.appendChild(el("div", { className: "ans" }, [el("div", { className: "ans-when", text: "Answered on a newer humantray page: the answer cannot be shown here." })]));
     } else {
-      card.appendChild(answerNode(answer.response, "The stored answer, given " + ago(answer.answered_at)));
+      card.appendChild(answerNode(answer.response, "The stored answer, given " + ago(answer.answered_at), "w-" + item.id));
     }
     var result = state.results.get(item.id);
     if (result) card.appendChild(el("span", { className: result.bad ? "status bad" : "status", text: result.text, role: "status" }));
@@ -844,11 +985,14 @@ details.card[open] summary { margin-bottom: 10px; }
     return card;
   }
   function historyCard(item) {
-    var card = el("details", { className: "card" });
+    var card = el("details", { className: "card", id: "history-" + item.id });
+    /* Kept open across a redraw, which a Copy press makes (#51). */
+    if (state.unfolded.has(item.id)) card.open = true;
+    card.addEventListener("toggle", function () { if (card.open) state.unfolded.add(item.id); else state.unfolded.delete(item.id); });
     var summary = el("summary", null, [chips(item), el("strong", { text: item.question })]);
     card.appendChild(summary);
-    if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md)]));
-    card.appendChild(answerNode(item.response, "Answered " + ago(item.response_at)));
+    if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md, "h-" + item.id + "-body")]));
+    card.appendChild(answerNode(item.response, "Answered " + ago(item.response_at), "h-" + item.id));
     var owesLine = !(item.type === "ack" && item.notify_on_done !== true);
     card.appendChild(metaLine(item, !owesLine ? "" : item.delivered ? "delivered" : "not picked up yet"));
     return card;

@@ -79,6 +79,12 @@ export type World = {
   beforeMove: (from: string, to: string) => void | Promise<void>
   /** Runs before a file is written. */
   beforeWrite: (path: string) => void | Promise<void>
+  /**
+   * Answers a command the world does not know (a clipboard tool, #51): an exit
+   * code, or `missing` for one that cannot start (the call rejects).
+   * Undefined: not found (127).
+   */
+  runOther: (e: { argv: string[]; stdin?: string; env?: Record<string, string> }) => number | 'missing' | undefined
   /** Puts a lock on the disk as another holder's, taken now unless `at` is given. */
   holdLock: (token: string, at?: number) => void
   /** Removes the lock, as its holder does when it finishes. */
@@ -179,6 +185,7 @@ export function world(
     afterStat: () => undefined,
     beforeMove: () => undefined,
     beforeWrite: () => undefined,
+    runOther: () => undefined,
     dropLock: () => {
       for (const path of [...w.files.keys()]) if (path.startsWith(`${LOCK}/`)) w.files.delete(path)
       w.dirs.delete(LOCK)
@@ -329,6 +336,13 @@ export function world(
       w.dirs.delete(path)
       return ok()
     }
+    const other = w.runOther({
+      argv,
+      ...(e.init?.stdin === undefined ? {} : { stdin: e.init.stdin }),
+      ...(e.init?.env === undefined ? {} : { env: { ...e.init.env } }),
+    })
+    if (other === 'missing') return { deny: `spawn ${command ?? ''} ENOENT` }
+    if (other !== undefined) return result(other, '', '')
     return result(127, '', `not found: ${command}`)
   })
 

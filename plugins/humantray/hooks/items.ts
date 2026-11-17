@@ -17,6 +17,7 @@ import type {
   StoreFile,
 } from '../types'
 import { owesPush } from './row-shape'
+import { codeBlocksOf } from './code'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -50,6 +51,7 @@ export const EMPTY_DRAFT: Draft = {
   notes: '',
   error: '',
   entered: 0,
+  codeAt: 0,
 }
 
 /** What `humantray_add` takes, once validated. */
@@ -768,7 +770,8 @@ export const FULL_BUDGET = 90_000
 /**
  * One answered item whole, as "Show in full" draws it: the question, the body
  * and each part as drawn (`forDisplay`), nothing cut unless the whole would
- * pass FULL_BUDGET, and then only between blocks, with the length kept.
+ * pass FULL_BUDGET, and then only between blocks, with the length kept; and
+ * the body's code blocks, from the stored body, for copying (#51).
  */
 export const fullOf = (item: Item): HistoryFull => {
   let left = FULL_BUDGET
@@ -786,6 +789,7 @@ export const fullOf = (item: Item): HistoryFull => {
     body,
     answer: item.type === 'question' ? '' : choiceOf(item),
     parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text) })),
+    copy: codeBlocksOf(item.body_md),
   }
 }
 
