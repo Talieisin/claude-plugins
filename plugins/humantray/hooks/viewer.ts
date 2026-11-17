@@ -490,9 +490,10 @@ async function sendEntry($: EngineInterface, entry: OutboxEntry): Promise<boolea
   // One send of an answer at a time: a tick does not send again what is still in flight.
   const flight = `${outboxKey(entry.artifact, entry.id)} ${entry.answer_id}`
   if (inFlight.has(flight)) return true
-  if (!(await stillHolds($))) return false
+  // Claimed before the lease check, so two sends started together cannot both pass it.
   inFlight.add(flight)
   try {
+    if (!(await stillHolds($))) return false
     const sent = await sendText($, entry.to, entry.text)
     const now = await $.clock.now()
     await changeEntry($, outboxKey(entry.artifact, entry.id), current =>
