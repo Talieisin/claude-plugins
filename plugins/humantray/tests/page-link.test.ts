@@ -549,14 +549,51 @@ describe('/humantray-page republishes over an existing page on its first run (#5
   test('at most one retry: refused again, it stops, with no meta/page raise and no rules check', async ($, on) => {
     const { a } = cloud(on)
     olderPage(a)
-    // Another session publishes the same old page version before each attempt.
-    a.beforePublish = () => a.publishElsewhere(URL_A)
+    // Another session publishes the same old page version before each attempt,
+    // for the first three: a retry loop then gets through on its fourth
+    // attempt and this test fails, rather than the file never finishing.
+    let elsewhere = 0
+    a.beforePublish = () => {
+      if (++elsewhere <= 3) a.publishElsewhere(URL_A)
+    }
     await $.session.start(START_EVENT)
     const ran = await $.command.run({ ...RUN, args: '' })
     expect(attempts(a)).toHaveLength(2)
     expect(textOf(ran)).toMatch(/the page changed while it was being updated, so it was not updated\. Run \/humantray-page again$/)
     expect(textOf(ran)).not.toMatch(/from a cloud session/)
     expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION - 1 })
+    expect(metaWrites(a)).toEqual([])
+    expect(probes(a)).toEqual([])
+  })
+
+  test('meta/page rewritten in between, still ours and behind: the retry publishes, and meta/page is raised against the version read again', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a)
+    let once = true
+    a.beforePublish = () => {
+      if (!once) return
+      once = false
+      a.publishElsewhere(URL_A)
+      a.put(URL_A, 'meta/page', { ...meta(START, PAGE_VERSION - 1), note: 'rewritten' })
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toBe('humantray: the page is linked for this repository.')
+    expect(attempts(a)).toHaveLength(2)
+    expect(a.doc(URL_A, 'meta/page')).toMatchObject({ version: 3, data: { page_version: PAGE_VERSION, note: 'rewritten' } })
+  })
+
+  test('a take-over whose artifact reads as gone when looked at again: it stops, publishing nothing more', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE, { ownerOnly: false })
+    a.readFails = true
+    a.beforePublish = () => {
+      a.emptyReadsGone = true
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/the page changed while it was being updated, so it was not updated\. Run \/humantray-page again$/)
+    expect(attempts(a)).toHaveLength(1)
     expect(metaWrites(a)).toEqual([])
     expect(probes(a)).toEqual([])
   })
