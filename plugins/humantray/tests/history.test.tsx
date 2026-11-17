@@ -221,9 +221,9 @@ describe('History', () => {
       const entry = long.find(item => item.id.endsWith(id))?.id ?? ''
       expect((await ui.find({ key: `${entry}:Answer` }))?.props.text).toBe(paragraphs.split('\n\n').slice(0, 4).join('\n\n'))
       expect(await ui.find({ type: 'Text', text: `(… cut short: ${String(paragraphs.length)} characters in all)` })).toBeDefined()
-      // A part that is one block longer than the budget is not cut inside: none of it is drawn.
-      expect(await ui.find({ key: `${entry}:Notes` })).toBeUndefined()
-      expect(await ui.find({ type: 'Text', text: '(2000 characters: too long for the list)' })).toBeDefined()
+      // One paragraph longer than the budget: its first characters (no space to cut at), with an ellipsis.
+      expect((await ui.find({ key: `${entry}:Notes` }))?.props.text).toBe(`${'n'.repeat(499)}…`)
+      expect(await ui.find({ type: 'Text', text: '(… cut short: 2000 characters in all)' })).toBeDefined()
       expect((await ui.find({ type: 'Text', text: /^\[Done\] Q q+…$/ }))?.text).toHaveLength('[Done] '.length + 200)
       expect(await ui.findAll({ type: 'Button', text: 'Show in full' })).toHaveLength(50)
       const shown = await allPages(ui)

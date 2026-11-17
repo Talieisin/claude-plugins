@@ -90,14 +90,14 @@ describe('typed text is stored exactly', () => {
 })
 
 describe('the owner\'s rules hold in the pane, and the store is never changed', () => {
-  test('an image is drawn as a link, a file link as text, a control character never blanks the pane', async ($, on) => {
+  test('an image is drawn as a link, a file link and a tag as text, a control character never blanks the pane', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
-    const body = 'Look: ![chart](https://x.test/c.png)\r\n[local](file:///etc/hosts) and `![code](kept)`\u0007'
+    const body = 'Look: ![chart](https://x.test/c.png)\r\n[local](file:///etc/hosts) <img src=x> and `![code](kept)`\u0007'
     const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q', body_md: body })).id
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(
-      'Look: [Image: chart](https://x.test/c.png)\n[local](#file:///etc/hosts) and `![code](kept)`�',
+      'Look: !\u200b[chart](https://x.test/c.png)\n[local](fil\u200be:///etc/hosts) <\u200bimg src=x> and `!\u200b[code](kept)`\ufffd',
     )
     expect(await ui.find({ key: `${id}:ack` })).toBeDefined()
     await ui.unmount()
@@ -149,5 +149,56 @@ describe('show in full', () => {
     expect(w.toasts).toContain(`${item.short} could not be read from the store`)
     expect(await ui.find({ key: 'humantray:history:back' })).toBeUndefined()
     await ui.unmount()
+  })
+})
+
+describe('every title and every full view is drawn safely', () => {
+  for (const surface of SURFACES) {
+    test(`a control character in a header or question never blanks the pane: open card, History, full view, on ${surface}`, async ($, on) => {
+      const w = world(on, { surfaces: [surface] })
+      await $.session.start(START_EVENT)
+      const call = { tool: ADD, type: 'question', header: 'Bell\u0007', question: 'Why\u001b[31m?', body_md: 'Body ![x](https://x.test/x.png)' } as const
+      const id = answerOf<{ id: string }>(await $.tool.call(call)).id
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect(await ui.find({ type: 'Text', text: '[Bell�] Why�[31m?' })).toBeDefined()
+      await ui.input({ key: `${id}:text`, text: `${'word '.repeat(150)}\n\n<img src=x>` })
+      expect(w.store().items[0]?.status).toBe('answered')
+
+      await ui.press({ key: TOGGLE })
+      expect(await ui.find({ type: 'Text', text: '[Bell�] Why�[31m?' })).toBeDefined()
+      await ui.press({ key: `${id}:full` })
+      expect(await ui.find({ type: 'Text', text: '[Bell�] Why�[31m?' })).toBeDefined()
+      // The full view's body and answer are drawn with the same rules as the list.
+      expect((await ui.find({ key: `${id}:full:body` }))?.props.text).toBe('Body !​[x](https://x.test/x.png)')
+      expect((await ui.find({ key: `${id}:full:Answer` }))?.props.text).toBe(`${'word '.repeat(150)}\n\n<​img src=x>`)
+      await ui.unmount()
+      // The store keeps what was given and typed.
+      expect(w.store().items[0]?.header).toBe('Bell\u0007')
+      expect(w.store().items[0]?.response).toEqual({ text: `${'word '.repeat(150)}\n\n<img src=x>` })
+    })
+  }
+
+  test('a tray cached by the version before (tray-3, History entries with no parts) is never drawn', async ($, on) => {
+    const w = world(on)
+    const entry = { id: 'x', short: 'HT-XXXXX', repo: 'r', type: 'question', header: 'Old', question: 'Old?', status: 'answered', answer: 'yes', bumps: 0, at: 0, mark: 'delivered', isMine: true }
+    let earlier = false
+    on('state.get', { plugin: 'humantray', key: 'tray' }, (_, e, next) =>
+      earlier
+        ? { value: { value: { shape: 'tray-3', value: { items: [], me: 'session-a', mine: [], history: [entry], repo: 'r' } }, version: 1 } }
+        : next(e),
+    )
+    await $.session.start(START_EVENT)
+    await answerOne($, w, 'desktop', { type: 'question', header: 'Plan', question: 'How?' }, [{ type: 'text', text: 'yes' }])
+    earlier = true
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: /^No humantray here/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /\[Old\]/ })).toBeUndefined()
+    await ui.unmount()
+    earlier = false
+    await $.session.start(START_EVENT)
+    const fresh = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await fresh.press({ key: TOGGLE })
+    expect(await fresh.find({ type: 'Text', text: '[Plan] How?' })).toBeDefined()
+    await fresh.unmount()
   })
 })

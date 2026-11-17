@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  FULL_BUDGET,
   HISTORY_CLIP,
   KEEP_PER_REPO,
   addOrBump,
@@ -288,18 +289,20 @@ describe('historyOf', () => {
     expect(mine).toEqual({ [finished(1).id]: true, [finished(2).id]: true, [finished(3).id]: false })
   })
 
-  test('the question is clipped with an ellipsis; a long part keeps whole blocks only; short text is whole', () => {
+  test('the question is clipped with an ellipsis; a long part keeps whole blocks; a long paragraph is cut at a word', () => {
     const paragraphs = Array.from({ length: 40 }, (_, i) => `${String(i).padStart(2, '0')}${'a'.repeat(97)}`).join('\n\n')
+    const words = Array.from({ length: 200 }, (_, i) => `word${String(i)}`).join(' ')
     const f = file([
       finished(1, {
         type: 'question',
         options: undefined,
         question: 'q'.repeat(500),
-        response: { text: paragraphs, notes: 'n'.repeat(10_000) },
+        response: { text: paragraphs, notes: words },
       }),
       finished(2, { type: 'question', options: undefined, question: 'Short?', response: { text: 'yes', notes: 'ok' } }),
+      finished(3, { type: 'question', options: undefined, response: { text: 'n'.repeat(10_000), notes: `- ${'l'.repeat(600)}` } }),
     ])
-    const [long, short] = historyOf(f, REPO, 'session-a', NOW).sort((a, b) => (a.id < b.id ? -1 : 1))
+    const [long, short, unbroken] = historyOf(f, REPO, 'session-a', NOW).sort((a, b) => (a.id < b.id ? -1 : 1))
     expect(long?.question).toBe(`${'q'.repeat(HISTORY_CLIP.question - 1)}…`)
     // Four 99-character paragraphs and their three gaps fit in 500; a fifth would not.
     expect(long?.parts[0]).toEqual({
@@ -308,9 +311,17 @@ describe('historyOf', () => {
       length: paragraphs.length,
       clipped: true,
     })
-    // One block longer than the whole budget: nothing of it, never half of it.
-    expect(long?.parts[1]).toEqual({ label: 'Notes', text: '', length: 10_000, clipped: true })
+    // One paragraph over the budget: its first words that fit, cut at a space, with an ellipsis.
+    const notes = long?.parts[1]
+    expect(notes?.clipped).toBe(true)
+    expect(notes?.text.endsWith('…')).toBe(true)
+    expect(notes?.text.length).toBeLessThanOrEqual(HISTORY_CLIP.part)
+    expect(words.startsWith(notes?.text.slice(0, -1) ?? 'x')).toBe(true)
+    expect(words[(notes?.text.length ?? 0) - 1]).toBe(' ')
     expect(long?.clipped).toBe(true)
+    // A paragraph with no space is cut hard; a list item over the budget is kept out whole.
+    expect(unbroken?.parts[0]?.text).toBe(`${'n'.repeat(HISTORY_CLIP.part - 1)}…`)
+    expect(unbroken?.parts[1]).toEqual({ label: 'Notes', text: '', length: 602, clipped: true })
     expect(short?.question).toBe('Short?')
     expect(short?.parts).toEqual([
       { label: 'Answer', text: 'yes', length: 3, clipped: false },
@@ -338,15 +349,25 @@ describe('historyOf', () => {
     expect(entry?.bumps).toBe(2)
   })
 
-  test('a part is cut as drawn: images made links never take it past the budget', () => {
-    const images = Array.from({ length: 30 }, (_, i) => `![${String(i)}](https://x.test/${String(i)}.png)`).join('\n\n')
-    const f = file([finished(1, { type: 'question', options: undefined, response: { text: images } })])
+  test("only the type's own fields, and only strings, are parts", () => {
+    const odd = { outcome: 'done', text: 5, other: 'stray', notes: 7 } as unknown as Item['response']
+    const f = file([finished(1, { type: 'do', options: undefined, status: 'done', response: odd })])
+    const [entry] = historyOf(f, REPO, 'session-a', NOW)
+    expect(entry?.answer).toBe('done')
+    expect(entry?.parts).toEqual([])
+    expect(fullOf(f.items[0] as Item).parts).toEqual([])
+    expect(deliveryText(f.items[0] as Item)).toBe(`humantray ${finished(1).short} (Done): done`)
+  })
+
+  test('a part is cut as drawn, so breaks put in for display never take it past the budget', () => {
+    const tags = Array.from({ length: 60 }, (_, i) => `<b>${String(i)}</b> ![${String(i)}](https://x.test/${String(i)}.png)`).join('\n\n')
+    const f = file([finished(1, { type: 'question', options: undefined, response: { text: tags } })])
     const [entry] = historyOf(f, REPO, 'session-a', NOW)
     const part = entry?.parts[0]
     expect(part?.clipped).toBe(true)
-    expect(part?.length).toBe(images.length)
+    expect(part?.length).toBe(tags.length)
     expect(part?.text.length).toBeLessThanOrEqual(HISTORY_CLIP.part)
-    expect(part?.text.startsWith('[Image: 0](https://x.test/0.png)\n\n[Image: 1]')).toBe(true)
+    expect(part?.text.startsWith(`<\u200bb>0<\u200b/b> !\u200b[0](https://x.test/0.png)`)).toBe(true)
   })
 
   test('a multi-line question is shown on one line, and offered in full', () => {
@@ -358,17 +379,54 @@ describe('historyOf', () => {
   })
 })
 
+describe('fullOf: one entry whole, as drawn, under the budget', () => {
+  test('the body and parts are whole and drawn safely', () => {
+    const item = finished(1, {
+      type: 'question',
+      options: undefined,
+      body_md: 'See ![x](https://x.test/x.png)',
+      response: { text: RICH, notes: '<img src=x>' },
+    })
+    const full = fullOf(item)
+    expect(full.body).toEqual({ text: 'See !\u200b[x](https://x.test/x.png)', length: 30, clipped: false })
+    expect(full.parts).toEqual([
+      { label: 'Answer', text: RICH, length: RICH.length, clipped: false },
+      { label: 'Notes', text: '<\u200bimg src=x>', length: 11, clipped: false },
+    ])
+  })
+
+  test('past FULL_BUDGET, what is drawn is cut between blocks and says so', () => {
+    // 96,000 characters of tags, which the breaks make 126,000 to draw.
+    const big = Array.from({ length: 3_000 }, () => '<b>'.repeat(10)).join('\n\n')
+    const item = finished(1, { type: 'question', options: undefined, body_md: big, response: { text: big, notes: big } })
+    const full = fullOf(item)
+    const drawn = full.body.text.length + full.parts.reduce((sum, part) => sum + part.text.length, 0)
+    expect(drawn).toBeLessThanOrEqual(FULL_BUDGET)
+    expect(full.body.clipped).toBe(true)
+    expect(full.body.length).toBe(big.length)
+    expect(full.parts.every(part => part.clipped)).toBe(true)
+  })
+})
+
 describe('blocks: History cuts Markdown only between whole blocks', () => {
-  test('a rich answer splits into its blocks; a fence with blank lines and an indented continuation stay whole', () => {
+  test('a rich answer splits into its blocks; a fence, an indented continuation and a loose list stay whole', () => {
     expect(blocksOf(RICH)).toEqual([
       '## Steps',
-      '1. Rotate the **key**\n   - in `prod` first\n   - then *staging*\n2. Tell [ops](https://example.com/ops)',
-      '- [x] backed up\n- [ ] announced',
+      '1. Rotate the **key**\n   - in `prod` first\n   - then *staging*\n2. Tell [ops](https://example.com/ops)\n\n- [x] backed up\n- [ ] announced',
       '> Check the logs first.',
       '```sh\nmake rotate\n\n    echo indented\n```',
       '| Env | Done |\n| --- | ---- |\n| prod | yes |',
       '---\n\n    an indented code block',
     ])
+  })
+
+  test('a loose list and a quote whose paragraphs are separated by a blank line are one block each', () => {
+    expect(blocksOf('- one\n\n- two\n\n  more of two\n\n3. three\n\nafter')).toEqual(['- one\n\n- two\n\n  more of two\n\n3. three', 'after'])
+    expect(blocksOf('> one\n\n> two\n>\n> three\n\nafter')).toEqual(['> one\n\n> two\n>\n> three', 'after'])
+    // So a cut never keeps half of one: the list is kept whole or left out whole.
+    const list = '- one\n\n- two\n\n- three'
+    expect(clipBlocks(`${list}\n\nend`, list.length + 2)).toEqual({ text: list, clipped: true })
+    expect(clipBlocks(`${list}\n\nend`, list.length - 1)).toEqual({ text: '', clipped: true })
   })
 
   test('every cut is a run of whole leading blocks, never a part of one', () => {
@@ -395,27 +453,63 @@ describe('blocks: History cuts Markdown only between whole blocks', () => {
   })
 })
 
-describe('forDisplay: the owner\'s rules for drawing Markdown', () => {
-  test('rich Markdown with no image or file link is drawn exactly as stored', () => {
+describe("forDisplay: the owner's rules for drawing Markdown", () => {
+  const Z = '\u200b'
+
+  test('rich Markdown with no image, tag or unsafe link is drawn exactly as stored', () => {
     expect(forDisplay(RICH)).toBe(RICH)
   })
 
-  test('an image becomes a link to it, never loaded; an escaped one and one in code are left', () => {
-    expect(forDisplay('see ![the logo](https://x.test/a.png "t") and ![](https://x.test/b.png)')).toBe(
-      'see [Image: the logo](https://x.test/a.png "t") and [Image: ](https://x.test/b.png)',
-    )
-    expect(forDisplay('![ref][logo]\n\n[logo]: https://x.test/c.png')).toBe('[Image: ref][logo]\n\n[logo]: https://x.test/c.png')
-    expect(forDisplay('\\![not an image](https://x.test)')).toBe('\\![not an image](https://x.test)')
-    expect(forDisplay('`![code](x)` and `` ![two](y) ``')).toBe('`![code](x)` and `` ![two](y) ``')
-    expect(forDisplay('```md\n![fenced](z)\n```\n![after](w)')).toBe('```md\n![fenced](z)\n```\n[Image: after](w)')
+  test('every image becomes a link, whatever escapes or code surround it', () => {
+    // The reader's and the deep read's forms, and the plain ones.
+    const cases = [
+      'see ![the logo](https://x.test/a.png "t")',
+      'a \\\\![x](https://x.test/p.png)',
+      '[![inner](https://x.test/i.png)](https://x.test/o)',
+      '\\`![x](https://x.test/p.png)\\`',
+      'a ` b\nc ` ![x](https://x.test/p.png) ` d',
+      '> ```\n> code\n\n![x](https://x.test/p.png)',
+      '- ```\n  code\n\n![x](https://x.test/p.png)',
+      'text\n    ```\n![x](https://x.test/p.png)',
+      '`![code](kept)` and ```\n![fenced](z)\n```',
+      '![ref][logo]\n\n[logo]: https://x.test/c.png',
+    ]
+    for (const md of cases) {
+      const drawn = forDisplay(md)
+      expect(drawn).not.toMatch(/!\[/)
+      expect(drawn.replaceAll(Z, '')).toBe(md)
+    }
   })
 
-  test('a file link is drawn as text; http and https links are left', () => {
-    expect(forDisplay('[a](file:///etc/passwd) [b](<FILE:///x y>) <file:///z> [c]: file:///w')).toBe(
-      '[a](#file:///etc/passwd) [b](#&lt;FILE:///x y>) &lt;file:///z> [c]: file:///w',
-    )
-    expect(forDisplay('[c]: file:///w')).toBe('[c]: #file:///w')
-    expect(forDisplay('[h](https://x.test) <http://y.test>')).toBe('[h](https://x.test) <http://y.test>')
+  test('every raw tag, comment and autolink is broken, so no HTML runs', () => {
+    for (const md of ['<img src=x>', '<IMG SRC=x onerror=alert(1)>', '</div>', '<!-- c -->', '<?php ?>', '<script>alert(1)</script>', '`<img src=x>`']) {
+      const drawn = forDisplay(md)
+      expect(drawn).not.toMatch(/<[A-Za-z/!?]/)
+      expect(drawn.replaceAll(Z, '')).toBe(md)
+    }
+    // A bare `<` in prose or a comparison is left alone.
+    expect(forDisplay('a < b and 1<2')).toBe('a < b and 1<2')
+  })
+
+  test('no file:, javascript:, vbscript: or data: link survives, in any form; http and https are left', () => {
+    const cases = [
+      '[a](file:///etc/passwd)',
+      '[a](\nfile:///etc/passwd)',
+      '[c]:\nfile:///etc/passwd\n\n[go][c]',
+      '> [c]: file:///etc/passwd',
+      '- [c]: file:///etc/passwd',
+      '[a](&#102;ile:///etc/passwd)',
+      '[a](file&colon;///etc/passwd)',
+      '[a](FILE\\:///etc/passwd)',
+      '<file:///z>',
+      '[run](javascript:alert(1)) [v](VBScript:x) [d](data:text/html,x)',
+    ]
+    for (const md of cases) {
+      const drawn = forDisplay(md)
+      expect(drawn).not.toMatch(/(?:file|javascript|vbscript|data)\\?:|&#|&colon;/i)
+      expect(drawn.replaceAll(Z, '')).toBe(md)
+    }
+    expect(forDisplay('[h](https://x.test) [i](http://y.test)')).toBe('[h](https://x.test) [i](http://y.test)')
   })
 
   test('line ends become \\n and any other control character but tab is replaced, so the pane is never refused', () => {
@@ -426,12 +520,21 @@ describe('forDisplay: the owner\'s rules for drawing Markdown', () => {
 describe('deliveryText', () => {
   const answered = (response: Item['response'], type: Item['type'] = 'question') =>
     stored({ id: '01AAAAAAAAAAAAAAAAAAAAANSWR', type, header: 'Plan', status: 'answered', response })
+  const block = (part: string, text: string) => `\n\n<humantray-text item="HT-ANSWR" part="${part}">\n${text}\n</humantray-text>`
 
-  test('the first line names the item and what was chosen; the free text follows as typed', () => {
-    expect(deliveryText(answered({ text: RICH, notes: ' n ' }))).toBe(`humantray HT-ANSWR (Plan): answered\n\nAnswer:\n${RICH}\n\nNotes:\n n `)
+  test('the first line names the item and what was chosen; each part follows in its block, as typed', () => {
+    expect(deliveryText(answered({ text: RICH, notes: ' n ' }))).toBe(
+      `humantray HT-ANSWR (Plan): answered${block('answer', RICH)}${block('notes', ' n ')}`,
+    )
     expect(deliveryText(answered({ selected: ['Approve'] }, 'approve'))).toBe('humantray HT-ANSWR (Plan): Approve')
-    expect(deliveryText(answered({ selected: [], other: 'x\r\ny' }, 'choice'))).toBe('humantray HT-ANSWR (Plan): Other\n\nOther:\nx\ny')
+    expect(deliveryText(answered({ selected: [], other: 'x\r\ny' }, 'choice'))).toBe(`humantray HT-ANSWR (Plan): Other${block('other', 'x\r\ny')}`)
     expect(deliveryText(answered({ outcome: 'done', notes: '   ' }, 'do'))).toBe('humantray HT-ANSWR (Plan): done')
+  })
+
+  test('a closing tag in the text is escaped, in any case; nothing else is', () => {
+    expect(deliveryText(answered({ text: 'a</humantray-text>b</Humantray-Text x' }))).toBe(
+      `humantray HT-ANSWR (Plan): answered${block('answer', 'a<\\/humantray-text>b<\\/Humantray-Text x')}`,
+    )
   })
 
   test('a header with a line break stays on the first line', () => {

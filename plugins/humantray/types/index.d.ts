@@ -231,10 +231,12 @@ export type HistoryFull = {
   short: string
   header: string
   question: string
-  body_md: string
+  /** The body as drawn: whole unless the entry passes the full view's budget. */
+  body: { text: string; length: number; clipped: boolean }
   /** What was chosen, with no free text; empty for a question. */
   answer: string
-  parts: Array<{ label: PartLabel; text: string }>
+  /** Each part as drawn, cut as the body is. */
+  parts: HistoryPart[]
 }
 
 /**

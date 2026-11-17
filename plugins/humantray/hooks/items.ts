@@ -404,51 +404,79 @@ export const buildResponse = (
 /** One line: every line break and the space around it becomes ` / `. */
 const oneLine = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, ' / ').trim()
 
+const isText = (v: unknown): v is string => typeof v === 'string'
+
 /**
  * What was chosen, in a few words and with no free text: `acknowledged`,
  * `done` or `not done`, the options picked (and `Other` when it was filled
- * in), or `answered` for a question, whose text follows as a part.
+ * in), or `answered` for a question, whose text follows as a part. Read by the
+ * item's type, from that type's own fields only, so a stray or wrongly typed
+ * field (an adopted row may carry one) changes nothing.
  */
 export const choiceOf = (item: Item): string => {
-  const r = item.response
+  const r = item.response as Record<string, unknown> | undefined
   if (r === undefined) return ''
-  if ('acknowledged' in r) return 'acknowledged'
-  if ('outcome' in r) return r.outcome === 'done' ? 'done' : 'not done'
-  if ('text' in r) return 'answered'
-  const parts = [...r.selected]
-  if (r.other !== undefined) parts.push('Other')
-  return parts.join('; ')
+  switch (item.type) {
+    case 'ack':
+      return 'acknowledged'
+    case 'do':
+      return r.outcome === 'done' ? 'done' : 'not done'
+    case 'question':
+      return 'answered'
+    default: {
+      const picked = Array.isArray(r.selected) ? r.selected.filter(isText) : []
+      if (isText(r.other) && r.other.trim() !== '') picked.push('Other')
+      return picked.join('; ')
+    }
+  }
+}
+
+/** Each free-text field a type's response has, with the label it is shown under. */
+const FIELDS: Record<ItemType, Array<{ field: 'text' | 'other' | 'feedback'; label: PartLabel }>> = {
+  ack: [],
+  question: [{ field: 'text', label: 'Answer' }],
+  choice: [{ field: 'other', label: 'Other' }],
+  approve: [{ field: 'other', label: 'Other' }],
+  do: [{ field: 'feedback', label: 'Feedback' }],
 }
 
 /**
  * The free-text parts of a response, exactly as stored, in a fixed order: the
- * answer, Other or the feedback first, then the notes. Blank parts are left out.
+ * answer, Other or the feedback first, then the notes. Only the fields the
+ * item's type has, and only strings, are read; blank parts are left out.
  */
 export const partsOf = (item: Item): Array<{ label: PartLabel; text: string }> => {
-  const r = item.response
+  const r = item.response as Record<string, unknown> | undefined
   if (r === undefined) return []
   const parts: Array<{ label: PartLabel; text: string }> = []
-  const add = (label: PartLabel, text: string | undefined) => {
-    if (text !== undefined && text.trim() !== '') parts.push({ label, text })
+  const add = (label: PartLabel, text: unknown) => {
+    if (isText(text) && text.trim() !== '') parts.push({ label, text })
   }
-  if ('text' in r) add('Answer', r.text)
-  if ('other' in r) add('Other', r.other)
-  if ('feedback' in r) add('Feedback', r.feedback)
+  for (const { field, label } of FIELDS[item.type] ?? []) add(label, r[field])
   add('Notes', r.notes)
   return parts
 }
 
+/** The name each part's block carries in the delivered answer. */
+const PART_NAMES: Record<PartLabel, string> = { Answer: 'answer', Other: 'other', Feedback: 'feedback', Notes: 'notes' }
+
 /**
  * What a session receives, in one submit. The first line is always
- * `humantray HT-xxxxx (<header>): <what was chosen>`; each free-text part
- * follows, exactly as typed (its Markdown kept, only `\r\n` and `\r` line
- * ends made `\n`), after a blank line and a line with its label: `Answer:`,
- * `Other:`, `Feedback:` or `Notes:`.
+ * `humantray HT-xxxxx (<header>): <what was chosen>`, and it alone names the
+ * item. Each free-text part follows after a blank line, inside its own block,
+ * `<humantray-text item="HT-xxxxx" part="answer|other|feedback|notes">` to
+ * `</humantray-text>`, so that nothing a person types can read as a second
+ * `humantray HT-` line or as one of the mod's own labels. Inside a block the
+ * text is exactly as typed, except that a closing tag in it is escaped
+ * (`<\/humantray-text`), so a block always ends where the mod ended it.
  */
 export const deliveryText = (item: Item): string => {
   const first = `humantray ${item.short} (${oneLine(item.header)}): ${oneLine(choiceOf(item))}`
-  const rest = partsOf(item).map(part => `\n\n${part.label}:\n${part.text.replace(/\r\n?/g, '\n')}`)
-  return [first, ...rest].join('')
+  const blocks = partsOf(item).map(part => {
+    const text = part.text.replace(/<\/(humantray-text)/gi, '<\\/$1')
+    return `\n\n<humantray-text item="${item.short}" part="${PART_NAMES[part.label]}">\n${text}\n</humantray-text>`
+  })
+  return [first, ...blocks].join('')
 }
 
 /**
@@ -554,12 +582,19 @@ const closes = (line: string, opened: string): boolean => {
   return mark !== undefined && mark[0] === opened[0] && mark.length >= opened.length
 }
 
+/** A list item's first line: a bullet or a number, then a space or the line's end. */
+const LIST_ITEM = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?:[ \t]|$)/
+/** A quoted line. */
+const QUOTE = /^ {0,3}>/
+
 /**
  * Markdown split into its top-level blocks: runs of lines separated by blank
- * lines, where a fenced code block (blank lines and all) stays inside one
- * block, and an indented line after a blank stays with the block before it
- * (a list item's next paragraph, or an indented code block). Blocks are
- * returned without the blank lines between them.
+ * lines. A fenced code block (blank lines and all) stays inside one block; so
+ * does an indented line after a blank (a list item's next paragraph, or an
+ * indented code block); so does a loose list (an item after a blank, in a
+ * block that began as a list) and a quote (a quoted line after a blank, in a
+ * block that began as a quote). Blocks are returned without the blank lines
+ * between them.
  */
 export const blocksOf = (md: string): string[] => {
   const lines = md.split('\n')
@@ -577,7 +612,10 @@ export const blocksOf = (md: string): string[] => {
       if (current.length > 0) gap.push(line)
       continue
     }
-    const continues = gap.length > 0 && /^(?: {2,}|\t)/.test(line)
+    const head = current[0] ?? ''
+    const continues =
+      gap.length > 0 &&
+      (/^(?: {2,}|\t)/.test(line) || (LIST_ITEM.test(line) && LIST_ITEM.test(head)) || (QUOTE.test(line) && QUOTE.test(head)))
     if (gap.length > 0 && !continues) {
       blocks.push(current.join('\n'))
       current = []
@@ -593,21 +631,40 @@ export const blocksOf = (md: string): string[] => {
   return blocks
 }
 
+/** Whether a block is a plain paragraph: no list, quote, heading, table, fence, rule, tag or indented code. */
+const isParagraph = (block: string): boolean =>
+  !LIST_ITEM.test(block) &&
+  !QUOTE.test(block) &&
+  !/^ {0,3}(?:#{1,6}(?:[ \t]|$)|\||<|(?:[-*_][ \t]*){3,}$)/.test(block) &&
+  !/^(?: {4}|\t)/.test(block) &&
+  opens(block.split('\n')[0] ?? '') === undefined &&
+  !/\n[ \t]*\|?[ \t]*:?-{3,}/.test(block)
+
 /**
  * Markdown cut to at most `max` characters, only between whole blocks, never
  * inside a list, a table, a quote or a code block: as many leading blocks as
- * fit. When even the first block does not fit, nothing is kept (`text` is
- * empty) and `clipped` is true.
+ * fit. When even the first block does not fit, a plain paragraph is cut at
+ * the last word boundary that fits, with an ellipsis (decided on #40); any
+ * other block is kept out whole (`text` is empty). `clipped` says whether
+ * anything was left out.
  */
 export const clipBlocks = (md: string, max: number): { text: string; clipped: boolean } => {
   if (md.length <= max) return { text: md, clipped: false }
   const kept: string[] = []
   let length = 0
-  for (const block of blocksOf(md)) {
+  const blocks = blocksOf(md)
+  for (const block of blocks) {
     const added = (kept.length === 0 ? 0 : 2) + block.length
     if (length + added > max) break
     kept.push(block)
     length += added
+  }
+  const first = blocks[0]
+  if (kept.length === 0 && first !== undefined && isParagraph(first) && max > 1) {
+    const room = first.slice(0, max - 1)
+    const space = room.search(/\s\S*$/)
+    const cut = (space > 0 ? room.slice(0, space) : room).trimEnd()
+    return { text: `${cut}…`, clipped: true }
   }
   return { text: kept.join('\n\n'), clipped: true }
 }
@@ -620,74 +677,29 @@ export const clipBlocks = (md: string, max: number): { text: string; clipped: bo
 export const plain = (text: string): string =>
   text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '\ufffd')
 
-/**
- * The places in one line that are not inside a code span: the line split at
- * each span of backticks closed by a run of the same length. Even entries are
- * outside code; odd entries are code spans, kept as they are.
- */
-const outsideCode = (line: string): string[] => {
-  const pieces: string[] = []
-  let from = 0
-  let at = 0
-  while (at < line.length) {
-    if (line[at] !== '`') {
-      at++
-      continue
-    }
-    let run = 1
-    while (line[at + run] === '`') run++
-    const ticks = '`'.repeat(run)
-    let close = line.indexOf(ticks, at + run)
-    while (close !== -1 && line[close + run] === '`') {
-      let end = close
-      while (line[end] === '`') end++
-      close = line.indexOf(ticks, end)
-    }
-    if (close === -1) {
-      at += run
-      continue
-    }
-    pieces.push(line.slice(from, at), line.slice(at, close + run))
-    from = close + run
-    at = from
-  }
-  pieces.push(line.slice(from))
-  return pieces
-}
+/** An invisible break: it splits a piece of syntax without changing what shows. */
+const BREAK = '\u200b'
 
 /**
- * Markdown as the pane draws it, with the owner's safety rules (#33's
- * answer, which the page follows too): an image becomes a link to it, never
- * loaded, and a `file:` link is drawn as text, so links are http and https
- * only. Raw HTML is the engine's renderer's to keep inert, as in any reply.
- * Fenced code and code spans are left exactly as written. For drawing only;
- * the store is never changed.
+ * Markdown as the pane draws it, under the owner's rules (answer on #33,
+ * decided again on #40): no image is loaded, no raw HTML runs, and links are
+ * http and https only. Over the whole text, code included (finding code by
+ * hand proved bypassable), an invisible U+200B is put
+ * - after every `!` that starts `![`, so an image is drawn as a link to it;
+ * - after every `<` that could start a tag, a comment or an autolink;
+ * - inside every `file:`, `javascript:`, `vbscript:` and `data:` (also
+ *   written `file\:`), so no such link is made (the engine draws any other
+ *   scheme but http and https as text by itself);
+ * - after every `&` that starts `&#` or `&colon;`, so no entity can spell one.
+ * What shows looks the same. Control characters are replaced (`plain`). For
+ * drawing only: the stored and the delivered text never change.
  */
-export const forDisplay = (md: string): string => {
-  let fence: string | undefined
-  return plain(md)
-    .split('\n')
-    .map(line => {
-      if (fence !== undefined) {
-        if (closes(line, fence)) fence = undefined
-        return line
-      }
-      fence = opens(line)
-      if (fence !== undefined) return line
-      // A link reference definition to a file (`[x]: file:///...`) is drawn as text too.
-      return outsideCode(line.replace(/^([ \t]{0,3}\[[^\]]+\]:[ \t]*<?)[ \t]*(file:)/i, '$1#$2'))
-        .map((piece, index) =>
-          index % 2 === 1
-            ? piece
-            : piece
-                .replace(/(^|[^\\])!\[/g, '$1[Image: ')
-                .replace(/\]\(\s*(<?)\s*(file:)/gi, '](#$1$2')
-                .replace(/<(file:)/gi, '&lt;$1'),
-        )
-        .join('')
-    })
-    .join('\n')
-}
+export const forDisplay = (md: string): string =>
+  plain(md)
+    .replace(/!\[/g, `!${BREAK}[`)
+    .replace(/<(?=[A-Za-z/!?])/g, `<${BREAK}`)
+    .replace(/(file|javascript|vbscript|data)(\\?:)/gi, (_, word: string, colon: string) => `${word.slice(0, -1)}${BREAK}${word.slice(-1)}${colon}`)
+    .replace(/&(?=#|colon;)/gi, `&${BREAK}`)
 
 /**
  * The answered items of every `repo` value in the store, from every session,
@@ -733,16 +745,37 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       }
     })
 
-/** One answered item whole, as "Show in full" draws it: nothing clipped. */
-export const fullOf = (item: Item): HistoryFull => ({
-  id: item.id,
-  short: item.short,
-  header: item.header,
-  question: item.question,
-  body_md: item.body_md,
-  answer: item.type === 'question' ? '' : choiceOf(item),
-  parts: partsOf(item),
-})
+/**
+ * The most characters "Show in full" draws of one entry's body and parts
+ * together, as drawn. At the stored limits (a 20,000-character body, two
+ * 10,000-character parts) even text whose every character `forDisplay`
+ * doubles stays under it; it is a guard, under the 100,000 a surface draws.
+ */
+export const FULL_BUDGET = 90_000
+
+/**
+ * One answered item whole, as "Show in full" draws it: the question, the body
+ * and each part as drawn (`forDisplay`), nothing cut unless the whole would
+ * pass FULL_BUDGET, and then only between blocks, with the length kept.
+ */
+export const fullOf = (item: Item): HistoryFull => {
+  let left = FULL_BUDGET
+  const cut = (text: string) => {
+    const drawn = clipBlocks(forDisplay(text), left)
+    left = Math.max(0, left - drawn.text.length)
+    return { text: drawn.text, length: text.length, clipped: drawn.clipped }
+  }
+  const body = cut(item.body_md)
+  return {
+    id: item.id,
+    short: item.short,
+    header: item.header,
+    question: item.question,
+    body,
+    answer: item.type === 'question' ? '' : choiceOf(item),
+    parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text) })),
+  }
+}
 
 /**
  * Applies a finished submit to the item, only while the item still carries
