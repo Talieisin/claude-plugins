@@ -1,8 +1,11 @@
-// Pure logic: validation, bumping, answers, the delivery line, ownership.
+// Pure logic: validation, bumping, answers, the delivery line, ownership,
+// pruning and History.
 // Nothing here calls `$`, so every rule is the same in a hook and a test.
 
 import type {
+  DeliveryMark,
   Draft,
+  HistoryEntry,
   Item,
   ItemOption,
   ItemResponse,
@@ -28,6 +31,8 @@ export const LIMITS = {
 export const CLAIM_STALE_MS = 60_000
 /** Session records no item names, unseen this long, are dropped. */
 export const SESSION_FORGET_MS = 7 * 24 * 60 * 60 * 1000
+/** Finished items kept per repository; older finished items are pruned. */
+export const KEEP_PER_REPO = 200
 
 export const APPROVE_OPTIONS: readonly ItemOption[] = [
   { label: 'Approve', description: 'Go ahead as proposed.' },
@@ -379,21 +384,29 @@ export const buildResponse = (
 /** One line: every line break and the space around it becomes ` / `. */
 const oneLine = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, ' / ').trim()
 
+/** The answer in a few words, without its notes. */
+const rawAnswer = (item: Item): string => {
+  const r = item.response
+  if (r === undefined) return ''
+  if ('acknowledged' in r) return 'acknowledged'
+  if ('outcome' in r) {
+    const outcome = r.outcome === 'done' ? 'done' : 'not done'
+    return r.feedback === undefined ? outcome : `${outcome}: ${r.feedback}`
+  }
+  if ('text' in r) return r.text
+  const parts = [...r.selected]
+  if (r.other !== undefined) parts.push(`Other: ${r.other}`)
+  return parts.join('; ')
+}
+
+/** The answer in a few words, on one line, without its notes (History shows them apart). */
+export const answerText = (item: Item): string => oneLine(rawAnswer(item))
+
 /** The answer in a few words, for the delivery line. */
 export const summaryOf = (item: Item): string => {
   const r = item.response
   if (r === undefined) return ''
-  let summary: string
-  if ('acknowledged' in r) summary = 'acknowledged'
-  else if ('outcome' in r) {
-    summary = r.outcome === 'done' ? 'done' : 'not done'
-    if (r.feedback !== undefined) summary += `: ${r.feedback}`
-  } else if ('text' in r) summary = r.text
-  else {
-    const parts = [...r.selected]
-    if (r.other !== undefined) parts.push(`Other: ${r.other}`)
-    summary = parts.join('; ')
-  }
+  let summary = rawAnswer(item)
   if (r.notes !== undefined) summary += ` | notes: ${r.notes}`
   return oneLine(summary)
 }
@@ -401,6 +414,138 @@ export const summaryOf = (item: Item): string => {
 /** The line a session receives: `humantray HT-xxxxx (<header>): <summary>`. */
 export const deliveryLine = (item: Item): string =>
   `humantray ${item.short} (${oneLine(item.header)}): ${summaryOf(item)}`
+
+/**
+ * Whether an answered item owes its session a line. Every answered item does,
+ * except an `ack` raised without `notify_on_done`: that one is only flagged.
+ */
+export const isLineDue = (item: Item): boolean =>
+  item.status !== 'open' && !(item.type === 'ack' && item.notify_on_done !== true)
+
+/**
+ * The one test of whether an item may be pruned. It may when it is finished:
+ * answered, carrying no claim, and either delivered or owing no line. Such an
+ * item stays prunable and its order key never moves: no code path makes it
+ * open, owed or claimed again. One write still reaches it: the owner's pass
+ * flags an acknowledged `ack` that owes no line as `delivered`, which leaves
+ * it prunable. So a prune decided on any read is still right when written.
+ */
+export const isPrunable = (item: Item): boolean =>
+  item.status !== 'open' &&
+  item.delivering_at === undefined &&
+  item.delivering_by === undefined &&
+  (item.delivered || !isLineDue(item))
+
+/** When an item last changed for good: its answer, or else its last add or bump. */
+export const orderKey = (item: Item): number => item.response_at ?? item.updated
+
+/** Older first: by order key, then by id. Always a total order (never NaN). */
+export const compareAge = (a: Item, b: Item): number => {
+  const ka = orderKey(a)
+  const kb = orderKey(b)
+  if (ka !== kb) return ka < kb ? -1 : 1
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+}
+
+/**
+ * Keeps the newest KEEP_PER_REPO prunable items of each `repo` value and
+ * removes the older ones. Items that are not prunable neither count nor go.
+ * Session records are never touched. Returns the ids removed.
+ */
+export const prune = (file: StoreFile, keep: number = KEEP_PER_REPO): string[] => {
+  const groups = new Map<string, Item[]>()
+  for (const item of file.items) {
+    if (!isPrunable(item)) continue
+    const group = groups.get(item.repo)
+    if (group === undefined) groups.set(item.repo, [item])
+    else group.push(item)
+  }
+  // The chosen records themselves, not their ids: two records sharing an id
+  // (a hand-edited or merged store) must not take a protected one with them.
+  const removed = new Set<Item>()
+  for (const group of groups.values()) {
+    if (group.length <= keep) continue
+    group.sort(compareAge)
+    for (const item of group.slice(0, group.length - keep)) removed.add(item)
+  }
+  if (removed.size > 0) file.items = file.items.filter(item => !removed.has(item))
+  return [...removed].map(item => item.id)
+}
+
+/**
+ * What History marks an answered item with: nothing when no line is due;
+ * `delivered`; `delivering` while a claim younger than CLAIM_STALE_MS stands;
+ * else `not delivered` (an owner yet to collect it, or one that never will).
+ */
+export const deliveryMark = (item: Item, now: number): DeliveryMark => {
+  if (!isLineDue(item)) return 'none'
+  if (item.delivered) return 'delivered'
+  if (item.delivering_at !== undefined && now - item.delivering_at <= CLAIM_STALE_MS) return 'delivering'
+  return 'not delivered'
+}
+
+/** History entries drawn per page: 50 clipped entries stay well inside what a surface draws. */
+export const HISTORY_PAGE = 50
+
+/** The most characters of each text a History entry keeps; the store keeps the whole. */
+export const HISTORY_CLIP = { question: 200, answer: 300, notes: 300 } as const
+
+/** Text cut to `max` characters, ending in an ellipsis when cut. */
+export const clip = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max - 1)}…`)
+
+/**
+ * The answered items of every `repo` value in the store, from every session,
+ * as History draws them: the current repository's first, then each other
+ * value by name; within each, newest first. An item is this session's when
+ * its owner chain ends at `me`. Long text is clipped (HISTORY_CLIP).
+ */
+export const historyOf = (file: StoreFile, repo: string, me: string, now: number): HistoryEntry[] =>
+  file.items
+    .filter(item => item.status !== 'open')
+    .sort((a, b) => {
+      if (a.repo !== b.repo) {
+        if (a.repo === repo) return -1
+        if (b.repo === repo) return 1
+        return a.repo < b.repo ? -1 : 1
+      }
+      return compareAge(b, a)
+    })
+    .map(item => {
+      const entry: HistoryEntry = {
+        id: item.id,
+        short: item.short,
+        repo: item.repo,
+        type: item.type,
+        header: item.header,
+        question: clip(oneLine(item.question), HISTORY_CLIP.question),
+        status: item.status,
+        answer: clip(answerText(item), HISTORY_CLIP.answer),
+        bumps: item.bumps,
+        at: orderKey(item),
+        mark: deliveryMark(item, now),
+        isMine: resolveOwner(file.sessions, item.session_id) === me,
+      }
+      const notes = item.response?.notes
+      if (notes !== undefined) entry.notes = clip(oneLine(notes), HISTORY_CLIP.notes)
+      return entry
+    })
+
+/**
+ * Applies a finished submit to the item, only while the item still carries
+ * that send's claim: a late settle never touches a newer claim, and one for
+ * an item no longer in the store does nothing.
+ */
+export function applySettle(file: StoreFile, id: string, claim: string, entered: boolean, now: number): boolean {
+  const item = file.items.find(one => one.id === id)
+  if (item === undefined || item.delivering_by !== claim) return false
+  if (entered) {
+    item.delivered = true
+    item.delivered_at = now
+  }
+  delete item.delivering_at
+  delete item.delivering_by
+  return true
+}
 
 const STATUSES: readonly string[] = ['open', 'acknowledged', 'done', 'answered']
 
