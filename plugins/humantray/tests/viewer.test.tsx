@@ -613,6 +613,20 @@ describe('answering', () => {
     expect(bodies.find(b => b?.id === ID2)?.response).toEqual({ outcome: 'not_done', notes: '**done** at last' })
     expect(bodies.every(b => b?.to === ME)).toBe(true)
   })
+
+  vtest('Enter in a free-text field keeps the text shown: the field is drawn afresh with it (#48)', async ($, on) => {
+    const env = viewerWorld(on)
+    put(env.a, URL_A, rowOf({ id: ID2, type: 'do', notes: true }))
+    await turnOn($, env.w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.input({ key: `v:${ID2}:feedback`, text: '- one\n- two' })
+    expect(await ui.find({ key: `v:${ID2}:feedback` })).toBeUndefined()
+    expect((await ui.find({ key: `v:${ID2}:feedback:1` }))?.props.value).toBe('- one\n- two')
+    await ui.press({ key: `v:${ID2}:done` })
+    await env.w.clock.settle()
+    const bodies = env.sends.map(s => readEnvelope(s.text))
+    expect(bodies.find(b => b?.id === ID2)?.response).toEqual({ outcome: 'done', feedback: '- one\n- two' })
+  })
 })
 
 describe('one tick at a time, and nothing written after off', () => {
