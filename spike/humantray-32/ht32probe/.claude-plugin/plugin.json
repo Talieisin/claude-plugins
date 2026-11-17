@@ -1,0 +1,1 @@
+{ "name": "ht32probe", "version": "0.1.0", "description": "Throwaway probe for test 0 of issue 32 (humantray viewer): a local mod's $.session.send of a response envelope to a cloud session, and where it surfaces there. Never merged." }

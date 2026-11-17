@@ -1,0 +1,8 @@
+{
+  "name": "ht32spike",
+  "owner": { "name": "Talieisin" },
+  "description": "Throwaway marketplace for test 0 of issue 32. Never merged.",
+  "plugins": [
+    { "name": "ht32probe", "source": "./ht32probe", "description": "Throwaway probe for test 0 of issue 32.", "version": "0.1.0" }
+  ]
+}
