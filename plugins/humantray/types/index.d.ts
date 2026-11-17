@@ -266,6 +266,22 @@ export type HistoryEntry = {
   isMine: boolean
 }
 
+/**
+ * One code block of an item's stored Markdown (#51, hooks/code.ts), in the
+ * order the page draws them: what a copy puts on the clipboard, exactly.
+ */
+export type CodeBlock = {
+  /** The stored content, byte for byte: never the drawn text and its U+200B rewrites. */
+  text: string
+  /** The fence's language (the info string's first word), or empty. */
+  lang: string
+  /**
+   * The block holds a control character a person cannot see (C0 but tab, DEL,
+   * C1, a bidi control): no copy is offered (decided for the owner on #51).
+   */
+  unsafe: boolean
+}
+
 /** One answered item whole, as "Show in full" draws it: read from the store when asked for. */
 export type HistoryFull = {
   id: string
@@ -278,6 +294,8 @@ export type HistoryFull = {
   answer: string
   /** Each part as drawn, cut as the body is. */
   parts: HistoryPart[]
+  /** The body's code blocks, from the stored body, for the copy buttons (#51). */
+  copy: CodeBlock[]
 }
 
 /**
@@ -406,6 +424,8 @@ export type Draft = {
    * field is drawn afresh, holding the draft (#48).
    */
   entered: number
+  /** Which page of the card's copy buttons is shown, from 0 (#51). */
+  codeAt: number
 }
 
 declare module 'claude-code' {

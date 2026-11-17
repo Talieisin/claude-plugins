@@ -17,6 +17,7 @@ import type {
   StoreFile,
 } from '../types'
 import { owesPush } from './row-shape'
+import { UNSAFE, codeBlocksOf, listedLang, placedBlocksOf, splitLines } from './code'
 
 export const TYPES: readonly ItemType[] = ['ack', 'choice', 'question', 'do', 'approve']
 
@@ -50,6 +51,7 @@ export const EMPTY_DRAFT: Draft = {
   notes: '',
   error: '',
   entered: 0,
+  codeAt: 0,
 }
 
 /** What `humantray_add` takes, once validated. */
@@ -689,6 +691,9 @@ export const clipBlocks = (md: string, max: number): { text: string; clipped: bo
 export const plain = (text: string): string =>
   text.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '\ufffd')
 
+/** What a control character is drawn as. */
+const REPLACEMENT = '\ufffd'
+
 /** An invisible break: it splits a piece of syntax without changing what shows. */
 const BREAK = '\u200b'
 
@@ -714,6 +719,159 @@ export const forDisplay = (md: string): string =>
     .replace(/&(?=#|colon;)/gi, `&${BREAK}`)
 
 /**
+ * Markdown as the pane and the viewer draw it (#51, decided for the owner on
+ * #51): `forDisplay` everywhere but inside code, where the code is drawn as
+ * stored, so that a surface's own copy of a code block (the desktop app has
+ * one) carries no U+200B. Code found by hand is never trusted to stay code
+ * (#40): each block `codeBlocksOf` finds is drawn again as a fresh fence of
+ * its own, at the top level, with a blank line before and after, and of
+ * backticks one longer than the longest run in the code, so nothing inside
+ * can end it; its language is kept only when plain. In the text between,
+ * every run of three or more backticks or tildes is broken after its first
+ * character, so no fence can open there. A wrong guess about where code is
+ * then changes only how something looks: no text is left unrewritten outside
+ * a fence drawn here. A block in a list item or a quote is drawn at the top
+ * level, and the list goes on after it. Each block is labelled `Code n`, as
+ * its copy button is numbered. Control characters are still replaced
+ * (`plain`), in code too, since a surface refuses them.
+ */
+export const forDrawing = (md: string, labelled = true): string => {
+  const placed = placedBlocksOf(md)
+  if (placed.length === 0) return breakFences(forDisplay(md))
+  const raw = splitLines(md)
+  const pieces: string[] = []
+  // The text after a block that sat in a list item or a quote is drawn less
+  // the indentation that container gave it, so that, now at the top level, it
+  // stays prose and a list, never an indented code block.
+  // Only the lines still in that container: from the first line indented
+  // less (one that has left the item, such as the next item), none is taken.
+  const text = (from: number, to: number, dedent: number) => {
+    let inside = dedent > 0
+    const lines = raw.slice(from, to).map(line => {
+      // A line of only spaces and quote marks is a blank line of its quote.
+      if (inside && /[^ \t>]/.test(line) && prefixWidth(line) < dedent) inside = false
+      return inside ? dedentLine(line, dedent) : line
+    })
+    while (lines.length > 0 && (lines[0] ?? '').trim() === '') lines.shift()
+    while (lines.length > 0 && (lines[lines.length - 1] ?? '').trim() === '') lines.pop()
+    if (lines.length > 0) pieces.push(breakFences(forDisplay(lines.join('\n'))))
+  }
+  let at = 0
+  let dedent = 0
+  placed.forEach((each, k) => {
+    text(at, each.start, dedent)
+    if (labelled) pieces.push(`*Code ${String(k + 1)}*`)
+    pieces.push(fenced(each.block.text, each.block.lang))
+    at = each.end + 1
+    dedent = each.cut
+  })
+  text(at, raw.length, dedent)
+  return pieces.join('\n\n')
+}
+
+/**
+ * Drawn Markdown (`forDrawing`, then perhaps cut by blocks) split into the
+ * pieces the pane draws as separate Markdown elements: each text piece, and
+ * each fence drawn here with its `Code n` label. Apart, nothing in one piece
+ * can reach into the next in any surface's parser (a link title left open
+ * runs across blank lines in some), so the guarantee needs no agreement
+ * between parsers (#51). Only a fence drawn here holds a run of three or more
+ * backticks: `breakFences` broke every other. Joined with a blank line, the
+ * pieces are the drawn text again.
+ */
+export const splitDrawn = (drawn: string): string[] => {
+  const lines = drawn.split('\n')
+  const pieces: string[] = []
+  let text: string[] = []
+  const flush = () => {
+    while (text.length > 0 && text[0] === '') text.shift()
+    while (text.length > 0 && text[text.length - 1] === '') text.pop()
+    if (text.length > 0) pieces.push(text.join('\n'))
+    text = []
+  }
+  for (let i = 0; i < lines.length; i++) {
+    const open = /^(`{3,})[A-Za-z0-9_+.#-]*$/.exec(lines[i] ?? '')
+    if (open === null) {
+      text.push(lines[i] ?? '')
+      continue
+    }
+    // Its label, when the line before the blank one is `*Code n*`, goes with it.
+    let label: string[] = []
+    if (text.length >= 2 && text[text.length - 1] === '' && /^\*Code \d+\*$/.test(text[text.length - 2] ?? '')) {
+      label = [text[text.length - 2] ?? '', '']
+      text = text.slice(0, -2)
+    }
+    flush()
+    const ticks = open[1] ?? ''
+    const fence = [lines[i] ?? '']
+    for (i++; i < lines.length; i++) {
+      fence.push(lines[i] ?? '')
+      if (lines[i] === ticks) break
+    }
+    pieces.push([...label, ...fence].join('\n'))
+  }
+  flush()
+  return pieces
+}
+
+/** How many columns a line's leading spaces, tabs (to their stop) and quote marks take. */
+const prefixWidth = (line: string): number => {
+  let col = 0
+  for (const ch of line) {
+    if (ch === '\t') col += 4 - (col % 4)
+    else if (ch === ' ' || ch === '>') col++
+    else break
+  }
+  return col
+}
+
+/**
+ * A line less up to `columns` columns of what a list item or a quote puts
+ * before its content: spaces, tabs (to their stop) and quote marks, never
+ * anything else. A tab cut through leaves its remaining columns as spaces.
+ */
+const dedentLine = (line: string, columns: number): string => {
+  let col = 0
+  let i = 0
+  while (i < line.length && col < columns) {
+    const ch = line[i]
+    if (ch !== ' ' && ch !== '\t' && ch !== '>') break
+    const width = ch === '\t' ? 4 - (col % 4) : 1
+    i++
+    if (col + width > columns) return ' '.repeat(col + width - columns) + line.slice(i)
+    col += width
+  }
+  return line.slice(i)
+}
+
+/**
+ * Drawn Markdown cut to at most `max` characters between blocks
+ * (`clipBlocks`), never leaving a `Code n` label without its fence: a label
+ * the cut left last is dropped (#51).
+ */
+export const clipDrawn = (drawn: string, max: number): { text: string; clipped: boolean } => {
+  const cut = clipBlocks(drawn, max)
+  if (!cut.clipped) return cut
+  return { text: cut.text.replace(/(?:^|\n\n)\*Code \d+\*$/, ''), clipped: true }
+}
+
+/** Every run of three or more backticks or tildes, broken after its first character: no fence opens. */
+const breakFences = (md: string): string => md.replace(/(`{3,}|~{3,})/g, run => `${run[0] as string}${BREAK}${run.slice(1)}`)
+
+/**
+ * Code as a fence of its own: backticks one longer than its longest run, a
+ * plain language or none. Every control character a person cannot see (C0 but
+ * tab and the line ends, DEL, C1, and the bidi controls: `UNSAFE`) is drawn as
+ * U+FFFD, so that a surface's own copy of the block cannot carry one either.
+ */
+const fenced = (code: string, lang: string): string => {
+  const longest = Math.max(0, ...(code.match(/`+/g) ?? []).map(run => run.length))
+  const ticks = '`'.repeat(Math.max(3, longest + 1))
+  const shown = plain(code).replace(new RegExp(UNSAFE.source, 'g'), REPLACEMENT)
+  return `${ticks}${listedLang(lang)}\n${code === '' ? '' : `${shown}\n`}${ticks}`
+}
+
+/**
  * The answered items of every `repo` value in the store, from every session,
  * as History draws them: the current repository's first, then each other
  * value by name; within each, newest first. An item is this session's when
@@ -736,7 +894,7 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
       const question = clip(oneLine(item.question), HISTORY_CLIP.question)
       // Cut what is drawn (forDisplay can lengthen it), so a page's size is bounded whatever was typed.
       const parts = partsOf(item).map(part => {
-        const cut = clipBlocks(forDisplay(part.text), HISTORY_CLIP.part)
+        const cut = clipDrawn(forDrawing(part.text, false), HISTORY_CLIP.part)
         return { label: part.label, text: cut.text, length: part.text.length, clipped: cut.clipped }
       })
       return {
@@ -768,16 +926,18 @@ export const FULL_BUDGET = 90_000
 /**
  * One answered item whole, as "Show in full" draws it: the question, the body
  * and each part as drawn (`forDisplay`), nothing cut unless the whole would
- * pass FULL_BUDGET, and then only between blocks, with the length kept.
+ * pass FULL_BUDGET, and then only between blocks, with the length kept; and
+ * the body's code blocks, from the stored body, for copying (#51).
  */
 export const fullOf = (item: Item): HistoryFull => {
   let left = FULL_BUDGET
-  const cut = (text: string) => {
-    const drawn = clipBlocks(forDisplay(text), left)
+  // Only the body's blocks have copy buttons, so only the body's are labelled `Code n`.
+  const cut = (text: string, labelled: boolean) => {
+    const drawn = clipDrawn(forDrawing(text, labelled), left)
     left = Math.max(0, left - drawn.text.length)
     return { text: drawn.text, length: text.length, clipped: drawn.clipped }
   }
-  const body = cut(item.body_md)
+  const body = cut(item.body_md, true)
   return {
     id: item.id,
     short: item.short,
@@ -785,7 +945,8 @@ export const fullOf = (item: Item): HistoryFull => {
     question: item.question,
     body,
     answer: item.type === 'question' ? '' : choiceOf(item),
-    parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text) })),
+    parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text, false) })),
+    copy: codeBlocksOf(item.body_md),
   }
 }
 

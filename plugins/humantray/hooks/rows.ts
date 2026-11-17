@@ -21,7 +21,7 @@ import { ROW_SCHEMA, fingerprint, itemToRow } from './row-shape'
 export { ROW_SCHEMA, fingerprint, itemToRow }
 
 /** The page this version publishes; rises with every change to page/page.ts. */
-export const PAGE_VERSION = 1
+export const PAGE_VERSION = 2
 
 /** A routable session id, as `get_session` gives it. */
 export const SESSION_ID = /^session_[A-Za-z0-9]{20,64}$/

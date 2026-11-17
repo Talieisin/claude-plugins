@@ -8,7 +8,9 @@
 // It checks that a rich Markdown body and a rich Markdown answer keep their
 // structure, that an answer is stored exactly as typed, the write path (read,
 // set with a fresh answer_id, read back, a lost race), and that hostile text
-// in every field stays inert. Every id here is made up.
+// in every field stays inert. And (#51) that every code block's Copy button
+// puts the stored code on the clipboard byte for byte, on each of its routes,
+// with the shared fixtures of tests/code-fixtures.ts. Every id here is made up.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -17,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { PAGE_HTML } from '../page/page.ts'
+import { CODE_CASES, RUNBOOK } from './code-fixtures.ts'
 
 const require = createRequire(import.meta.url)
 const { chromium } = require('playwright')
@@ -593,7 +596,139 @@ try {
     await page.close()
     console.log(`ok: ${name}`)
   }
+  await copyChecks(browser)
 } finally {
   await browser.close()
   rmSync(dir, { recursive: true, force: true })
+}
+
+/** Items for the copy checks: one open `do` per fixture, an answered one and one waiting for pick-up. */
+function seedCopy({ cases, runbook }) {
+  const now = Date.now()
+  const S = 'session_FAKEFAKEFAKEFAKEFAKEW001'
+  const base = (id, f) => ({
+    schema: 1, id, short: `HT-${id.slice(-5)}`, repo: 'example.com/example/repo', header: 'Copy', question: `Copy ${id}`,
+    body_md: '', key: `k${id}`, created: now - 3600e3, updated: now - 3600e3, bumps: 0, status: 'open', delivered: false,
+    session_id: S, session_title: 'worker', parent_session_id: null, lead_session_id: null, writer_version: '0.1.0', envelope: 1, ...f,
+  })
+  const put = (p, d) => window.__store.set(p, d)
+  put('meta/page', { schema: 1, kind: 'humantray', repo: 'example.com/example/repo', created_at: now, page_version: 2, plugin_version: '0.1.0' })
+  cases.forEach((c, n) => {
+    const id = `01TESTCOPY00000000000000${String(n).padStart(2, '0')}`
+    put(`items/${id}`, base(id, { type: 'do', body_md: c.md, updated: now - n }))
+  })
+  // Code in a person's answers: in History (feedback and notes), and waiting for pick-up (the text).
+  put('items/01TESTCOPY0000000000000HIST', base('01TESTCOPY0000000000000HIST', {
+    type: 'do', status: 'done', body_md: runbook, response: { outcome: 'not_done', feedback: runbook, notes: '```\nnote\tcode\n```' },
+    response_at: now - 60e3, delivered: true,
+  }))
+  put('items/01TESTCOPY0000000000000WAIT', base('01TESTCOPY0000000000000WAIT', { type: 'question', header: 'Ans', question: 'Waiting answer' }))
+  put('responses/01TESTCOPY0000000000000WAIT', {
+    schema: 1, id: '01TESTCOPY0000000000000WAIT', answer_id: 'copyanswer0000000001', response: { text: 'Ran:\n\n```sh\ncat <<-EOF\n\tx\n\tEOF\n```' },
+    status: 'answered', answered_at: now, seen: { bumps: 0, updated: now - 3600e3 }, by: 'page',
+  })
+}
+
+async function copyChecks(browser) {
+  const context = await browser.newContext({ viewport: { width: 1100, height: 1400 } })
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', e => errors.push(String(e)))
+  await page.addInitScript(stub)
+  await page.addInitScript(seedCopy, { cases: CODE_CASES, runbook: RUNBOOK })
+  await page.goto(`file://${file}`)
+  await page.waitForTimeout(200)
+  const clip = () => page.evaluate(() => navigator.clipboard.readText())
+  const reset = () => page.evaluate(() => Object.getPrototypeOf(navigator.clipboard).writeText.call(navigator.clipboard, '-'))
+  const cardOf = n => `#card-01TESTCOPY00000000000000${String(n).padStart(2, '0')}`
+
+  // Every fixture: the drawn code is the stored code, and each offered copy puts exactly it on the clipboard.
+  for (const [n, c] of CODE_CASES.entries()) {
+    const card = cardOf(n)
+    const drawn = await page.$$eval(`${card} .body .code pre code`, nodes => nodes.map(x => x.textContent))
+    assert.deepEqual(drawn, c.blocks, `copy: ${c.name}: the drawn code`)
+    const offered = c.blocks.flatMap((text, k) => (text === '' || (c.unsafe ?? []).includes(k) ? [] : [text]))
+    const count = await page.$$eval(`${card} .body button.copy`, x => x.length)
+    assert.equal(count, offered.length, `copy: ${c.name}: one button per block with text and no control character`)
+    for (let k = 0; k < count; k++) {
+      await reset()
+      // Each copy redraws the list: find the button afresh.
+      await page.click(`${card} .body button.copy >> nth=${k}`)
+      await page.waitForTimeout(30)
+      const got = await clip()
+      assert.equal(got, offered[k], `copy: ${c.name}: block ${k}`)
+      assert.equal(got.includes('\u200b'), false)
+    }
+    const notes = await page.$$eval(`${card} .code-bar .copied.bad`, nodes => nodes.map(x => x.textContent))
+    assert.equal(notes.length, (c.unsafe ?? []).length, `copy: ${c.name}: the control-character note`)
+  }
+
+  // "Copied" survives a snapshot redraw; a Copy button pressed by keyboard keeps the focus across one.
+  const first = `${cardOf(0)} button.copy`
+  await page.focus(first)
+  const id = await page.$eval(first, b => b.id)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(30)
+  await page.evaluate(() => window.__notify())
+  await page.waitForTimeout(50)
+  assert.equal(await page.evaluate(() => document.activeElement?.id), id, 'copy: the focus stays on the Copy button across a redraw')
+  assert.equal(await page.$eval(`${cardOf(0)} .copied`, x => x.textContent), 'Copied')
+  await page.waitForTimeout(2300)
+  assert.equal(await page.$$eval(`${cardOf(0)} .copied`, x => x.length), 0, 'copy: "Copied" goes after a while')
+
+  // The clipboard API refused: the copy event carries the same text.
+  const tabbed = CODE_CASES.findIndex(c => c.name.startsWith('a <<-EOF'))
+  const tabCard = cardOf(tabbed)
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error('denied'))
+  })
+  await reset()
+  await page.click(`${tabCard} button.copy`)
+  await page.waitForTimeout(50)
+  assert.equal(await clip(), CODE_CASES[tabbed].blocks[0], 'copy: the copy-event route copies the stored text')
+  assert.equal(await page.$eval(`${tabCard} .copied`, x => x.textContent), 'Copied')
+
+  // Both refused: the code is selected for the person's own copy, exactly; a redraw never claims it still is.
+  await page.evaluate(() => {
+    document.execCommand = () => false
+  })
+  await page.click(`${tabCard} button.copy`)
+  await page.waitForTimeout(50)
+  assert.equal(await page.evaluate(() => window.getSelection().toString()), CODE_CASES[tabbed].blocks[0], 'copy: the selection holds the stored text')
+  const said = await page.$eval(`${tabCard} .copied`, x => x.textContent)
+  assert.match(said, /^Not copied/)
+  await page.evaluate(() => window.__notify())
+  await page.waitForTimeout(50)
+  const after = await page.$eval(`${tabCard} .copied`, x => x.textContent)
+  assert.equal(after, said)
+  assert.doesNotMatch(after, /is selected|are selected/, 'copy: the words never claim a selection a redraw dropped')
+
+  // Code in a person's answer: waiting for pick-up, and in History, whose card stays open across the redraw a copy makes.
+  await page.evaluate(() => {
+    delete navigator.clipboard.writeText
+    delete document.execCommand
+  })
+  await reset()
+  await page.click('section.card:has-text("Waiting answer") .ans button.copy')
+  await page.waitForTimeout(50)
+  assert.equal(await clip(), 'cat <<-EOF\n\tx\n\tEOF', 'copy: code in a waiting answer')
+  await page.click('#tab-history')
+  await page.waitForTimeout(100)
+  await page.click('#history-01TESTCOPY0000000000000HIST summary')
+  // The body's 12 blocks, the feedback's 12, and the notes' one.
+  assert.equal(await page.$$eval('#history-01TESTCOPY0000000000000HIST button.copy', x => x.length), 25, 'copy: History offers the body and the answer parts')
+  await page.click('#history-01TESTCOPY0000000000000HIST button.copy >> nth=24')
+  await page.waitForTimeout(50)
+  assert.equal(await clip(), 'note\tcode', "copy: code in an answer's notes")
+  await page.evaluate(() => window.__notify())
+  await page.waitForTimeout(50)
+  assert.equal(await page.$eval('#history-01TESTCOPY0000000000000HIST', d => d.open), true, 'copy: the History card stays open')
+  await page.click('#history-01TESTCOPY0000000000000HIST button.copy >> nth=13')
+  await page.waitForTimeout(50)
+  assert.equal(await clip(), CODE_CASES.at(-1).blocks[1], "copy: code in an answer's feedback")
+
+  assert.deepEqual(errors, [], 'copy: no errors')
+  await context.close()
+  console.log('ok: copy')
 }
