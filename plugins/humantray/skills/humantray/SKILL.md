@@ -13,7 +13,7 @@ Three tools: `humantray_add`, `humantray_list` and `humantray_config` (model-fac
 
 - **Only where someone will see the item:** a local session with a pane, or a cloud session whose repository has a humantray page, where the item is mirrored to that page and to the owner's viewer. A `claude -p` run draws nothing. Where nobody will see an item, ask as you did before, and say why. `humantray_add` returns `page`:
   - `queued`: it will be mirrored to the page and the viewer.
-  - `waiting`: the page, or this session's id, has not been reached yet. That is normal just after a start, but a cloud session in a repository with no page stays `waiting`. If `humantray_config({})` still reads `waiting` after a turn, treat it as no page: raise no more items, and ask as you did before.
+  - `waiting`: the page, or this session's id, has not been reached yet. That is normal just after a start, but a cloud session in a repository with no page stays `waiting`. `humantray_config({})` looks for the page itself whenever none is linked: if it reads `waiting` now and again after a turn, treat it as no page, raise no more items, and ask as you did before.
   - `none`: a local session (its pane shows the item), or a store that needs a person.
 - **Your role and `AGENTS.md` win.** Where a role skill (`cloud:worker`, `cloud:reader`, `cloud:tester`, `cloud:lead`) or the repository's `AGENTS.md` says how you ask, do that.
   - **A worker** sends its questions to its lead and posts them on the issue. It raises only an `ack` or a `do` that its lead's instruction names, as named, or a synthetic item in an acceptance run that its lead names as such; never a `question`, `choice` or `approve`, and never to ask the owner.

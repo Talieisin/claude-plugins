@@ -48,6 +48,10 @@ export type World = {
   sessionIdGate: Promise<void> | undefined
   /** A $.store.set of this key fails, as a busy store might. */
   failStoreSet: (key: string) => boolean
+  /** A $.store.get of this key fails, as a busy store might. */
+  failStoreGet: (key: string) => boolean
+  /** A $.store.set of this key waits for the promise this returns, if any. */
+  storeSetGate: (key: string) => Promise<void> | undefined
   /** Every row the plugin itself appended with $.session.append. */
   appended: unknown[]
   /** Answers a store read instead of the store, for a test (undefined: the store answers). */
@@ -113,12 +117,15 @@ export function world(
   // another session sharing the store would). Values are copied in and out.
   const kv = new Map<string, string>(Object.entries(options.store ?? {}).map(([k, v]) => [k, JSON.stringify(v)]))
   on('store.get', (_, e) => {
+    if (w.failStoreGet(e.key)) throw new Error('store busy')
     const held = w.storeOverride(e.key)
     if (held !== undefined) return { value: held }
     const text = kv.get(e.key)
     return { value: text === undefined ? undefined : (JSON.parse(text) as unknown) }
   })
-  on('store.set', (_, e) => {
+  on('store.set', async (_, e) => {
+    const gate = w.storeSetGate(e.key)
+    if (gate !== undefined) await gate
     if (w.failStoreSet(e.key)) throw new Error('store busy')
     kv.set(e.key, JSON.stringify(e.value))
     return { value: undefined }
@@ -157,6 +164,8 @@ export function world(
     tools: [],
     sessionIdGate: undefined,
     failStoreSet: () => false,
+    failStoreGet: () => false,
+    storeSetGate: () => undefined,
     appended: [],
     answerSubmit: e => ({ text: e.text }),
     duringSubmit: () => undefined,

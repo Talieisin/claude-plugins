@@ -11,9 +11,13 @@
 import type { EngineInterface, On } from 'claude-code'
 
 import type { LeadRecord } from '../types'
+import { withDeadline } from './artifact-store'
 import { parseLeadInput } from './lineage'
 import { peek } from './store'
-import { isCloud, pageState, saveLeadRecord, shownNow } from './store-pass'
+import { findPageNow, isCloud, pageState, saveLeadRecord, shownNow } from './store-pass'
+
+/** How long the call may spend looking for the page when it has none. */
+const FIND_DEADLINE_MS = 6_000
 
 export const CONFIG = 'mcp__humantray__humantray_config'
 
@@ -61,8 +65,12 @@ export function registerConfig(on: On): void {
     const seen = await peek($)
     if (seen.error !== undefined) return fail(seen.error)
     const before = await shownNow($)
-    if (before === undefined) {
-      return fail("humantray: this session's id is not known yet; nothing was changed. Call again after a turn")
+    if ('unknown' in before) {
+      return fail(
+        before.unknown === 'id'
+          ? "humantray: this session's id is not known yet; nothing was changed. Call again after a turn"
+          : "humantray: this session's setting could not be read; nothing was changed. Call again after a turn",
+      )
     }
     if (asked.kind !== 'read') {
       const record: LeadRecord = {
@@ -75,7 +83,11 @@ export function registerConfig(on: On): void {
       }
     }
     const now = asked.kind === 'read' ? before : await shownNow($)
-    if (now === undefined) return fail('humantray: humantray_config failed unexpectedly')
+    if ('unknown' in now) return fail('humantray: humantray_config failed unexpectedly')
+    // With no page linked yet, look for it now rather than at the next due
+    // find (a turn looks at most every ten minutes), so that `waiting` here
+    // means none was found just now.
+    await withDeadline($, findPageNow($), FIND_DEADLINE_MS).catch(() => undefined)
     const page = await pageState($).catch(() => 'none' as const)
     return {
       result: JSON.stringify({

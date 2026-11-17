@@ -10,7 +10,7 @@ import type { Item } from '../types'
 import { fingerprint, itemToRow } from '../hooks/row-shape'
 import { LEAD, ME, OTHER, TITLE, URL_A, artifactWorld, meta } from './artifact-world'
 import { envelopeFor, textOf, warmReceive, wrapped } from './envelope-fixtures'
-import { ADD, LIST, START, START_EVENT, TURN, answerOf, stored, world } from './world'
+import { ADD, LIST, START, START_EVENT, TURN, answerOf, finished, stored, world } from './world'
 
 const CONFIG = 'mcp__humantray__humantray_config'
 const CLOUD = { env: { CLAUDE_CODE_REMOTE: 'true' } }
@@ -354,5 +354,83 @@ describe('registration', () => {
     await settle(w)
     expect(w.tools).toEqual(['humantray_config'])
     expect(answerOf<Shown>(await config($, 'self')).shown_under).toBe(ME)
+  })
+})
+
+describe('review findings on PR #50', () => {
+  test('a clear made while a restore is being written wins: the record is kept one write at a time', async ($, on) => {
+    const { w, a } = linked(on)
+    a.put(URL_A, 'items/01AAAAAAAAAAAAAAAAAAAAOLD02', priorRow('01AAAAAAAAAAAAAAAAAAAAOLD02', START - 100, ME))
+    let release = () => undefined as void
+    let held = false
+    w.storeSetGate = key => {
+      if (key !== KEY || held) return undefined
+      held = true
+      return new Promise<void>(resolve => {
+        release = resolve
+      })
+    }
+    const started = $.session.start(START_EVENT)
+    for (let i = 0; i < 20 && !held; i++) await w.clock.settle()
+    expect(held).toBe(true)
+    const cleared = config($, null)
+    await w.clock.settle()
+    release()
+    await w.clock.advance(5_000)
+    await started
+    expect(answerOf<Shown>(await cleared)).toMatchObject({ shown_under: LEAD, shown_under_from: 'parent' })
+    await settle(w)
+    expect(w.kv(KEY)).toMatchObject({ lead: null, from: 'call' })
+    const id = await add($, 'after')
+    await settle(w)
+    expect(rowOf(a, id)).toMatchObject({ lead_session_id: LEAD })
+  })
+
+  test('a read of the session rows that reaches its limit restores nothing: the newest row may be past it', async ($, on) => {
+    const { w, a } = linked(on)
+    // 1,001 rows: the read returns the first 1,000 by id, whose newest says self;
+    // the true newest, past the limit, agrees with the parent.
+    for (let n = 0; n < 1000; n++) {
+      const item = finished(n, { created: START - 10_000 + n, remote: { ...REMOTE, lead_session_id: n === 999 ? ME : LEAD } }) as Item &
+        Required<Pick<Item, 'remote'>>
+      a.put(URL_A, `items/${item.id}`, itemToRow(item) as unknown as Record<string, unknown>)
+    }
+    const last = finished(5000, { created: START - 1, remote: { ...REMOTE } }) as Item & Required<Pick<Item, 'remote'>>
+    a.put(URL_A, `items/${last.id}`, itemToRow(last) as unknown as Record<string, unknown>)
+    await $.session.start(START_EVENT)
+    await settle(w)
+    expect(w.kv(KEY)).toBeUndefined()
+  })
+
+  test('a setting that cannot be read leaves the default heading, and the item is still mirrored', async ($, on) => {
+    const { w, a } = linked(on)
+    w.failStoreGet = key => key === KEY
+    await $.session.start(START_EVENT)
+    const added = answerOf<{ id: string; page: string }>(
+      await $.tool.call({ tool: ADD, type: 'ack', header: 'Note', question: 'FYI', key: 'one' }),
+    )
+    expect(added.page).toBe('queued')
+    await settle(w)
+    expect(rowOf(a, added.id)).toMatchObject({ lead_session_id: LEAD })
+    expect(String((await config($)).deny)).toContain('could not be read')
+  })
+
+  test('a page made after the start is found by the call itself, not ten minutes later, and earlier items are pushed', async ($, on) => {
+    const w = world(on, CLOUD)
+    const a = artifactWorld(on, { read: path => w.files.get(path) })
+    await $.session.start(START_EVENT)
+    const id = await add($, 'early')
+    await settle(w)
+    expect(answerOf<Shown>(await config($)).page).toBe('waiting')
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', meta(START - 1000))
+    expect(answerOf<Shown>(await config($)).page).toBe('queued')
+    await settle(w)
+    expect(rowOf(a, id)).toMatchObject({ session_id: ME, lead_session_id: LEAD })
+    // The call delivers nothing and, once linked, looks for the page no more.
+    expect(w.submits).toEqual([])
+    const lists = a.calls.filter(c => c.tool === 'Artifact').length
+    await config($)
+    expect(a.calls.filter(c => c.tool === 'Artifact').length).toBe(lists)
   })
 })
