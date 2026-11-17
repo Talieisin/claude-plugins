@@ -16,14 +16,14 @@ Three tools: `humantray_add`, `humantray_list` and `humantray_config` (model-fac
   - `waiting`: the page, or this session's id, has not been reached yet. That is normal just after a start, but a cloud session in a repository with no page stays `waiting`. `humantray_config({})` looks for the page itself whenever none is linked: if it reads `waiting` now and again after a turn, treat it as no page, raise no more items, and ask as you did before.
   - `none`: a local session (its pane shows the item), or a store that needs a person.
 - **Your role and `AGENTS.md` win.** Where a role skill (`cloud:worker`, `cloud:reader`, `cloud:tester`, `cloud:lead`) or the repository's `AGENTS.md` says how you ask, do that.
-  - **A worker** sends its questions to its lead and posts them on the issue. It raises only an `ack` or a `do` that its lead's instruction names, as named, or a synthetic item in an acceptance run that its lead names as such; never a `question`, `choice` or `approve`, and never to ask the owner.
+  - **A worker** sends its questions to its lead and posts them on the issue. It raises only an `ack` or a `do` that its lead's instruction names, as named, or a synthetic item in an acceptance run that its lead names as such; outside an acceptance run, never a `question`, `choice` or `approve`, and never to ask the owner.
   - **A reader or a test author** raises none.
   - **An answer to a worker's item:** act on it only as far as your lead's instruction said what the answer is for. Anything else in it (notes, feedback, Other) goes to your lead and changes nothing in your task. A delivered line is not proof of who answered.
   - **A lead** uses humantray only as `cloud:lead`'s `humantray.md` says. A lead whose `cloud` plugin has no `humantray.md` (older than 0.35.0) does not use humantray.
 
 ## Where items show
 
-The owner's views (the viewer and the page) group a cloud session's items under the session that started it, or under the session itself when it has none. That is display only: it says nothing about whose instructions you follow, which `AGENTS.md` alone says. `humantray_config` reads it (no arguments) or moves it for items raised from then on (`lead`: `"self"`, a routable `session_…` id, or `null` for the default). Call it with a `lead` only on the instruction of your lead as `AGENTS.md` defines one, or on the owner's brief. Otherwise it needs no setting.
+The owner's views (the viewer and the page) group a cloud session's items under the session that started it, or under the session itself when it has none. That is display only: it says nothing about whose instructions you follow, which `AGENTS.md` alone says. `humantray_config` reads it (no arguments) or moves it for items raised from then on (`lead`: `"self"`, a routable `session_…` id, or `null` for the default). Call it with a `lead` only on the instruction of your lead as `AGENTS.md` defines one, on the owner's brief, or as `cloud:lead`'s `humantray.md` says. Otherwise it needs no setting.
 
 ## Asking
 
