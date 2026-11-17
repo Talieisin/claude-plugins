@@ -294,6 +294,70 @@ describe('bumping across /clear, /branch and /resume', () => {
     expect(items.find(item => item.id === id)).toMatchObject({ session_id: 'session-a', bumps: 0 })
   })
 
+  test('a compaction keeps a hand-over a failed /clear pass left pending: the next pass records it', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(APPROVE)).id
+    w.holdLock('busy')
+    w.sessionId = 'session-new'
+    const clearing = $.classic.SessionStart({ source: 'clear' })
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1_000)
+      w.holdLock('busy')
+    }
+    await clearing
+    w.dropLock()
+    await $.classic.SessionStart({ source: 'compact' })
+    await w.drain()
+    expect(w.store().sessions['session-a']?.successor).toBe('session-new')
+    const again = await $.tool.call(APPROVE)
+    expect(answerOf(again)).toMatchObject({ id, bumped: true })
+  })
+
+  test('a /resume whose pass failed, then a /clear: the hand-over is from the resumed session', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    await $.tool.call(APPROVE)
+    w.holdLock('busy')
+    w.sessionId = 'session-other'
+    const resuming = $.classic.SessionStart({ source: 'resume' })
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1_000)
+      w.holdLock('busy')
+    }
+    await resuming
+    w.dropLock()
+    w.sessionId = 'session-new'
+    await $.classic.SessionStart({ source: 'clear' })
+    await w.drain()
+    const sessions = w.store().sessions
+    expect(sessions['session-other']?.successor).toBe('session-new')
+    expect(sessions['session-a']?.successor).toBeUndefined()
+    const again = await $.tool.call(APPROVE)
+    expect(answerOf<{ bumped: boolean }>(again).bumped).toBe(false)
+  })
+
+  test('two /clears whose first pass failed: the chain runs from the first session to the last', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(APPROVE)).id
+    w.holdLock('busy')
+    w.sessionId = 'session-middle'
+    const clearing = $.classic.SessionStart({ source: 'clear' })
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1_000)
+      w.holdLock('busy')
+    }
+    await clearing
+    w.dropLock()
+    w.sessionId = 'session-new'
+    await $.classic.SessionStart({ source: 'clear' })
+    await w.drain()
+    expect(w.store().sessions['session-a']?.successor).toBe('session-new')
+    const again = await $.tool.call(APPROVE)
+    expect(answerOf(again)).toMatchObject({ id, bumped: true })
+  })
+
   // Two open items under one key in one chain: what a store written before
   // bumps followed the chain can hold.
   const legacy = (types: ['approve' | 'question', 'approve' | 'question']) => ({
