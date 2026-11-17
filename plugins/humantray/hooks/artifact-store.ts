@@ -264,13 +264,16 @@ export async function readResponses(
   return { kind: 'ok', rows }
 }
 
+/** How many of a session's rows one read returns at most; a read that reaches it may have left some out. */
+export const SESSION_ROWS_LIMIT = 1000
+
 /** The item rows of one routable session, as read, with how many could not be read. */
 export async function readSessionRows(
   $: EngineInterface,
   url: string,
   routable: string,
 ): Promise<{ kind: 'ok'; rows: Array<{ row: ItemRow; version: number }>; skipped: number } | { kind: 'unavailable'; why: string }> {
-  const read = await queryDocs($, url, 'items', { where: [['session_id', '==', routable]], limit: 1000 })
+  const read = await queryDocs($, url, 'items', { where: [['session_id', '==', routable]], limit: SESSION_ROWS_LIMIT })
   if (read.kind !== 'ok') return { kind: 'unavailable', why: read.kind === 'unavailable' ? read.why : read.kind }
   return rowsOf(read.docs)
 }

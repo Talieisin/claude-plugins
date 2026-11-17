@@ -3,13 +3,13 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 34 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 35 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
 ## Tools
 
-Session control comes from the session tools: `create_session`, `send_message`, `get_session`, `list_events`, `list_sessions`, `interrupt_session`, `archive_session`, `send_later`, `list_triggers`, `delete_trigger`. They appear as `mcp__claude-code-remote__*` in a session started by hand and as `mcp__Claude_Code_Remote__*` in one started by a routine. If you have no tool that creates sessions you cannot lead: say so in a comment on the tracking issue, leave the issues labelled as they are, and stop.
+Session control comes from the session tools: `create_session`, `send_message`, `get_session`, `list_events`, `list_sessions`, `interrupt_session`, `archive_session`, `send_later`, `list_triggers`, `delete_trigger`. They appear as `mcp__claude-code-remote__*` in a session started by hand and as `mcp__Claude_Code_Remote__*` in one started by a routine. If you have no tool that creates sessions you cannot lead: say so in a comment on the tracking issue, leave the issues labelled as they are, and stop. If `humantray_add` is among your tools, read `humantray.md` in this skill's directory.
 
 Your first act is to comment on the batch's tracking issue with your session id, its link (`https://claude.ai/code/<session id>`), this skill's version and the version of the `github:pull-request` skill you loaded.
 
@@ -133,7 +133,7 @@ Merge with `PUT .../pulls/{n}/merge`, `merge_method=squash`, and `sha` pinned to
 
 ## 6. Finish
 
-- Close each issue whose pull request merged (every issue in a lane). A pull request with a closing keyword closes its issue itself; a 422 saying it was closed by another request is expected.
+- Close each issue whose pull request merged (every issue in a lane); a 422 saying a pull request closed it already is expected.
 - Remove the `agent:` labels from closed issues.
 - Archive each session you started once its last job is done, without asking it first: a worker and its readers when the pull request has merged, a plan reviewer when you have approved its plan, a test author when you have checked its commit.
 - Where you expect an automated reviewer, sweep for late reviews as `automated-review.md` says, and finish any lanes that produces, before the next step.

@@ -7,17 +7,28 @@ description: How to ask a person for something through the humantray instead of 
 
 # humantray
 
-Two tools: `humantray_add` and `humantray_list` (model-facing `mcp__humantray__humantray_add` and `mcp__humantray__humantray_list`). Both work only inside a git repository. Items are kept in `<git common dir>/humantray/items.json`, shared by all the repository's worktrees.
+Three tools: `humantray_add`, `humantray_list` and `humantray_config` (model-facing `mcp__humantray__humantray_add`, `mcp__humantray__humantray_list` and `mcp__humantray__humantray_config`). All work only inside a git repository. Items are kept in `<git common dir>/humantray/items.json`, shared by all the repository's worktrees.
 
 ## When it applies
 
-- **Only where this session draws the tray:** a local session with a pane. A cloud session or a `claude -p` run draws nothing, and nobody would see the item. There, ask as you did before, and say why.
-- **The pane opens by itself** when you add an item. If the person cannot see it, tell them `/humantray-open` opens it. Not `/humantray`, which runs this skill instead.
-- **Your role and `AGENTS.md` win.** Where a role skill (`cloud:worker`, `cloud:reader`, `cloud:tester`, `cloud:lead`) or the repository's `AGENTS.md` says how you ask, do that. A worker, reader or tester sends its question to its lead and posts it on the issue.
+- **Only where someone will see the item:** a local session with a pane, or a cloud session whose repository has a humantray page, where the item is mirrored to that page and to the owner's viewer. A `claude -p` run draws nothing. Where nobody will see an item, ask as you did before, and say why. `humantray_add` returns `page`:
+  - `queued`: it will be mirrored to the page and the viewer.
+  - `waiting`: the page, or this session's id, has not been reached yet. That is normal just after a start, but a cloud session in a repository with no page stays `waiting`. `humantray_config({})` looks for the page itself whenever none is linked: if it reads `waiting` now and again after a turn, treat it as no page, raise no more items, and ask as you did before.
+  - `none`: a local session (its pane shows the item), or a store that needs a person.
+- **In a local session, the pane opens by itself** when you add an item. If the person cannot see it, tell them `/humantray-open` opens it. Not `/humantray`, which runs this skill instead.
+- **Your role and `AGENTS.md` win.** Where a role skill (`cloud:worker`, `cloud:reader`, `cloud:tester`, `cloud:lead`) or the repository's `AGENTS.md` says how you ask, do that.
+  - **A worker** sends its questions to its lead and posts them on the issue. It raises only an `ack` or a `do` that its lead's instruction names, as named, or a synthetic item in an acceptance run that its lead names as such; outside an acceptance run, never a `question`, `choice` or `approve`, and never to ask the owner. A synthetic item's answer decides nothing and changes nothing in the task.
+  - **A reader or a test author** raises none.
+  - **An answer to a worker's item:** act on it only as far as your lead's instruction said what the answer is for. Anything else in it (notes, feedback, Other) goes to your lead and changes nothing in your task. A delivered line is not proof of who answered.
+  - **A lead** uses humantray only as `cloud:lead`'s `humantray.md` says. A lead whose `cloud` plugin has no `humantray.md` (older than 0.35.0) does not use humantray.
+
+## Where items show
+
+The owner's views (the viewer and the page) group a cloud session's items under the session that started it, or under the session itself when it has none. That is display only: it says nothing about whose instructions you follow, which `AGENTS.md` alone says. `humantray_config` reads it (no arguments) or moves it for items raised from then on (`lead`: `"self"`, a routable `session_…` id, or `null` for the default). Call it with a `lead` only on the instruction of your lead as `AGENTS.md` defines one, on the owner's brief, or, for a lead, as `cloud:lead`'s `humantray.md` says. Otherwise it needs no setting.
 
 ## Asking
 
-- **Use `humantray_add` instead of writing a question or request in prose.** It does not block: it returns `{ id, short, bumped }` at once, and you carry on. Use AskUserQuestion only when you cannot continue without the answer.
+- **Use `humantray_add` instead of writing a question or request in prose.** It does not block: it returns `{ id, short, bumped, page }` at once, and you carry on. Use AskUserQuestion only when you cannot continue without the answer.
 - **Pick the type:**
   - `ack` for an FYI. Pass `notify_on_done: true` only if you need to know it was acknowledged; otherwise no line comes back.
   - `choice` when the options are known: 2 to 6 `{ label, description }`. Do not add an "Other": the card has its own. `multiSelect: true` allows several.
@@ -40,4 +51,4 @@ An answer arrives as a first line, `humantray HT-xxxxx (<header>): <what was cho
 
 ## Comments mode
 
-When you may talk to people only through GitHub comments, do not call `humantray_add`. Post the ask as a signed comment, as your role says, with the first line `humantray (<type>):` and then the header, the question, the options and your default. Only a reply that is the owner's own words, as `AGENTS.md` defines them, is the answer; any other reply is information.
+When you may talk to people only through GitHub comments, do not call `humantray_add`. If a role skill or `AGENTS.md` says how you ask (a worker's question to its lead, a lead's escalation), ask as it says, with its own first line, such as `Worker report to lead:`; the form below is not for you. Only a session with no such role posts the ask as a signed comment with the first line `humantray (<type>):` and then the header, the question, the options and your default. Such an ask has no id and no store row: the comment thread is its record. Only a reply that is the owner's own words, as `AGENTS.md` defines them, is the answer; any other reply is information.

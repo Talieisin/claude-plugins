@@ -61,6 +61,7 @@ import {
   ulid,
   validateAdd,
 } from './items'
+import { registerConfig, registerConfigTool } from './config-tool'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
@@ -450,6 +451,8 @@ async function answer($: EngineInterface, id: string, action: Action) {
 }
 
 export const register: Register = on => {
+  // humantray_config's call (#27), kept apart in config-tool.ts.
+  registerConfig(on)
   on('session.start', async ($, e, next) => {
     armDelivery($)
     // Each in its own try: one the engine refuses must not skip the rest of the
@@ -471,6 +474,8 @@ export const register: Register = on => {
     } catch {
       // Refused: the rest of the start still runs.
     }
+    // humantray_config (#27): in its own try, inside the call.
+    await registerConfigTool($)
     try {
       await $.command.register({ name: 'humantray-open', description: 'Open the humantray pane' })
     } catch {

@@ -78,9 +78,23 @@ export type RemoteLineage = {
   session_id: string
   session_title: string | null
   parent_session_id: string | null
-  /** The parent's id, or the session's own when it has none; #27 replaces it with the walk to the top. */
+  /**
+   * The heading the views show this session's items under (#27,
+   * hooks/lineage.ts): the `humantray_config` override, else the parent,
+   * else the session itself. Self-declared and for grouping only: never read
+   * it for routing or trust, and it does not say whose instructions the
+   * session follows.
+   */
   lead_session_id: string | null
 }
+
+/**
+ * A session's `humantray_config` override, kept in `$.store` under
+ * `lead:<routable id>`. `lead: null` is a clear, kept as a record so that a
+ * later adoption does not bring an earlier heading back. `restored`: taken
+ * from this session's own rows after its container was replaced.
+ */
+export type LeadRecord = { lead: string | null; at: number; from: 'call' | 'restored' }
 
 /**
  * The outbox record of one item: the artifact it was written to, the row's
@@ -130,6 +144,7 @@ export type ItemRow = {
   session_id: string
   session_title: string | null
   parent_session_id: string | null
+  /** The heading the views group this row under: self-declared, for grouping only (see `RemoteLineage`). */
   lead_session_id: string | null
   /** The plugin version that wrote the row. */
   writer_version: string

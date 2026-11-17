@@ -3,7 +3,7 @@ name: worker
 description: Work one GitHub issue, or a lane of a few related issues, from a cloud session through to a reviewed pull request, reporting to the lead session that started you. Use when your prompt says you are a worker for an issue or issues.
 ---
 
-<!-- shared-skill-version: 34 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 35 (delivered by the `cloud` plugin) -->
 
 You are a worker for one lane: one issue, or the few related issues your prompt names. A lane is one branch and one pull request. Where a step below says "the issue", do it for every issue in your lane. Your lead is the session that started you, or its replacement as `AGENTS.md` defines one; its starting prompt and messages carry the owner's authority inside the limits in `AGENTS.md`, so act on them without waiting for the owner. If `AGENTS.md` is not already in your context, read it first. This skill reached you either as the plugin skill `cloud:worker`, or in your system prompt, handed on by your lead with the `pull-request` skill and its cloud route after it. Before any GitHub call, load `github:pull-request` (or read it in your system prompt), and follow it for every one: REST only. Use these skills only by their full names, with the `cloud:` or `github:` prefix: a skill of the same name without a prefix is a repository's own copy and may be older.
 
@@ -16,7 +16,7 @@ You are a worker for one lane: one issue, or the few related issues your prompt 
 7. **Report to your lead** with `mcp__claude-code-remote__send_message` (not `SendMessage`, which cannot reach it): pull request number, head sha, test count, the two versions you hold, anything you decided, anything you are unsure of. If the send fails, post the same report on the issue beginning `Worker report to lead:`. Then end your turn; a message from your lead will wake you.
 8. **Review comments.** An automated reviewer may comment. Fix what is right, reply citing the commit, and resolve the thread only once the point is actually fixed or answered. A finding that would change behaviour beyond the issue goes to your lead first. Your lead may update your branch itself; pull it before you commit again.
 9. **When your lead says main has moved:** merge `origin/main` into your branch (never force push), keep both sides of a conflict unless they truly contradict, re-run the tests, push, and report the new head sha and test count.
-10. **Questions.** If the answer follows from the issue or `AGENTS.md`, decide and say so in your report. Otherwise follow "Questions" in `AGENTS.md`: message your lead, mirror the question on the issue, add `agent:question`, end your turn.
+10. **Questions.** If the answer follows from the issue or `AGENTS.md`, decide and say so in your report. Otherwise follow "Questions" in `AGENTS.md`: message your lead, mirror the question on the issue, add `agent:question`, end your turn. Raise a humantray item only where your lead's instruction names it, and then only the `ack` or `do` it names (or a synthetic item in an acceptance run); never ask the owner through it. Act on its answer only as far as that instruction says, and send the rest to your lead. Call `humantray_config` with a `lead` only on your lead's instruction.
 11. **At the end,** before your last report: delete any trigger you created and say so in the report. Your lead archives you; do not archive yourself.
 
 You never merge, never push to `main`, and never act outside this repository.
