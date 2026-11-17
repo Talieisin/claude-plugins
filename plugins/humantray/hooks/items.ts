@@ -265,26 +265,38 @@ export type AddOutcome = { item: Item; bumped: boolean }
  * whose owner chain ends at this session: its own, or one it took over after
  * a /clear or a /branch (never a /resume, which records no succession). The
  * bumped item keeps its original session_id; delivery follows the chain to
- * this session. A bump of another type is refused.
+ * this session. If any such open item has another type, the add is refused.
  */
 export const addOrBump = (
   file: StoreFile,
   input: AddInput,
   context: { repo: string; session_id: string; now: number; id: string },
 ): Checked<AddOutcome> => {
-  const existing = file.items.find(
+  const matches = file.items.filter(
     item =>
       item.status === 'open' &&
       item.repo === context.repo &&
-      resolveOwner(file.sessions, item.session_id) === context.session_id &&
-      item.key === input.key,
+      item.key === input.key &&
+      resolveOwner(file.sessions, item.session_id) === context.session_id,
+  )
+  const conflict = matches.find(item => item.type !== input.type)
+  if (conflict !== undefined) {
+    return {
+      error: `an open ${conflict.type} item (${conflict.short}) already has this key; use another key, or the same type to bump it`,
+    }
+  }
+  // A store written before bumps followed the chain can hold several open
+  // items under one key in one chain (one added before a /clear, one after).
+  // The newest by `updated` is bumped (on a tie, the larger id); the rest are
+  // left as they are.
+  const existing = matches.reduce<Item | undefined>(
+    (newest, item) =>
+      newest === undefined || item.updated > newest.updated || (item.updated === newest.updated && item.id > newest.id)
+        ? item
+        : newest,
+    undefined,
   )
   if (existing !== undefined) {
-    if (existing.type !== input.type) {
-      return {
-        error: `an open ${existing.type} item (${existing.short}) already has this key; use another key, or the same type to bump it`,
-      }
-    }
     existing.body_md = input.body_md
     if (input.options !== undefined) existing.options = input.options
     else delete existing.options

@@ -269,6 +269,66 @@ describe('bumping across /clear, /branch and /resume', () => {
     expect(items.filter(item => item.bumps > 0)).toEqual([])
   })
 
+  test('a /resume after a /clear whose pass failed drops the pending hand-over: no successor, no bump', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const id = answerOf<{ id: string }>(await $.tool.call(APPROVE)).id
+    w.holdLock('busy')
+    w.sessionId = 'session-new'
+    const clearing = $.classic.SessionStart({ source: 'clear' })
+    for (let i = 0; i < 6; i++) {
+      await w.clock.advance(1_000)
+      w.holdLock('busy')
+    }
+    await clearing
+    w.dropLock()
+    w.sessionId = 'session-other'
+    await $.classic.SessionStart({ source: 'resume' })
+    await w.drain()
+    expect(w.store().sessions['session-a']?.successor).toBeUndefined()
+    const again = await $.tool.call(APPROVE)
+    expect(answerOf<{ bumped: boolean }>(again).bumped).toBe(false)
+    expect(w.store().sessions['session-a']?.successor).toBeUndefined()
+    const items = w.store().items
+    expect(items).toHaveLength(2)
+    expect(items.find(item => item.id === id)).toMatchObject({ session_id: 'session-a', bumps: 0 })
+  })
+
+  // Two open items under one key in one chain: what a store written before
+  // bumps followed the chain can hold.
+  const legacy = (types: ['approve' | 'question', 'approve' | 'question']) => ({
+    version: 1 as const,
+    // The older first in the file, so a first match would pick the wrong one.
+    items: [
+      stored({ id: '01AAAAAAAAAAAAAAAAAAAAOLDER', type: types[1], key: 'plan', session_id: 'session-old', updated: START - HOUR }),
+      stored({ id: '01AAAAAAAAAAAAAAAAAAAANEWER', type: types[0], key: 'plan', session_id: 'session-a', updated: START - HOUR / 2 }),
+    ],
+    sessions: { 'session-old': { seen: START - HOUR, successor: 'session-a' } },
+  })
+
+  test('legacy duplicates of one type in the chain: the newest by updated is bumped, the other left', async ($, on) => {
+    const w = world(on)
+    w.seed(legacy(['approve', 'approve']))
+    await $.session.start(START_EVENT)
+    const again = await $.tool.call({ ...APPROVE, body_md: 'two' })
+    expect(answerOf(again)).toMatchObject({ id: '01AAAAAAAAAAAAAAAAAAAANEWER', bumped: true })
+    const items = w.store().items
+    expect(items).toHaveLength(2)
+    expect(items.find(item => item.id === '01AAAAAAAAAAAAAAAAAAAANEWER')).toMatchObject({ bumps: 1, body_md: 'two', session_id: 'session-a' })
+    expect(items.find(item => item.id === '01AAAAAAAAAAAAAAAAAAAAOLDER')).toMatchObject({ bumps: 0, body_md: '' })
+  })
+
+  test('legacy duplicates of two types in the chain: the add is refused, even when one matches its type', async ($, on) => {
+    const w = world(on)
+    // The older, first in the file, has the add's type; the newer has another.
+    w.seed(legacy(['question', 'approve']))
+    await $.session.start(START_EVENT)
+    const before = w.files.get(FILE)
+    const ran = await $.tool.call({ ...APPROVE, body_md: 'two' })
+    expect(String(ran.deny)).toContain('open question item (HT-NEWER)')
+    expect(w.files.get(FILE)).toBe(before)
+  })
+
   test('an inherited open item under the same key with another type refuses the add, the file unchanged', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
