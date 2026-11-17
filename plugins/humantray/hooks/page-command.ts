@@ -45,13 +45,18 @@ const escapeHtml = (text: string): string =>
 export const withTitle = (source: string, title: string): string =>
   source.replace('<title>humantray</title>', () => `<title>${escapeHtml(title)}</title>`)
 
-/** Publishes the plugin's page (new, or to `url`), checks its rules and stops its watch. */
+/**
+ * Publishes the plugin's page (new, or to `url`), checks its rules and stops
+ * its watch. `unviewed`: the tool refused because a version of the page this
+ * session had not seen was there (#58); nothing was published, and the caller
+ * decides whether to try once more.
+ */
 async function publish(
   $: EngineInterface,
   dir: string,
   title: string,
   url: string | undefined,
-): Promise<{ url: string } | { error: string }> {
+): Promise<{ url: string } | { error: string } | { unviewed: string }> {
   const stamp = (await $.clock.now()).toString(36)
   const source = PAGE_HTML
   const copy = `${dir}/page-${stamp}.html`
@@ -63,6 +68,7 @@ async function publish(
   }
   try {
     const published = await publishPage($, copy, url)
+    if (published.kind === 'unviewed') return { unviewed: published.text }
     if (published.kind === 'refused') {
       return { error: `the publish was refused (${published.text}). Run /humantray-page from a cloud session.` }
     }
@@ -162,6 +168,9 @@ async function settleMeta(
   return { error: `its meta/page could not be written (${written.kind})` }
 }
 
+const CHANGED =
+  'the page changed while it was being updated, so it was not updated. Run /humantray-page again'
+
 /** Publishes when the page is behind or not yet ours, then settles meta/page; never touches someone else's. */
 async function adoptPage(
   $: EngineInterface,
@@ -176,7 +185,35 @@ async function adoptPage(
   if (owner.kind === 'unavailable') return { error: `its database could not be read (${owner.why}), so nothing was published to it` }
   let target = url
   if (owner.kind !== 'ours' || owner.meta.page_version < PAGE_VERSION) {
-    const published = await publish($, dir, title, url)
+    let published = await publish($, dir, title, url)
+    if ('unviewed' in published && url !== undefined) {
+      // A version this session had not seen was there: someone may have
+      // published since the read (#58). Look at meta/page again, and publish
+      // once more only if it is still ours and behind, or, for a take-over,
+      // still unmarked. A take-over's artifact that reads as gone (as a
+      // never-written database does) counts as unmarked only while it is
+      // still listed with this repository's title, as the #54 guard took it;
+      // one no longer listed stops. Never a third time.
+      // meta/page is the only evidence: a newer page published but not yet
+      // marked (its publisher raises meta/page last) is not seen, so two runs
+      // of different versions at once can still leave the older page; #60
+      // tracks that race.
+      let again = await ownerOf($, url, repo)
+      if (owner.kind === 'nobody' && again.kind === 'gone') {
+        const listed = await markedByTitle($, url, repo, again)
+        if ('error' in listed) return { error: CHANGED }
+        again = listed
+      }
+      if (again.kind === 'ours' && again.meta.page_version >= PAGE_VERSION) {
+        // Brought up to date by another run in the meantime: link it, publish nothing.
+        return { url }
+      }
+      const behind = (again.kind === 'ours' && owner.kind === 'ours') || (again.kind === 'nobody' && owner.kind === 'nobody')
+      if (!behind) return { error: CHANGED }
+      owner = again
+      published = await publish($, dir, title, url)
+    }
+    if ('unviewed' in published) return { error: CHANGED }
     if ('error' in published) return published
     target = published.url
   }

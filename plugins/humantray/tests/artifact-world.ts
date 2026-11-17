@@ -64,6 +64,21 @@ export type ArtifactWorld = {
   emptyReadsGone: boolean
   /** Runs before each ArtifactData call is answered. */
   before: (input: Record<string, unknown>) => void | Promise<void>
+  /**
+   * The version of each artifact (by `artifactId`) this session has seen
+   * (#58): a read, this session's own publish (a new artifact's included) and
+   * a refused publish each set it to the live version; a failed read sets
+   * nothing. An artifact seeded with `add` starts unseen.
+   */
+  seen: Map<string, number>
+  /** Fail every Artifact read. */
+  readFails: boolean
+  /** How the tool refuses a publish over an unseen version: an error reply, or a deny. */
+  unviewedAs: 'error' | 'deny'
+  /** Runs before each Artifact publish is answered (to publish a newer version elsewhere in between). */
+  beforePublish: (input: Record<string, unknown>) => void | Promise<void>
+  /** Another session publishes a new version of the artifact: this session has not seen it. */
+  publishElsewhere: (url: string, html?: string) => void
   add: (url: string, title: string, fields?: Partial<Artifact>) => Artifact
   doc: (url: string, path: string) => Doc | undefined
   put: (url: string, path: string, data: Record<string, unknown>) => Doc
@@ -107,6 +122,16 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
     denyOther: false,
     emptyReadsGone: false,
     before: () => undefined,
+    seen: new Map(),
+    readFails: false,
+    unviewedAs: 'error',
+    beforePublish: () => undefined,
+    publishElsewhere: (url, html = 'elsewhere') => {
+      const art = find(url)
+      if (art === undefined) throw new Error(`no artifact ${url}`)
+      art.published += 1
+      art.html.push(html)
+    },
     add: (url, title, fields = {}) => {
       const made: Artifact = { url, title, ownerOnly: true, docs: new Map(), published: 1, html: [], ...fields }
       a.artifacts.push(made)
@@ -237,9 +262,20 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
     return fail('unknown action')
   })
 
-  on('tool.call', { tool: 'Artifact' }, (_, e) => {
+  // The tool's refusal of a publish over a version this session has not seen
+  // (#58), as the owner met it. Partial: the parts the issue elided are elided here too.
+  const UNVIEWED_TEXT =
+    "You hadn't viewed the live version of this artifact, so the publish was refused. … that version now counts as viewed …"
+
+  on('tool.call', { tool: 'Artifact' }, async (_, e) => {
     const input = { ...(e as unknown as Record<string, unknown>) }
     a.calls.push({ tool: 'Artifact', input })
+    if (input.action === 'read') {
+      const art = find(input.url)
+      if (a.readFails || art === undefined) return fail('The artifact could not be read.')
+      a.seen.set(artifactId(art.url), art.published)
+      return ok(`<!-- the page as published, version ${String(art.published)} -->\n${art.html.at(-1) ?? ''}`)
+    }
     if (input.action === 'list') {
       if (a.listFails) return fail('The artifact service could not be reached.')
       const all = [...a.artifacts].reverse()
@@ -251,13 +287,19 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
       return ok(`${page.length} published artifacts (most recently opened or updated first):\n${lines.join('\n')}${more}`)
     }
     if (input.action === 'publish') {
+      await a.beforePublish(input)
       const url = typeof input.url === 'string' ? input.url : URL_NEW
       let art = find(url)
+      if (art !== undefined && typeof input.url === 'string' && (a.seen.get(artifactId(art.url)) ?? 0) < art.published) {
+        a.seen.set(artifactId(art.url), art.published)
+        return a.unviewedAs === 'deny' ? { deny: UNVIEWED_TEXT } : fail(UNVIEWED_TEXT)
+      }
       const rules = JSON.stringify((input.capabilities as { db?: { rules?: unknown } } | undefined)?.db?.rules ?? null)
       const ownerOnly = rules === JSON.stringify([{ path: '', read: 'owner', write: 'owner' }])
       if (art === undefined) art = a.add(url, 'pending', { ownerOnly, published: 0 })
       art.ownerOnly = a.honourRules && ownerOnly
       art.published += 1
+      a.seen.set(artifactId(art.url), art.published)
       const html = options.read?.(String(input.file_path)) ?? ''
       art.html.push(html)
       art.title = /<title>([^<]*)<\/title>/.exec(html)?.[1]?.replace(/&amp;/g, '&') ?? 'untitled'

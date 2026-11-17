@@ -7,6 +7,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { PAGE_VERSION } from '../hooks/rows'
 import { REPO, TITLE, URL_A, URL_B, URL_NEW, artifactWorld, meta } from './artifact-world'
 import { MAX_CANDIDATES } from '../hooks/artifact-store'
+import { artifactId } from '../hooks/envelope'
 import { ADD, COMMAND, START, START_EVENT, answerOf, world } from './world'
 
 const CLOUD = { env: { CLAUDE_CODE_REMOTE: 'true' } }
@@ -447,5 +448,231 @@ describe("the bare command's take-over is unchanged by #54", () => {
     const ran = await $.command.run({ ...RUN, args: '' })
     expect(textOf(ran)).toMatch(/took over/)
     expect(a.calls.find(c => c.input.action === 'publish')?.input.url).toBe(URL_A)
+  })
+})
+
+describe('/humantray-page republishes over an existing page on its first run (#58)', () => {
+  // The Artifact tool publishes over an existing artifact only once this
+  // session has seen its live version; the fake keeps that rule
+  // (artifact-world.ts, `seen`). Counts here are of publish attempts: every
+  // Artifact publish call, refused or taken.
+  const attempts = (a: ReturnType<typeof cloud>['a']) => a.calls.filter(c => c.tool === 'Artifact' && c.input.action === 'publish')
+  const reads = (a: ReturnType<typeof cloud>['a']) => a.calls.filter(c => c.tool === 'Artifact' && c.input.action === 'read')
+  const probes = (a: ReturnType<typeof cloud>['a']) => a.writes().filter(c => c.input.doc_id === 'rules-probe')
+  const metaWrites = (a: ReturnType<typeof cloud>['a']) => a.writes().filter(c => c.input.collection === 'meta' && c.input.doc_id === 'page')
+
+  /** An existing page of this repository at an older page version, which this session has never seen. */
+  function olderPage(a: ReturnType<typeof cloud>['a'], url = URL_A) {
+    a.add(url, TITLE)
+    a.put(url, 'meta/page', meta(START, PAGE_VERSION - 1))
+    expect(a.seen.size).toBe(0)
+  }
+
+  test('the bare command: the page is read, then published, at the same link, once; its meta/page rises', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a)
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toBe('humantray: the page is linked for this repository.')
+    expect(attempts(a)).toHaveLength(1)
+    expect(reads(a)).toHaveLength(1)
+    // The read is of the publish's link, and comes before it.
+    expect(reads(a)[0]?.input.url).toBe(attempts(a)[0]?.input.url)
+    expect(a.calls.indexOf(reads(a)[0] as never)).toBeLessThan(a.calls.indexOf(attempts(a)[0] as never))
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION })
+  })
+
+  test('the command with a link: the same, at that link', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a, URL_B)
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(attempts(a).map(c => c.input.url)).toEqual([URL_B])
+    expect(reads(a).map(c => c.input.url)).toEqual([URL_B])
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION })
+  })
+
+  for (const as of ['error', 'deny'] as const) {
+    test(`a read that fails: the refusal (as ${as === 'error' ? 'an error reply' : 'a deny'}) counts as seen, the page is looked at again, and one retry publishes it; its meta/page rises`, async ($, on) => {
+      const { a } = cloud(on)
+      olderPage(a)
+      a.readFails = true
+      a.unviewedAs = as
+      await $.session.start(START_EVENT)
+      const ran = await $.command.run({ ...RUN, args: '' })
+      expect(textOf(ran)).toBe('humantray: the page is linked for this repository.')
+      expect(attempts(a)).toHaveLength(2)
+      expect(a.artifacts.find(x => x.url === URL_A)?.published).toBe(2)
+      expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION })
+      expect(a.artifacts.find(x => x.url === URL_A)?.ownerOnly).toBe(true)
+    })
+  }
+
+  test('a newer humantray publishes between the read and the publish: nothing is published over it; the newer page is linked as it is', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a)
+    let once = true
+    a.beforePublish = () => {
+      if (!once) return
+      once = false
+      a.publishElsewhere(URL_A, 'page of a newer humantray')
+      a.put(URL_A, 'meta/page', meta(START, PAGE_VERSION + 1))
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(attempts(a)).toHaveLength(1)
+    expect(a.artifacts.find(x => x.url === URL_A)?.html.at(-1)).toBe('page of a newer humantray')
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION + 1 })
+    expect(metaWrites(a)).toEqual([])
+    expect(probes(a)).toEqual([])
+    expect(textOf(ran)).toBe('humantray: the page is linked for this repository.')
+  })
+
+  test('the page is marked as something else in between: nothing more is published; the person is told to run it again', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a)
+    a.beforePublish = () => {
+      a.publishElsewhere(URL_A)
+      a.put(URL_A, 'meta/page', { ...meta(START), repo: 'github.com/other/elsewhere' })
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toBe(
+      'humantray: found the page, but could not update it: the page changed while it was being updated, so it was not updated. Run /humantray-page again',
+    )
+    expect(attempts(a)).toHaveLength(1)
+    expect(metaWrites(a)).toEqual([])
+    expect(probes(a)).toEqual([])
+  })
+
+  test('at most one retry: refused again, it stops, with no meta/page raise and no rules check', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a)
+    // Another session publishes the same old page version before each attempt,
+    // for the first three: a retry loop then gets through on its fourth
+    // attempt and this test fails, rather than the file never finishing.
+    let elsewhere = 0
+    a.beforePublish = () => {
+      if (++elsewhere <= 3) a.publishElsewhere(URL_A)
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(attempts(a)).toHaveLength(2)
+    expect(textOf(ran)).toMatch(/the page changed while it was being updated, so it was not updated\. Run \/humantray-page again$/)
+    expect(textOf(ran)).not.toMatch(/from a cloud session/)
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION - 1 })
+    expect(metaWrites(a)).toEqual([])
+    expect(probes(a)).toEqual([])
+  })
+
+  test('meta/page rewritten in between, still ours and behind: the retry publishes, and meta/page is raised against the version read again', async ($, on) => {
+    const { a } = cloud(on)
+    olderPage(a)
+    let once = true
+    a.beforePublish = () => {
+      if (!once) return
+      once = false
+      a.publishElsewhere(URL_A)
+      a.put(URL_A, 'meta/page', { ...meta(START, PAGE_VERSION - 1), note: 'rewritten' })
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toBe('humantray: the page is linked for this repository.')
+    expect(attempts(a)).toHaveLength(2)
+    expect(a.doc(URL_A, 'meta/page')).toMatchObject({ version: 3, data: { page_version: PAGE_VERSION, note: 'rewritten' } })
+  })
+
+  test('a take-over whose artifact reads as gone and is no longer listed with this title when looked at again: it stops, publishing nothing more', async ($, on) => {
+    const { a } = cloud(on)
+    const art = a.add(URL_A, TITLE, { ownerOnly: false })
+    a.readFails = true
+    a.beforePublish = () => {
+      a.publishElsewhere(URL_A)
+      art.title = 'Something else'
+      a.emptyReadsGone = true
+    }
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/the page changed while it was being updated, so it was not updated\. Run \/humantray-page again$/)
+    expect(attempts(a)).toHaveLength(1)
+    expect(metaWrites(a)).toEqual([])
+    expect(probes(a)).toEqual([])
+  })
+
+  test('the bare take-over of a never-written database (it reads as gone) with a read that fails: still listed, it is taken over on the retry', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE, { ownerOnly: false })
+    a.emptyReadsGone = true
+    a.readFails = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/took over/)
+    expect(attempts(a)).toHaveLength(2)
+    expect(a.artifacts.find(x => x.url === URL_A)?.ownerOnly).toBe(true)
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO, page_version: PAGE_VERSION })
+  })
+
+  test('a take-over by link of a listed page with this title whose database reads as gone, with a read that fails: taken over on the retry', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE, { ownerOnly: false })
+    a.emptyReadsGone = true
+    a.readFails = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(attempts(a).map(c => c.input.url)).toEqual([URL_B, URL_B])
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO, page_version: PAGE_VERSION })
+  })
+
+  test('no read where nothing is published: a page already current, and a link the #54 guard refuses', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE)
+    a.put(URL_A, 'meta/page', meta(START))
+    a.add(URL_B, 'Reading list')
+    a.put(URL_B, 'meta/page', { ...meta(START), repo: 'github.com/other/elsewhere' })
+    await $.session.start(START_EVENT)
+    expect(textOf(await $.command.run({ ...RUN, args: '' }))).toMatch(/linked/)
+    expect(textOf(await $.command.run({ ...RUN, args: URL_B }))).toMatch(/not linked/)
+    expect(reads(a)).toEqual([])
+    expect(attempts(a)).toEqual([])
+  })
+
+  test('a new artifact: no read and no retry; it counts as seen once published', async ($, on) => {
+    const { a } = cloud(on)
+    await $.session.start(START_EVENT)
+    expect(textOf(await $.command.run({ ...RUN, args: '' }))).toMatch(/created a private page/)
+    expect(reads(a)).toEqual([])
+    expect(attempts(a)).toHaveLength(1)
+    expect(a.seen.get(artifactId(URL_NEW))).toBe(1)
+  })
+
+  test('only the unseen-version refusal is looked at again: any other refusal is not retried', async ($, on) => {
+    let denied = 0
+    on('tool.call', { tool: 'Artifact' }, (_, e, next) => {
+      if ((e as unknown as { action: string }).action !== 'publish') return next(e)
+      denied++
+      return { deny: "Artifact wasn't run: this call needs a person's approval, and a mod's own call can't ask for it." }
+    })
+    const { a } = cloud(on)
+    olderPage(a)
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/from a cloud session/)
+    expect(denied).toBe(1)
+    expect(reads(a)).toHaveLength(1)
+    expect(metaWrites(a)).toEqual([])
+  })
+
+  test('a take-over (a title match nobody marked) with a read that fails: looked at again, still unmarked, published once more and marked', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE, { ownerOnly: false })
+    a.readFails = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/took over/)
+    expect(attempts(a)).toHaveLength(2)
+    expect(a.artifacts.find(x => x.url === URL_A)?.ownerOnly).toBe(true)
+    expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO, page_version: PAGE_VERSION })
   })
 })
