@@ -205,9 +205,12 @@ two places that read the same store:
 
 - **The page, per repository.** Run `/humantray-page` once in a cloud session in
   that repository. It finds the private page titled `humantray: <owner>/<repo>`
-  on your claude.ai account and links it, or creates it if there is none;
-  `/humantray-page <link>` links a page you name. You can answer items on the
-  page. No session pins it: pin it yourself in claude.ai if you want it to
+  on your claude.ai account and links it, or creates it if there is none.
+  `/humantray-page <link>` makes the artifact you name this repository's page.
+  If that artifact holds no humantray data, the command publishes the page into
+  it as a new version, replacing what it showed, so name only an artifact meant
+  for this. It refuses one that holds another repository's page, or whose data
+  it cannot read. You can answer items on the page. No session pins it: pin it yourself in claude.ai if you want it to
   hand. Until a repository has a page, its cloud sessions do not use the tray
   and ask as they did before.
 - **The viewer, on a computer that stays on.** In a local session on that
