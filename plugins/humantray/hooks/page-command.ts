@@ -4,7 +4,12 @@
 //   /humantray-page        find the repository's artifact by its title and
 //                          link it; with none, create it (private, never
 //                          pinned), but only after a listing read to its end
-//   /humantray-page <url>  republish the page to that artifact and link it
+//   /humantray-page <url>  republish the page to that artifact and link it,
+//                          but only an artifact already meant for this
+//                          repository's humantray: its meta/page names this
+//                          repository, or its title is this repository's
+//                          (#54). Anything else is refused before anything
+//                          is published or written to it.
 //
 // Every publish carries the rules that keep the database the owner's alone,
 // is checked by a write made as an editor that must be refused, and has its
@@ -16,12 +21,14 @@ import {
   type Link,
   checkRules,
   findArtifact,
+  listTitled,
   publishPage,
   readMeta,
   setDoc,
   stopWatch,
 } from './artifact-store'
 import { PAGE_HTML } from '../page/page'
+import { artifactId } from './envelope'
 import { normaliseRepo } from './items'
 import { PAGE_VERSION, metaFor, titleFor } from './rows'
 import type { MetaPage } from '../types'
@@ -75,23 +82,59 @@ async function publish(
 /**
  * Whose page an artifact is, read before anything is published to it:
  * this repository's (its meta and that meta's version), nobody's (no
- * `meta/page` at all: it may be taken over), or someone else's (a `meta/page`
- * that is not this repository's, or a schema this version cannot read).
+ * `meta/page` at all: it may be taken over, if it is meant for this
+ * repository), someone else's (a `meta/page` that is not this repository's,
+ * or a schema this version cannot read), or not found from this account.
  */
 type Owner =
   | { kind: 'ours'; meta: MetaPage; version: number }
   | { kind: 'nobody' }
   | { kind: 'foreign' }
+  | { kind: 'gone' }
   | { kind: 'unavailable'; why: string }
 
 async function ownerOf($: EngineInterface, url: string, repo: string): Promise<Owner> {
   const meta = await readMeta($, url, repo)
   if (meta.kind === 'unavailable') return meta
+  if (meta.gone === true) return { kind: 'gone' }
   if (meta.meta !== undefined) return { kind: 'ours', meta: meta.meta, version: meta.version ?? 0 }
   return meta.version === undefined ? { kind: 'nobody' } : { kind: 'foreign' }
 }
 
 const FOREIGN = 'that artifact holds another repository’s humantray, or another page’s data, so nothing was published to it'
+const GONE = 'that artifact could not be found from this account, so nothing was published to it'
+const UNMARKED = (title: string) =>
+  `that artifact is not marked as this repository’s humantray (it has no meta/page, and its title is not “${title}”), so nothing was published to it. Run /humantray-page with no link to find or create this repository’s page`
+const UNMARKED_NO_REMOTE =
+  'that artifact is not marked as this repository’s humantray, and a repository with no remote has no page title to match, so nothing was published to it'
+
+/**
+ * Whether a link with no `meta/page` (or none that could be read: `gone`) is
+ * meant for this repository's humantray: only when it is one of the person's
+ * own artifacts titled for this repository. Its emptiness is no sign: a
+ * database's collections cannot be listed, so an unrelated page's data would
+ * read as empty (#54). A `gone` read of a listed artifact is taken as no
+ * meta, since the listing shows it is there and the person's; what a never
+ * written database answers to a read was not recorded.
+ */
+async function markedByTitle(
+  $: EngineInterface,
+  url: string,
+  repo: string,
+  owner: { kind: 'nobody' } | { kind: 'gone' },
+): Promise<Owner | { error: string }> {
+  const title = titleFor(repo)
+  if (title === undefined) return { error: owner.kind === 'gone' ? GONE : UNMARKED_NO_REMOTE }
+  const listed = await listTitled($, repo)
+  if (listed.kind === 'unavailable') {
+    return { error: `the artifact list could not be read to its end (${listed.why}), so it is not known to be this repository’s page, and nothing was published to it` }
+  }
+  if (listed.listed.some(each => artifactId(each.url) === artifactId(url))) return { kind: 'nobody' }
+  return { error: owner.kind === 'gone' ? GONE : UNMARKED(title) }
+}
+
+/** The bare command's take-over reads a vanished title match as no meta, as it did before #54. */
+const nobodyIfGone = (owner: Owner): Owner => (owner.kind === 'gone' ? { kind: 'nobody' } : owner)
 
 /**
  * Brings `meta/page` up to date after a publish: written when absent, and its
@@ -129,6 +172,7 @@ async function adoptPage(
   owner: Owner,
 ): Promise<{ url: string } | { error: string }> {
   if (owner.kind === 'foreign') return { error: FOREIGN }
+  if (owner.kind === 'gone') return { error: GONE }
   if (owner.kind === 'unavailable') return { error: `its database could not be read (${owner.why}), so nothing was published to it` }
   let target = url
   if (owner.kind !== 'ours' || owner.meta.page_version < PAGE_VERSION) {
@@ -154,7 +198,9 @@ export async function runPageCommand($: EngineInterface, args: string): Promise<
   if (given !== '') {
     if (!ARTIFACT_URL.test(given)) return 'humantray: give an artifact link (https://claude.ai/artifact/…), or nothing to find or create the page.'
     // Whose page it is, before anything is published to it.
-    const owner = await ownerOf($, given, repo)
+    const read = await ownerOf($, given, repo)
+    const owner = read.kind === 'nobody' || read.kind === 'gone' ? await markedByTitle($, given, repo, read) : read
+    if ('error' in owner) return `humantray: not linked: ${owner.error}`
     const linked = await adoptPage($, where.ok.dir, title ?? 'humantray', given, repo, owner)
     if ('error' in linked) return `humantray: not linked: ${linked.error}`
     await relinkPass($, repo, { url: linked.url, how: 'given', at: now } satisfies Link)
@@ -162,7 +208,7 @@ export async function runPageCommand($: EngineInterface, args: string): Promise<
   }
 
   if (title === undefined) {
-    return 'humantray: this repository has no remote, so its page has no title to be found by. Link one with /humantray-page <artifact link>.'
+    return 'humantray: this repository has no remote, so it has no page: a page is found by a title made from the remote.'
   }
   const found = await findArtifact($, repo)
   if (found.kind === 'unavailable') {
@@ -178,7 +224,7 @@ export async function runPageCommand($: EngineInterface, args: string): Promise<
   // A title match with no meta/page at all: take it over, setting the rules first.
   // Its owner is read again here, so one marked in the meantime is not published over.
   const target = [...found.unqualified].sort()[0]
-  const owner: Owner = target === undefined ? { kind: 'nobody' } : await ownerOf($, target, repo)
+  const owner: Owner = target === undefined ? { kind: 'nobody' } : nobodyIfGone(await ownerOf($, target, repo))
   const linked = await adoptPage($, where.ok.dir, title, target, repo, owner)
   if ('error' in linked) return `humantray: not linked: ${linked.error}`
   await relinkPass($, repo, { url: linked.url, how: target === undefined ? 'created' : 'found', at: now })

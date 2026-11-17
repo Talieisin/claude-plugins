@@ -144,9 +144,9 @@ describe('/humantray-page', () => {
     expect(a.doc(URL_A, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO })
   })
 
-  test('a link given: republished there with the title, marked and linked', async ($, on) => {
+  test('a link given to an unmarked page with this repository\'s title: republished there with the title, marked and linked', async ($, on) => {
     const { w, a } = cloud(on)
-    a.add(URL_B, 'Something else')
+    a.add(URL_B, 'HUMANTRAY: Owner/Repo')
     await $.session.start(START_EVENT)
     const ran = await $.command.run({ ...RUN, args: ` ${URL_B} ` })
     expect(textOf(ran)).toMatch(/linked/)
@@ -161,7 +161,7 @@ describe('/humantray-page', () => {
     const { w, a } = cloud(on)
     a.add(URL_A, TITLE)
     a.put(URL_A, 'meta/page', meta(START))
-    a.add(URL_B, 'Spare')
+    a.add(URL_B, 'humantray: Owner/Repo')
     await $.session.start(START_EVENT)
     const id = answerOf<{ id: string }>(await $.tool.call(approve)).id
     await settle(w)
@@ -185,6 +185,7 @@ describe('/humantray-page', () => {
     await $.session.start(START_EVENT)
     const ran = await $.command.run({ ...RUN, args: '' })
     expect(textOf(ran)).toMatch(/no remote/)
+    expect(textOf(ran)).not.toMatch(/humantray-page/)
     expect(a.calls.some(c => c.input.action === 'publish' || c.input.action === 'list')).toBe(false)
   })
 
@@ -262,5 +263,189 @@ describe('/humantray-page never publishes over a page that is not this repositor
     const ran = await $.command.run({ ...RUN, args: '' })
     expect(textOf(ran)).toMatch(/nothing was created/)
     expect(a.calls.some(c => c.input.action === 'publish')).toBe(false)
+  })
+})
+
+describe('/humantray-page <link> adopts only an artifact meant for this repository\'s humantray (#54)', () => {
+  const published = (a: ReturnType<typeof cloud>['a']) => a.calls.filter(c => c.input.action === 'publish')
+  const ELSEWHERE = 'Reading list'
+
+  /** Refused, with nothing published or written, and the artifact as it was. */
+  function expectRefused(a: ReturnType<typeof cloud>['a'], text: string, pattern: RegExp, url = URL_B, title = ELSEWHERE) {
+    expect(text).toMatch(/not linked: /)
+    expect(text).toMatch(pattern)
+    expect(published(a)).toEqual([])
+    expect(a.writes()).toEqual([])
+    const art = a.artifacts.find(x => x.url === url)
+    if (art !== undefined) expect(art.title).toBe(title)
+  }
+
+  test('an unrelated page with no documents is refused: emptiness is no sign it is meant for humantray', async ($, on) => {
+    const { w, a } = cloud(on)
+    a.add(URL_B, ELSEWHERE)
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /not marked as this repository’s humantray .*humantray: owner\/repo/)
+    expect(textOf(ran)).toMatch(/Run \/humantray-page with no link/)
+    // Not linked: an add waits for a page.
+    expect(answerOf<{ page: string }>(await $.tool.call(approve)).page).toBe('waiting')
+    await settle(w)
+  })
+
+  test('an unrelated page whose database holds its own data is refused, its data untouched', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, ELSEWHERE)
+    a.put(URL_B, 'todos/1', { text: 'buy milk' })
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /not marked as this repository’s humantray/)
+    expect(a.doc(URL_B, 'todos/1')).toEqual({ data: { text: 'buy milk' }, version: 1 })
+    expect(a.doc(URL_B, 'meta/page')).toBeUndefined()
+  })
+
+  test('a link this account cannot find is refused', async ($, on) => {
+    const { a } = cloud(on)
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /could not be found from this account/)
+    expect(a.artifacts).toEqual([])
+  })
+
+  test('a page whose database cannot be read is refused', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, ELSEWHERE)
+    await $.session.start(START_EVENT)
+    a.garble = 1
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /could not be read/)
+  })
+
+  test('a read held for a person (a local session) is refused', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, ELSEWHERE)
+    await $.session.start(START_EVENT)
+    a.denyOther = true
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /could not be read/)
+  })
+
+  test("another repository's page is refused", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, 'humantray: other/elsewhere')
+    a.put(URL_B, 'meta/page', { ...meta(START), repo: 'github.com/other/elsewhere' })
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /another repository/, URL_B, 'humantray: other/elsewhere')
+  })
+
+  test("this repository's page written by a newer humantray (schema 2) is refused", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE)
+    a.put(URL_B, 'meta/page', { ...meta(START), schema: 2 })
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /another repository/, URL_B, TITLE)
+    expect(a.doc(URL_B, 'meta/page')?.data.schema).toBe(2)
+  })
+
+  test("this repository's page under another title is linked, and not republished when current", async ($, on) => {
+    const { w, a } = cloud(on)
+    a.add(URL_B, ELSEWHERE)
+    a.put(URL_B, 'meta/page', meta(START, PAGE_VERSION))
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(published(a)).toEqual([])
+    const id = answerOf<{ id: string }>(await $.tool.call(approve)).id
+    await settle(w)
+    expect(a.doc(URL_B, `items/${id}`)).toBeDefined()
+  })
+
+  test("this repository's page at an older page version is republished at that link and its meta raised", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE)
+    a.put(URL_B, 'meta/page', meta(START, 0))
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(published(a).map(c => c.input.url)).toEqual([URL_B])
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ page_version: PAGE_VERSION, created_at: START })
+    await $.command.run({ ...RUN, args: URL_B })
+    expect(published(a)).toHaveLength(1)
+  })
+
+  test("an unmarked page with this repository's title is republished with the rules, marked and linked", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE, { ownerOnly: false })
+    a.put(URL_B, 'notes/1', { text: 'kept' })
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(published(a).map(c => c.input.url)).toEqual([URL_B])
+    expect(a.artifacts.find(x => x.url === URL_B)?.ownerOnly).toBe(true)
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ kind: 'humantray', repo: REPO })
+  })
+
+  test('the same artifact named by its other link form is matched by its id', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE)
+    const other = URL_B.replace('https://claude.ai/artifact/', 'https://claude.ai/code/artifact/')
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: other })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(a.artifacts).toHaveLength(1)
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ repo: REPO })
+  })
+
+  test("a listed page with this repository's title whose never-written database reads as missing is adopted", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE)
+    a.emptyReadsGone = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expect(textOf(ran)).toMatch(/the page is linked/)
+    expect(published(a).map(c => c.input.url)).toEqual([URL_B])
+    expect(a.doc(URL_B, 'meta/page')?.data).toMatchObject({ repo: REPO })
+  })
+
+  test('an unlisted page whose database reads as missing is refused as not found', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, ELSEWHERE)
+    a.emptyReadsGone = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /could not be found from this account/)
+  })
+
+  test('a listing that cannot be read to its end refuses: the title is not known to match', async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_B, TITLE)
+    await $.session.start(START_EVENT)
+    a.listFails = true
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /artifact list could not be read to its end/, URL_B, TITLE)
+  })
+
+  test('a repository with no remote: an unmarked link is refused without a listing, and not told to run the bare command', async ($, on) => {
+    const { a } = cloud(on, { remote: null })
+    a.add(URL_B, TITLE)
+    await $.session.start(START_EVENT)
+    const before = a.calls.length
+    const ran = await $.command.run({ ...RUN, args: URL_B })
+    expectRefused(a, textOf(ran), /no remote has no page title/, URL_B, TITLE)
+    expect(textOf(ran)).not.toMatch(/Run \/humantray-page/)
+    expect(a.calls.slice(before).some(c => c.tool === 'Artifact' && c.input.action === 'list')).toBe(false)
+  })
+})
+
+describe("the bare command's take-over is unchanged by #54", () => {
+  test("a title match whose never-written database reads as missing is still taken over", async ($, on) => {
+    const { a } = cloud(on)
+    a.add(URL_A, TITLE)
+    a.emptyReadsGone = true
+    await $.session.start(START_EVENT)
+    const ran = await $.command.run({ ...RUN, args: '' })
+    expect(textOf(ran)).toMatch(/took over/)
+    expect(a.calls.find(c => c.input.action === 'publish')?.input.url).toBe(URL_A)
   })
 })

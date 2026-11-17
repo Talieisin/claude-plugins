@@ -489,14 +489,18 @@ export async function readAnyMeta(
   return { kind: 'ok', meta: repo === '' ? undefined : checkMeta(data, repo) }
 }
 
-/** Reads `meta/page`: the record, none (absent or not humantray's for this repository), or unavailable. */
+/**
+ * Reads `meta/page`: the record, none (absent or not humantray's for this
+ * repository), or unavailable. A read that found no artifact is none too, and
+ * says `gone`, so `/humantray-page <link>` can refuse a link nobody can reach.
+ */
 export async function readMeta(
   $: EngineInterface,
   url: string,
   repo: string,
-): Promise<{ kind: 'ok'; meta: MetaPage | undefined; version?: number } | { kind: 'unavailable'; why: string }> {
+): Promise<{ kind: 'ok'; meta: MetaPage | undefined; version?: number; gone?: true } | { kind: 'unavailable'; why: string }> {
   const read = await getDoc($, url, 'meta', 'page')
-  if (read.kind === 'gone') return { kind: 'ok', meta: undefined }
+  if (read.kind === 'gone') return { kind: 'ok', meta: undefined, gone: true }
   if (read.kind !== 'ok') return { kind: 'unavailable', why: read.kind === 'unavailable' ? read.why : 'needs a person' }
   const doc = read.docs[0]
   if (doc === undefined) return { kind: 'ok', meta: undefined }

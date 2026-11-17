@@ -10,6 +10,8 @@
 import type { On } from 'claude-code'
 import { PAGE_VERSION } from '../hooks/rows'
 
+import { artifactId } from '../hooks/envelope'
+
 export const ME = 'session_FAKEFAKEFAKEFAKEFAKEME01'
 export const LEAD = 'session_FAKEFAKEFAKEFAKEFAKELEAD1'
 export const OTHER = 'session_FAKEFAKEFAKEFAKEFAKEOTHER'
@@ -54,6 +56,12 @@ export type ArtifactWorld = {
   honourRules: boolean
   /** Deny every ArtifactData call for another reason (not one that needs a person). */
   denyOther: boolean
+  /**
+   * Answer a read of a database that holds no documents with the error a
+   * missing artifact gives (what a never-written database answers was not
+   * recorded, so a test can take the worse reading).
+   */
+  emptyReadsGone: boolean
   /** Runs before each ArtifactData call is answered. */
   before: (input: Record<string, unknown>) => void | Promise<void>
   add: (url: string, title: string, fields?: Partial<Artifact>) => Artifact
@@ -84,6 +92,8 @@ const matches = (data: Record<string, unknown>, where: unknown[][] | undefined):
   })
 
 export function artifactWorld(on: On, options: { read?: (path: string) => string | undefined } = {}): ArtifactWorld {
+  // An artifact answers to either of its link forms (`/artifact/` and `/code/artifact/`).
+  const find = (url: unknown) => (typeof url === 'string' ? a.artifacts.find(x => artifactId(x.url) === artifactId(url)) : undefined)
   const a: ArtifactWorld = {
     artifacts: [],
     calls: [],
@@ -95,15 +105,16 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
     listFails: false,
     honourRules: true,
     denyOther: false,
+    emptyReadsGone: false,
     before: () => undefined,
     add: (url, title, fields = {}) => {
       const made: Artifact = { url, title, ownerOnly: true, docs: new Map(), published: 1, html: [], ...fields }
       a.artifacts.push(made)
       return made
     },
-    doc: (url, path) => a.artifacts.find(x => x.url === url)?.docs.get(path),
+    doc: (url, path) => find(url)?.docs.get(path),
     put: (url, path, data) => {
-      const art = a.artifacts.find(x => x.url === url)
+      const art = find(url)
       if (art === undefined) throw new Error(`no artifact ${url}`)
       const old = art.docs.get(path)
       const doc = { data, version: (old?.version ?? 0) + 1 }
@@ -136,8 +147,9 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
       a.garble -= 1
       return ok('Something else entirely happened.')
     }
-    const art = a.artifacts.find(x => x.url === input.url)
-    if (art === undefined) {
+    const art = find(input.url)
+    const unwritten = art !== undefined && art.docs.size === 0 && a.emptyReadsGone && ['get', 'list', 'query'].includes(String(input.action))
+    if (art === undefined || unwritten) {
       return fail('db read failed (invalid_argument): no such artifact, collection, or document — the artifact could not be found.')
     }
     const collection = String(input.collection ?? '')
@@ -240,7 +252,7 @@ export function artifactWorld(on: On, options: { read?: (path: string) => string
     }
     if (input.action === 'publish') {
       const url = typeof input.url === 'string' ? input.url : URL_NEW
-      let art = a.artifacts.find(x => x.url === url)
+      let art = find(url)
       const rules = JSON.stringify((input.capabilities as { db?: { rules?: unknown } } | undefined)?.db?.rules ?? null)
       const ownerOnly = rules === JSON.stringify([{ path: '', read: 'owner', write: 'owner' }])
       if (art === undefined) art = a.add(url, 'pending', { ownerOnly, published: 0 })
