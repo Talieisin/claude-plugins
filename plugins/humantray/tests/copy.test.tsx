@@ -286,21 +286,41 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
 })
 
 describe('the card keeps its inner padding on every surface', () => {
+  // A step, which each surface sizes its own way. The terminal and a phone:
+  // `sm`, which the terminal draws as one cell across and none down, as the
+  // paddingX of 1 before it. The desktop app: `md`, as the app's own cards,
+  // with a gap under the buttons (the owner's check on 0.2.0). VS Code's
+  // table turns `md` into cells: two across, one down.
+  const expected = { terminal: { padding: 'sm' }, mobile: { padding: 'sm' }, desktop: { padding: 'md' }, vscode: { paddingX: 2, paddingY: 1 } }
+  const spacing = (props: Record<string, unknown> | undefined) =>
+    Object.fromEntries(Object.entries(props ?? {}).filter(([name]) => name.startsWith('padding') || name.startsWith('margin')))
   for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
-    test(surface, async ($, on) => {
-      copyWorld(on, { surface })
+    test(`${surface}: the open card, a History card and "Show in full"`, async ($, on) => {
+      const { w } = copyWorld(on, { surface })
       await $.session.start(START_EVENT)
       const { id } = await addDo($, BODY)
+      const { id: done } = await addDo($, RUNBOOK)
       const ui = await $.ui.mount({ ...PANE, surface })
       const card = await ui.find({ key: `${id}:card` })
-      // A step, which each surface sizes its own way: the desktop app and the
-      // phones by their own spacing; the terminal as one cell across and none
-      // down, as the paddingX of 1 it replaces; VS Code's table gives those cells.
-      if (surface === 'vscode') expect([card?.props.paddingX, card?.props.paddingY]).toEqual([1, 0])
-      else expect(card?.props.padding).toBe('sm')
+      expect(spacing(card?.props)).toEqual(expected[surface])
       expect(card?.props.borderStyle).toBe('round')
+      await ui.input({ key: `${done}:feedback`, text: 'word '.repeat(200), kind: 'change' })
+      await ui.press({ key: `${done}:done` })
+      await w.drain()
+      await ui.press({ key: 'humantray:view' })
+      expect(spacing((await ui.find({ key: `${done}:history` }))?.props)).toEqual(expected[surface])
+      await ui.press({ key: `${done}:full` })
+      expect(spacing((await ui.find({ key: `${done}:full` }))?.props)).toEqual(expected[surface])
     })
   }
+
+  test('the terminal draws exactly as in 0.2.0: one cell across, none down', async ($, on) => {
+    copyWorld(on, { surface: 'terminal' })
+    await $.session.start(START_EVENT)
+    const { id } = await addDo($, BODY)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(spacing((await ui.find({ key: `${id}:card` }))?.props)).toEqual({ padding: 'sm' })
+  })
 })
 
 describe('"Show in full" in History offers the same copies', () => {
