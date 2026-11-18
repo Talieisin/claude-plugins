@@ -426,6 +426,12 @@ export type Draft = {
   entered: number
   /** Which page of the card's copy buttons is shown, from 0 (#51). */
   codeAt: number
+  /**
+   * Whether a choice's Other row is open on the app surfaces (#72). Other is
+   * on while this is set or Other holds text; a draft stored before 0.2.5
+   * has no such field and reads as closed.
+   */
+  otherOpen: boolean
 }
 
 declare module 'claude-code' {

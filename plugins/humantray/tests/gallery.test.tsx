@@ -10,7 +10,7 @@ import { GALLERY, GALLERY_FIXTURES, type GalleryFixture, galleryDraftId } from '
 import { dumpTree } from './card-dump'
 import { mount } from './surface-rules'
 import { SURFACES } from './card-fixtures'
-import { COMMAND, PANE, START_EVENT, stored, world } from './world'
+import { COMMAND, PANE, START_EVENT, openOther, stored, world } from './world'
 
 type On = Parameters<typeof world>[0]
 
@@ -88,7 +88,10 @@ describe('/humantray-gallery', () => {
       [false, true],
       [true, false],
       [true, true],
+      [true, true],
     ])
+    // And one with Other open, holding text (#72).
+    expect(choices.some(f => f.start.otherOpen === true && (f.start.other ?? '') !== '')).toBe(true)
     expect(items.some(i => i.notes === true)).toBe(true)
     expect(items.some(i => i.body_md.includes('| --- |'))).toBe(true)
     expect(items.some(i => i.body_md.includes('```sh'))).toBe(true)
@@ -126,7 +129,12 @@ describe('the gallery draws every card on each surface with the real card code',
       w.seed({ version: 1, items: real.map(r => r.item), sessions: {} })
       await $.session.start({ ...START_EVENT, surface })
       const pane = await mount($, { ...PANE, surface })
-      for (const { fixture, item } of real) for (const key of startSteps(fixture, item.id)) await pane.press({ key })
+      for (const { fixture, item } of real) {
+        for (const key of startSteps(fixture, item.id)) await pane.press({ key })
+        // Other open with text (#72): opened as a person opens it, then typed in.
+        if (fixture.start.otherOpen === true) await openOther(pane, item.id)
+        if ((fixture.start.other ?? '') !== '') await pane.input({ key: `${item.id}:other`, text: fixture.start.other ?? '', kind: 'change' })
+      }
       const { ui } = await openGallery($, surface)
       for (const { fixture, item } of real) {
         const id = galleryDraftId(fixture.name)
@@ -226,16 +234,20 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
     const { w } = galleryWorld(on, 'desktop')
     await $.session.start(START_EVENT)
     const { ui } = await openGallery($, 'desktop')
-    // What an option shows: its glyph and label (#64, 0.2.4: no label prop of its own).
-    const label = async (key: string) => ((await ui.find({ key })) as FoundLike | undefined)?.text
-    expect(await label('g:choice-multi:opt:1')).toBe('☐ Green')
+    // What an option shows (#72): its drawn control's state, and its label.
+    const label = async (key: string) => {
+      const row = (await ui.find({ key: `${key}:row` })) as { children?: unknown[] } | undefined
+      const control = (row?.children ?? []).find(child => (child as { type?: string }).type === 'Svg') as { props?: { alt?: string } } | undefined
+      return `${control?.props?.alt ?? '(no control)'}: ${((await ui.find({ key })) as FoundLike | undefined)?.text ?? ''}`
+    }
+    expect(await label('g:choice-multi:opt:1')).toBe('Checkbox, not selected: Green')
     await ui.press({ key: 'g:choice-multi:opt:1' })
-    expect(await label('g:choice-multi:opt:1')).toBe('☑ Green')
+    expect(await label('g:choice-multi:opt:1')).toBe('Checkbox, selected: Green')
     // A single choice starts with its pick, and a press moves it.
-    expect(await label('g:choice-single-picked:opt:1')).toBe('◉ Green')
+    expect(await label('g:choice-single-picked:opt:1')).toBe('Radio button, selected: Green')
     await ui.press({ key: 'g:choice-single-picked:opt:0' })
-    expect(await label('g:choice-single-picked:opt:1')).toBe('○ Green')
-    expect(await label('g:choice-single-picked:opt:0')).toBe('◉ Blue')
+    expect(await label('g:choice-single-picked:opt:1')).toBe('Radio button, not selected: Green')
+    expect(await label('g:choice-single-picked:opt:0')).toBe('Radio button, selected: Blue')
 
     const note = async (name: string) => ((await ui.find({ key: `g:${name}:pressed` })) as FoundLike | undefined)?.text
     expect(await note('do')).toBeUndefined()
@@ -254,8 +266,8 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
 
     await ui.press({ key: 'g:reset' })
     expect(await note('do')).toBeUndefined()
-    expect(await label('g:choice-multi:opt:1')).toBe('☐ Green')
-    expect(await label('g:choice-single-picked:opt:1')).toBe('◉ Green')
+    expect(await label('g:choice-multi:opt:1')).toBe('Checkbox, not selected: Green')
+    expect(await label('g:choice-single-picked:opt:1')).toBe('Radio button, selected: Green')
     expect((await ui.find({ key: 'g:error:card' }))?.text).toContain('Type an answer.')
     expect(w.submits).toEqual([])
   })

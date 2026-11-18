@@ -8,7 +8,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import { hasNativeCopy } from '../hooks/copy'
 import { forDrawing, unlabelledPieces } from '../hooks/items'
 
-import { ADD, FILE, PANE, RICH, START_EVENT, answerOf, answerOne, drawnText, world } from './world'
+import { ADD, FILE, PANE, RICH, START_EVENT, answerOf, answerOne, drawnText, openOther, world } from './world'
 import { mount } from './surface-rules'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -71,6 +71,7 @@ describe('free-text fields are several lines tall', () => {
       ).id
       const task = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'do', header: 'D', question: 'Rotate' })).id
       const ui = await mount($, { ...PANE, surface })
+      await openOther(ui, choice)
       for (const key of [`${choice}:other`, `${choice}:notes`, `${task}:feedback`]) {
         const field = await ui.find({ key })
         expect(field?.type).toBe('Input')

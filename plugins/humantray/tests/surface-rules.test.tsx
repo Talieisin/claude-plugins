@@ -47,6 +47,8 @@ describe('each rule fails on the faulty #64 tree', () => {
       ['no-ignored-style-in-button', '#64'],
       ['no-terminal-marks', '#64'],
       ['button-label-is-its-text', '#64'],
+      ['svg-has-height', '#72'],
+      ['control-beside-its-button', '#72'],
     ])
   })
 
@@ -136,6 +138,38 @@ describe('the label rule: a Button draws its own text (#64, 0.2.3)', () => {
       ],
     }
     for (const surface of APPS) expect(surfaceFaults(tree, surface)).toEqual([])
+  })
+})
+
+describe('the Svg rules (#72)', () => {
+  const svg = (props: Record<string, unknown>) => ({ type: 'Svg', props: { source: '<svg/>', alt: '', ...props } })
+  const card = (children: unknown[]) => ({ type: 'Box', props: { key: 'I:card' }, children })
+
+  for (const surface of APPS) {
+    test(`${surface}: the hairline as first written (no height) fails svg-has-height alone`, () => {
+      const faults = surfaceFaults(card([svg({})]), surface)
+      expect(rulesIn(faults)).toEqual(['svg-has-height'])
+      expect(faults[0]).toContain('at I:card:')
+    })
+
+    test(`${surface}: a control alone in its row fails control-beside-its-button; beside its Button, or a Button deeper in the row, it passes`, () => {
+      const control = svg({ alt: 'Radio button, not selected', height: 16 })
+      const alone = card([{ type: 'Box', props: { key: 'I:opt:0:row' }, children: [control] }])
+      expect(rulesIn(surfaceFaults(alone, surface))).toEqual(['control-beside-its-button'])
+      const beside = card([
+        {
+          type: 'Box',
+          props: { key: 'I:opt:0:row' },
+          children: [control, { type: 'Box', props: { key: 'I:opt:0:text' }, children: [{ type: 'Button', props: { key: 'I:opt:0', label: 'Blue' } }] }],
+        },
+      ])
+      expect(surfaceFaults(beside, surface)).toEqual([])
+    })
+  }
+
+  test('a decorative Svg (no state in its alt) needs no Button; the terminal is not checked', () => {
+    expect(surfaceFaults(card([svg({ height: 1 })]), 'desktop')).toEqual([])
+    expect(surfaceFaults(card([svg({})]), 'terminal')).toEqual([])
   })
 })
 
