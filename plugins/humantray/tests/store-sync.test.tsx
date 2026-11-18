@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Item } from '../types'
-import { fingerprint, itemToRow } from '../hooks/row-shape'
+import { WRITER_VERSION, fingerprint, itemToRow } from '../hooks/row-shape'
 import { NEWER_ANSWER } from '../hooks/rows'
 import { FIND_AGAIN_MS } from '../hooks/store-pass'
 import { LEAD, ME, OTHER, TITLE, URL_A, artifactWorld, meta, response } from './artifact-world'
@@ -82,7 +82,7 @@ describe('pushing items', () => {
       parent_session_id: LEAD,
       lead_session_id: LEAD,
       session_title: 'worker for #1',
-      writer_version: '0.1.0',
+      writer_version: WRITER_VERSION,
     })
     const item = w.store().items[0] as Item & Required<Pick<Item, 'remote'>>
     expect(item.remote.session_id).toBe(ME)

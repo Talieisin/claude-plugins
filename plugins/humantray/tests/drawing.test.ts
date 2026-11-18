@@ -10,7 +10,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { LANGUAGES, UNSAFE, codeBlocksOf, listedLang } from '../hooks/code'
-import { blocksOf, clipBlocks, clipDrawn, forDisplay, forDrawing, plain, splitDrawn } from '../hooks/items'
+import { blocksOf, clipBlocks, clipDrawn, forDisplay, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from '../hooks/items'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 
 const ZWSP = '\u200b'
@@ -248,6 +248,27 @@ describe('splitDrawn: every piece its own Markdown element (#51)', () => {
     const pieces = splitDrawn(forDrawing(RUNBOOK))
     expect(pieces.filter(piece => piece.startsWith('*Code '))).toHaveLength(12)
     expect(pieces.length).toBeGreaterThan(12)
+  })
+})
+
+describe('unlabelledPieces: no Code n labels where the surface copies by itself (decided for the owner on #51)', () => {
+  test('each fence loses its label; the code and the text are untouched', () => {
+    const pieces = unlabelledPieces(forDrawing(RUNBOOK))
+    expect(pieces.join('\n\n')).not.toMatch(/\*Code \d+\*/)
+    expect(pieces).toEqual(splitDrawn(forDrawing(RUNBOOK, false)))
+    for (const block of codeBlocksOf(RUNBOOK)) expect(pieces.join('\n\n')).toContain(block.text)
+  })
+
+  test("the author's own `*Code n*` line is text, and is kept; only the label drawn with a fence goes", () => {
+    const drawn = forDrawing('*Code 9*\n\n```\nx\n```')
+    expect(splitDrawn(drawn)).toEqual(['*Code 9*', '*Code 1*\n\n```\nx\n```'])
+    expect(unlabelledPieces(drawn)).toEqual(['*Code 9*', '```\nx\n```'])
+  })
+
+  test('one piece alone', () => {
+    expect(unlabelled('*Code 1*\n\n```sh\nls\n```')).toBe('```sh\nls\n```')
+    expect(unlabelled('*Code 1*\n\nnot a fence')).toBe('*Code 1*\n\nnot a fence')
+    expect(unlabelled('  *see* the log\n')).toBe('  *see* the log\n')
   })
 })
 

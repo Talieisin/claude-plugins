@@ -8,8 +8,12 @@ import type { Item, ItemRow } from '../types'
 /** The row schema this version writes and reads. */
 export const ROW_SCHEMA = 1
 
-/** The plugin version a row names as its writer. */
-export const WRITER_VERSION = '0.1.0'
+/**
+ * The plugin version a row (and `meta/page`) names as its writer: kept with
+ * the version in plugin.json. Only stamped: readers take any string here, so
+ * rows an older version wrote stay readable.
+ */
+export const WRITER_VERSION = '0.2.0'
 
 /**
  * The response envelope version this mod's receiver takes (#32): a row

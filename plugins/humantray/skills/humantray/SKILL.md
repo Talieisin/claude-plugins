@@ -3,7 +3,7 @@ name: humantray
 description: How to ask a person for something through the humantray instead of in prose - FYIs, choices, questions, tasks and approvals, raised once and referred to by id, with the answer arriving later by itself. Use when you need a decision, an answer, an action or an acknowledgement from a person and can carry on meanwhile, when you hand a person a runbook to carry out, and whenever a line starting `humantray HT-` arrives.
 ---
 
-<!-- humantray-skill-version: 1 (humantray plugin 0.1.0; raise both together) -->
+<!-- humantray-skill-version: 2 (humantray plugin 0.2.0; raise both together) -->
 
 # humantray
 
@@ -45,7 +45,7 @@ The owner's views (the viewer and the page) group a cloud session's items under 
 A runbook is a sequence of steps for a person to carry out, often in lettered parts, each step a command to run and the output to expect.
 
 - **One `do` item per part.** Its `body_md` holds the whole part, so that nothing of it is needed from chat:
-  - the steps, in order, each command in a fenced code block of its own, so that it can be copied whole and exactly: the page, the pane and the viewer give each code block a copy button;
+  - the steps, in order, each command in a fenced code block of its own, so that it can be copied whole and exactly: each code block has a copy button on the page and in the terminal's pane and viewer, and the desktop app and VS Code their own;
   - the output to expect, fenced where it must match exactly;
   - each placeholder to fill in (`<DIGEST>`) and the step whose output gives it;
   - the stop conditions ("anything else: press Not done and paste what you saw"), and what Done means.

@@ -62,12 +62,14 @@ import {
   resolveOwner,
   shortOf,
   splitDrawn,
+  unlabelled,
+  unlabelledPieces,
   ulid,
   validateAdd,
 } from './items'
 import { codeBlocksOf } from './code'
 import { registerConfig, registerConfigTool } from './config-tool'
-import { COPY_PAGE, copyBlock, copyLabel, copyToast } from './copy'
+import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
@@ -689,9 +691,16 @@ export const register: Register = on => {
     // Drawn Markdown (forDrawing's), one element a piece (#51): each text piece
     // and each fence drawn here apart, so nothing in one can reach into the
     // next in any surface's parser. One piece keeps the single element.
-    const drawn = (key: string, text: string) => {
-      const pieces = splitDrawn(text)
-      if (pieces.length <= 1) return <Markdown key={key} text={text} />
+    // Where the surface draws its own copy control on a code block (the
+    // desktop app, VS Code), no copy buttons and no `Code n` labels (#51).
+    // `labelled`: a body forDrawing labelled. Only there is a label dropped:
+    // an answer's parts are drawn with none, so a `*Code n*` line in them is
+    // the person's own and is kept.
+    const native = hasNativeCopy(e.surface)
+    const drawn = (key: string, text: string, labelled = false) => {
+      const unlabel = native && labelled
+      const pieces = unlabel ? unlabelledPieces(text) : splitDrawn(text)
+      if (pieces.length <= 1) return <Markdown key={key} text={unlabel ? unlabelled(text) : text} />
       return (
         <Box key={key} flexDirection="column" gap={1}>
           {pieces.map((piece, n) => (
@@ -704,6 +713,20 @@ export const register: Register = on => {
     // the drawn. At most COPY_PAGE at once, so a card full of fences stays
     // small; a button pages through the rest. `draftId` keeps the page shown.
     const copyList = async (key: string, draftId: string, short: string, blocks: readonly CodeBlock[]) => {
+      if (native) {
+        // No buttons: the app copies each block itself. A block with control
+        // characters is drawn with U+FFFD in their place (forDrawing), so its
+        // copy is not exact: the card says so (decided for the owner on #51),
+        // in one note that names a few such blocks and counts the rest, so a
+        // card of many stays small.
+        const unsafe = blocks.flatMap((block, k) => (block.unsafe ? [k + 1] : []))
+        if (unsafe.length === 0) return null
+        return (
+          <Text key={`${key}:copy:unsafe`} dimColor>
+            {unsafeNote(unsafe)}
+          </Text>
+        )
+      }
       const offered = blocks.flatMap((block, k) => (block.text === '' ? [] : [{ block, n: k + 1 }]))
       if (offered.length === 0) return null
       const held = await $.state.get({ ...drafts, id: draftId })
@@ -897,12 +920,12 @@ export const register: Register = on => {
         return (
           <Box flexDirection="column" gap={1}>
             <Button key="v:back" label="Back" onPress={() => update($, viewerExpanded, () => null)} />
-            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
               <Text dimColor>{full.short}</Text>
-              {full.body.text !== '' && drawn(`v:${full.id}:full:body`, full.body.text)}
+              {full.body.text !== '' && drawn(`v:${full.id}:full:body`, full.body.text, true)}
               {full.body.clipped && (
                 <Text key={`v:${full.id}:full:more`} dimColor>
                   {`(… cut short: ${String(full.body.length)} characters in all)`}
@@ -929,7 +952,7 @@ export const register: Register = on => {
             )
           }
           rows.push(
-            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(entry.header)}] {plain(entry.question)}
               </Text>
@@ -1075,7 +1098,7 @@ export const register: Register = on => {
           }
         }
         nodes.push(
-          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" padding="sm">
             <Text bold>
               [{plain(row.header)}] {plain(row.question)}
             </Text>
@@ -1084,7 +1107,7 @@ export const register: Register = on => {
               {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
               {card.old ? ' · old' : ''}
             </Text>
-            {body.text !== '' && drawn(`${key}:body`, body.text)}
+            {body.text !== '' && drawn(`${key}:body`, body.text, true)}
             {body.clipped && (
               <Button key={`${key}:full`} label="Show in full" onPress={() => update($, viewerExpanded, () => fullOf(item))} />
             )}
@@ -1118,12 +1141,12 @@ export const register: Register = on => {
           const held = await $.state.get({ ...drafts, id })
           const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
           local.push(
-            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(item.header)}] {plain(item.question)}
               </Text>
               <Text dimColor>{item.short}</Text>
-              {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md))}
+              {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md), true)}
               {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
               {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
               {draft.error !== '' && <Text color="error">{draft.error}</Text>}
@@ -1173,7 +1196,7 @@ export const register: Register = on => {
     // One History entry: read only, with no control (an answered item is never
     // reopened) but "Show in full" when anything was shortened.
     const historyCard = (entry: HistoryEntry) => (
-      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
+      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" padding="sm">
         <Text bold>
           [{plain(entry.header)}] {plain(entry.question)}
         </Text>
@@ -1220,12 +1243,12 @@ export const register: Register = on => {
           <Box flexDirection="column" gap={1}>
             {toggle}
             <Button key="humantray:history:back" label="Back to History" onPress={() => update($, expanded, () => null)} />
-            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
               <Text dimColor>{full.short}</Text>
-              {full.body.text !== '' && drawn(`${full.id}:full:body`, full.body.text)}
+              {full.body.text !== '' && drawn(`${full.id}:full:body`, full.body.text, true)}
               {full.body.clipped && more(`${full.id}:full:body:more`, full.body)}
               {await copyList(`${full.id}:full`, `full:${full.id}`, full.short, full.copy ?? [])}
               {full.answer !== '' && <Text>{plain(full.answer)}</Text>}
@@ -1299,7 +1322,7 @@ export const register: Register = on => {
       const from = shown.mine.includes(id) ? '' : ' · another session'
       const bumped = item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
       cards.push(
-        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" padding="sm">
           <Text bold>
             [{plain(item.header)}] {plain(item.question)}
           </Text>
@@ -1308,7 +1331,7 @@ export const register: Register = on => {
             {from}
             {bumped}
           </Text>
-          {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md))}
+          {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md), true)}
           {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
           {controls}
           {draft.error !== '' && <Text color="error">{draft.error}</Text>}

@@ -1,14 +1,15 @@
 // Copying a code block from the pane (#51): every block of a card's stored
 // body has a button that copies it byte for byte, with no U+200B display
-// rewrite, through `$.ui.copy`; where the desktop app or VS Code has no copy
-// path, through this computer's clipboard tool, given the text on stdin; never
-// for a phone or from a cloud session. The viewer's cards are in viewer.test.tsx.
+// rewrite, through `$.ui.copy`; never a fall back to another clipboard. The
+// desktop app and VS Code draw their own copy control, so there no buttons
+// and no `Code n` labels are drawn. The viewer's cards are in viewer.test.tsx.
 
 import type { On, RenderSurface } from 'claude-code'
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 
 import { codeBlocksOf } from '../hooks/code'
-import { COPY_PAGE, clipboardTools, copyLabel } from '../hooks/copy'
+import { forDrawing } from '../hooks/items'
+import { COPY_PAGE, copyLabel, hasNativeCopy, unsafeNote } from '../hooks/copy'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 import { ADD, PANE, START_EVENT, answerOf, drawnText, world } from './world'
 
@@ -16,45 +17,36 @@ type Copied = { text: string; surface?: string }
 type Ran = { argv: string[]; stdin?: string; env?: Record<string, string> }
 
 /**
- * A pane world whose surface clipboard answers as told, and whose clipboard
- * tools (pbcopy and the rest) are recorded and answer as told.
+ * A pane world whose surface clipboard answers as told, and where any
+ * clipboard tool (pbcopy and the rest) a copy ran would be recorded.
  */
 function copyWorld(
   on: On,
   options: {
     surface?: RenderSurface
     copy?: { isCopied: true } | { isCopied: false; reason: 'no-surface' | 'no-clipboard' | 'refused' }
-    platform?: 'macos' | 'windows' | 'wsl' | 'linux' | 'unknown'
-    /** The engine says the session is hosted (its machine is the server). */
-    hosted?: boolean
-    /** `$.session.info` fails, as an engine without it would. */
-    noInfo?: boolean
-    tools?: Record<string, number | 'missing'>
-    env?: Record<string, string>
   } = {},
 ) {
   const surface = options.surface ?? 'terminal'
-  const w = world(on, { surfaces: [surface], ...(options.env === undefined ? {} : { env: options.env }) })
+  const w = world(on, { surfaces: [surface] })
   const copies: Copied[] = []
   const ran: Ran[] = []
   on('ui.copy', (_, e) => {
     copies.push({ text: e.text, ...(e.surface === undefined ? {} : { surface: e.surface }) })
     return { value: options.copy ?? { isCopied: true } }
   })
-  on('session.info', (_, e, next) => {
-    if (options.noInfo === true) return { deny: 'no session.info in this engine' }
-    return options.platform === undefined ? next(e) : { value: { platform: options.platform, isHosted: options.hosted === true } as never }
-  })
-  const tools = options.tools ?? {}
   w.runOther = e => {
     // A detached tool runs as `sh -c 'exec <tool> … >/dev/null 2>&1'`: name it by the tool.
     const name = e.argv[0] === 'sh' ? (/^exec (\S+)/.exec(e.argv[2] ?? '')?.[1] ?? 'sh') : (e.argv[0] ?? '')
     if (!['pbcopy', 'wl-copy', 'xclip', 'xsel', 'powershell.exe'].includes(name)) return undefined
     ran.push(e)
-    return tools[name] ?? 'missing'
+    return 0
   }
   return { w, copies, ran, surface }
 }
+
+const BODY = '```sh\ncat <<-EOF > /tmp/a\n\tline\n\tEOF\n```'
+const TEXT = 'cat <<-EOF > /tmp/a\n\tline\n\tEOF'
 
 async function addDo($: Engine, body: string) {
   return answerOf<{ id: string; short: string }>(await $.tool.call({ tool: ADD, type: 'do', header: 'Part A', question: 'Run part A', body_md: body }))
@@ -145,9 +137,6 @@ describe('the pane draws each code block as a Markdown element of its own (#51)'
 })
 
 describe('where the copy goes', () => {
-  const BODY = '```sh\ncat <<-EOF > /tmp/a\n\tline\n\tEOF\n```'
-  const TEXT = 'cat <<-EOF > /tmp/a\n\tline\n\tEOF'
-
   test('the terminal: the surface copy; nothing run', async ($, on) => {
     const { w, copies, ran } = copyWorld(on, { surface: 'terminal' })
     await $.session.start(START_EVENT)
@@ -160,7 +149,7 @@ describe('where the copy goes', () => {
   })
 
   test('the terminal with no clipboard: said, with the page to copy from; no tool run', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'terminal', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux', tools: { 'wl-copy': 0 } })
+    const { w, ran } = copyWorld(on, { surface: 'terminal', copy: { isCopied: false, reason: 'no-clipboard' } })
     await $.session.start(START_EVENT)
     const { id, short } = await addDo($, BODY)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
@@ -169,133 +158,149 @@ describe('where the copy goes', () => {
     expect(w.toasts.at(-1)).toBe(`Humantray: block 1 of ${short} not copied: no-clipboard. Copy it from the humantray page.`)
   })
 
-  test('the desktop app on a Mac: no surface path, so pbcopy, with the text on stdin byte for byte and a UTF-8 locale', async ($, on) => {
-    const { w, copies, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'macos', tools: { pbcopy: 0 } })
+  test('a phone with no clipboard route: no tool run; the toast says so and points to the page', async ($, on) => {
+    const { w, ran } = copyWorld(on, { surface: 'mobile', copy: { isCopied: false, reason: 'no-clipboard' } })
     await $.session.start(START_EVENT)
     const { id, short } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(copies).toEqual([{ text: TEXT, surface: 'desktop' }])
-    expect(ran).toEqual([{ argv: ['pbcopy'], stdin: TEXT, env: { LC_CTYPE: 'UTF-8' } }])
-    expect(w.toasts.at(-1)).toBe(`Humantray: copied block 1 of ${short} (3 lines) to this computer's clipboard`)
-  })
-
-  test('VS Code on Linux: wl-copy, then xsel, then xclip; the first that runs and exits 0', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'vscode', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux', tools: { 'wl-copy': 'missing', xsel: 1, xclip: 0 } })
-    await $.session.start(START_EVENT)
-    const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(ran.map(r => r.argv)).toEqual([
-      ['sh', '-c', 'exec wl-copy >/dev/null 2>&1'],
-      ['xsel', '--clipboard', '--input'],
-      ['sh', '-c', 'exec xclip -selection clipboard >/dev/null 2>&1'],
-    ])
-    for (const r of ran) expect(r.stdin).toBe(TEXT)
-    expect(w.toasts.at(-1)).toContain("to this computer's clipboard")
-  })
-
-  test('xclip and wl-copy run with their output sent to /dev/null, so the run ends when the copy is made: the forked server keeps no stream open', () => {
-    // xclip's child goes on serving the clipboard; with its streams piped a run
-    // that reads to their end waits out its limit and reports a failure though
-    // the copy was made (seen under Xvfb: over 3 s piped, 21 ms detached).
-    for (const tool of clipboardTools('linux')) {
-      if (tool.argv[0] === 'sh') {
-        expect(tool.argv[1]).toBe('-c')
-        expect(tool.argv[2]).toMatch(/^exec (wl-copy|xclip -selection clipboard) >\/dev\/null 2>&1$/)
-      }
-    }
-  })
-
-  test('a tool that fails (cannot start, or times out) moves on to the next; the toast tells the truth', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux', tools: { 'wl-copy': 'missing', xsel: 'missing', xclip: 'missing' } })
-    await $.session.start(START_EVENT)
-    const { id, short } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(ran).toHaveLength(3)
-    expect(w.toasts.at(-1)).toBe(
-      `Humantray: block 1 of ${short} not copied: this app has no clipboard route here (no-clipboard), and no clipboard tool ran on this computer. Copy it from the humantray page.`,
-    )
-  })
-
-  test('a hosted session (its machine is the server, not yours): no tool is run; the toast says why', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'macos', hosted: true, tools: { pbcopy: 0 } })
-    await $.session.start(START_EVENT)
-    const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(ran).toEqual([])
-    expect(w.toasts.at(-1)).toContain('this session runs on a hosted server, not your computer')
-  })
-
-  test('an engine without $.session.info: no platform, so no tool; nothing throws, and the toast says no tool ran', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, noInfo: true, tools: { pbcopy: 0 } })
-    await $.session.start(START_EVENT)
-    const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(ran).toEqual([])
-    expect(w.toasts.at(-1)).toContain('no clipboard tool ran on this computer')
-  })
-
-  test('the desktop app with no clipboard tool at all: said so; nothing claimed', async ($, on) => {
-    const { w } = copyWorld(on, { surface: 'desktop', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'linux' })
-    await $.session.start(START_EVENT)
-    const { id, short } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(w.toasts.at(-1)).toBe(
-      `Humantray: block 1 of ${short} not copied: this app has no clipboard route here (no-clipboard), and no clipboard tool ran on this computer. Copy it from the humantray page.`,
-    )
-  })
-
-  test('a phone: no fall back to the computer, whose clipboard would not reach it; the toast says so', async ($, on) => {
-    const { w, ran } = copyWorld(on, { surface: 'mobile', copy: { isCopied: false, reason: 'no-clipboard' }, platform: 'macos', tools: { pbcopy: 0 } })
-    await $.session.start(START_EVENT)
-    const { id } = await addDo($, BODY)
     const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
     await ui.press({ key: `${id}:copy:1` })
     expect(ran).toEqual([])
-    expect(w.toasts.at(-1)).toContain("a copy to the computer's clipboard would not reach your phone, so none was made")
+    expect(w.toasts.at(-1)).toBe(`Humantray: block 1 of ${short} not copied: this app has no clipboard route here (no-clipboard). Copy it from the humantray page.`)
+  })
+})
+
+describe('the desktop app and VS Code draw their own copy control (decided for the owner on #51)', () => {
+  test('which surfaces: the desktop app and VS Code; the terminal, a phone and an unknown surface keep the buttons', () => {
+    expect(hasNativeCopy('desktop')).toBe(true)
+    expect(hasNativeCopy('vscode')).toBe(true)
+    for (const surface of ['terminal', 'mobile', 'web', '', undefined]) expect(hasNativeCopy(surface)).toBe(false)
   })
 
-  test('a cloud session drawn in the desktop app: its machine is not the person\'s, so no tool is run', async ($, on) => {
-    const { w, ran } = copyWorld(on, {
-      surface: 'desktop',
-      copy: { isCopied: false, reason: 'no-clipboard' },
-      platform: 'linux',
-      tools: { 'wl-copy': 0 },
-      env: { CLAUDE_CODE_REMOTE: 'true' },
+  for (const surface of ['desktop', 'vscode'] as const) {
+    test(`${surface}: no copy buttons and no Code n labels; each block drawn exactly as stored`, async ($, on) => {
+      copyWorld(on, { surface })
+      await $.session.start(START_EVENT)
+      const { id } = await addDo($, RUNBOOK)
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect(await ui.findAll({ type: 'Button', text: 'Copy' })).toEqual([])
+      expect(await ui.find({ key: `${id}:copy` })).toBeUndefined()
+      expect(await ui.find({ key: `${id}:copy:1` })).toBeUndefined()
+      expect(await ui.find({ key: `${id}:copy:more` })).toBeUndefined()
+      const body = (await drawnText(ui, `${id}:body`)) as string
+      expect(body).not.toMatch(/\*Code \d+\*/)
+      for (const block of codeBlocksOf(RUNBOOK)) expect(body).toContain(block.text)
+      // The answer's controls are still drawn.
+      expect(await ui.find({ key: `${id}:done` })).toBeDefined()
+      await ui.unmount()
     })
+  }
+
+  test('one block alone (a single Markdown element) loses its label too', async ($, on) => {
+    copyWorld(on, { surface: 'desktop' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(ran).toEqual([])
-    expect(w.toasts.at(-1)).toContain('in the cloud')
+    expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(`\`\`\`sh\n${TEXT}\n\`\`\``)
   })
 
-  test('the desktop app where the surface copy works: no tool is run', async ($, on) => {
-    const { ran } = copyWorld(on, { surface: 'desktop', platform: 'macos', tools: { pbcopy: 0 } })
+  test("a person's own `*Code n*` line before a fence in an answer is kept: only labels forDrawing drew are dropped", async ($, on) => {
+    const { w } = copyWorld(on, { surface: 'desktop' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    await ui.press({ key: `${id}:copy:1` })
-    expect(ran).toEqual([])
+    const feedback = 'See below.\n\n*Code 1*\n\n```sh\nls\n```'
+    await ui.input({ key: `${id}:feedback`, text: feedback, kind: 'change' })
+    await ui.press({ key: `${id}:done` })
+    await w.drain()
+    await ui.press({ key: 'humantray:view' })
+    const drawnPart = (await drawnText(ui, `${id}:Feedback`)) as string
+    expect(drawnPart).toBe(forDrawing(feedback, false))
+    expect(drawnPart).toContain('*Code 1*')
   })
 
-  test('the tools by platform', () => {
-    expect(clipboardTools('macos').map(t => t.argv[0])).toEqual(['pbcopy'])
-    expect(clipboardTools('linux').map(t => t.argv.join(' '))).toEqual([
-      'sh -c exec wl-copy >/dev/null 2>&1',
-      'xsel --clipboard --input',
-      'sh -c exec xclip -selection clipboard >/dev/null 2>&1',
-    ])
-    expect(clipboardTools('windows')[0]?.argv.at(-1)).toContain('Set-Clipboard -Value ([Console]::In.ReadToEnd())')
-    expect(clipboardTools('wsl')[0]?.argv[0]).toBe('powershell.exe')
-    expect(clipboardTools('unknown')).toEqual([])
+  for (const surface of ['desktop', 'vscode'] as const) {
+    test(`${surface}: a block holding control characters is still named, and the card says the app's copy of it is not exact`, async ($, on) => {
+      copyWorld(on, { surface })
+      await $.session.start(START_EVENT)
+      const { id } = await addDo($, '```\nok\n```\n\n```\na\u0007b\n```')
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect(await ui.findAll({ type: 'Button', text: 'Copy' })).toEqual([])
+      expect(await ui.find({ key: `${id}:copy:1` })).toBeUndefined()
+      expect(
+        await ui.find({ type: 'Text', text: "Code block 2 holds control characters: the app's copy of it has \ufffd where they were" }),
+      ).toBeDefined()
+      expect(await drawnText(ui, `${id}:body`)).toContain('a\ufffdb')
+    })
+  }
+
+  test('the note names three blocks at most and counts the rest: one line however many', () => {
+    const tail = ": the app's copy of them has \ufffd where they were"
+    expect(unsafeNote([2])).toBe("Code block 2 holds control characters: the app's copy of it has \ufffd where they were")
+    expect(unsafeNote([2, 5])).toBe(`Code blocks 2 and 5 hold control characters${tail}`)
+    expect(unsafeNote([1, 4, 7])).toBe(`Code blocks 1, 4 and 7 hold control characters${tail}`)
+    expect(unsafeNote([3, 7, 12, 13, 14])).toBe(`Code blocks 3, 7, 12 and 2 more hold control characters${tail}`)
+    expect(unsafeNote(Array.from({ length: 1_500 }, (_, k) => k + 1)).length).toBeLessThan(120)
   })
+
+  test('the desktop app: several unsafe blocks on one card, one note', async ($, on) => {
+    copyWorld(on, { surface: 'desktop' })
+    await $.session.start(START_EVENT)
+    await addDo($, Array.from({ length: 6 }, (_, k) => `\`\`\`\nx\u0001${String(k)}\n\`\`\``).join('\n\n'))
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const notes = (await ui.findAll({ type: 'Text' })).filter(t => /control characters/.test(t.text ?? ''))
+    expect(notes.map(t => t.text)).toEqual([unsafeNote([1, 2, 3, 4, 5, 6])])
+  })
+
+  test('the terminal: a block holding control characters is not offered for copy, as before', async ($, on) => {
+    copyWorld(on, { surface: 'terminal' })
+    await $.session.start(START_EVENT)
+    await addDo($, '```\na\u0007b\n```')
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ type: 'Text', text: 'Code block 1 holds control characters: not offered for copy' })).toBeDefined()
+  })
+
+  test('the terminal: the buttons and the labels are drawn', async ($, on) => {
+    copyWorld(on, { surface: 'terminal' })
+    await $.session.start(START_EVENT)
+    const { id } = await addDo($, BODY)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await ui.find({ key: `${id}:copy:1` }))?.type).toBe('Button')
+    expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(`*Code 1*\n\n\`\`\`sh\n${TEXT}\n\`\`\``)
+  })
+
+  test('History\'s "Show in full" on the desktop app: no buttons, no labels', async ($, on) => {
+    const { w } = copyWorld(on, { surface: 'desktop' })
+    await $.session.start(START_EVENT)
+    const { id } = await addDo($, RUNBOOK)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    await ui.input({ key: `${id}:feedback`, text: 'word '.repeat(200), kind: 'change' })
+    await ui.press({ key: `${id}:done` })
+    await w.drain()
+    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: `${id}:full` })
+    expect(await ui.find({ key: `${id}:full:copy:1` })).toBeUndefined()
+    const body = (await drawnText(ui, `${id}:full:body`)) as string
+    expect(body).not.toMatch(/\*Code \d+\*/)
+    expect(body).toContain(codeBlocksOf(RUNBOOK)[0]?.text ?? '-')
+  })
+})
+
+describe('the card keeps its inner padding on every surface', () => {
+  for (const surface of ['terminal', 'desktop', 'vscode', 'mobile'] as const) {
+    test(surface, async ($, on) => {
+      copyWorld(on, { surface })
+      await $.session.start(START_EVENT)
+      const { id } = await addDo($, BODY)
+      const ui = await $.ui.mount({ ...PANE, surface })
+      const card = await ui.find({ key: `${id}:card` })
+      // A step, which each surface sizes its own way: the desktop app and the
+      // phones by their own spacing; the terminal as one cell across and none
+      // down, as the paddingX of 1 it replaces; VS Code's table gives those cells.
+      if (surface === 'vscode') expect([card?.props.paddingX, card?.props.paddingY]).toEqual([1, 0])
+      else expect(card?.props.padding).toBe('sm')
+      expect(card?.props.borderStyle).toBe('round')
+    })
+  }
 })
 
 describe('"Show in full" in History offers the same copies', () => {
