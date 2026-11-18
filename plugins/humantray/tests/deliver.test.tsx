@@ -23,6 +23,7 @@ import {
   stored,
   world,
 } from './world'
+import { mount } from './surface-rules'
 
 const OPTIONS = [
   { label: 'Red', description: 'Warm' },
@@ -190,7 +191,7 @@ describe('the line', () => {
     await w.drain()
     expect(w.submits).toEqual(['humantray HT-AODD1 (Key): done', 'humantray HT-AGOOD (Plan): Approve'])
     expect(w.store().items.every(item => item.delivered)).toBe(true)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: 'humantray:view' })
     expect(await ui.find({ type: 'Text', text: /^HT-AODD1 / })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'done' })).toBeDefined()
@@ -289,7 +290,7 @@ describe('claim, send, settle', () => {
     }
     const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
     const id = answerOf<{ id: string }>(added).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.unmount()
     expect(w.submits).toHaveLength(1)
@@ -340,7 +341,7 @@ describe('cold starts (each test loads the module afresh)', () => {
     expect(w.submits).toEqual(['humantray HT-ANSWR (Plan): Approve'])
     const listed = await $.tool.call({ tool: LIST })
     expect(answerOf<{ items: Array<{ short: string }> }>(listed).items.map(i => i.short)).toEqual(['HT-STILL'])
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await ui.find({ type: 'Text', text: /\[Still\]/ })).toBeDefined()
     await ui.unmount()
   })
@@ -451,7 +452,7 @@ describe('/clear, /resume and /branch', () => {
       ]),
     )
     await $.classic.SessionStart({ source: 'clear' })
-    const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+    const band = await mount($, { ...BAND, surface: 'terminal' })
     expect((await band.find({ type: 'Text', text: /Humantray/ }))?.text).toBe('Humantray: 2 open')
     await band.unmount()
   })
@@ -470,7 +471,7 @@ describe('/clear, /resume and /branch', () => {
     const listed = await $.tool.call({ tool: LIST })
     expect(answerOf<{ items: Array<{ header: string }> }>(listed).items.map(i => i.header).sort()).toEqual(['After', 'Before'])
     const id = answerOf<{ id: string }>(before).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     // The inherited card is this session's: it does not say "another session".
     expect(await ui.find({ type: 'Text', text: /another session/ })).toBeUndefined()
     await ui.press({ key: `${id}:approve` })
@@ -566,7 +567,7 @@ describe('guards on delivery', () => {
     }
     const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
     const id = answerOf<{ id: string }>(added).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.unmount()
     await w.clock.advance(119_000)

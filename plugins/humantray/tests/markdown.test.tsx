@@ -9,6 +9,7 @@ import { hasNativeCopy } from '../hooks/copy'
 import { forDrawing, unlabelledPieces } from '../hooks/items'
 
 import { ADD, FILE, PANE, RICH, START_EVENT, answerOf, answerOne, drawnText, world } from './world'
+import { mount } from './surface-rules'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -29,7 +30,7 @@ describe('a rich Markdown body and a rich Markdown answer keep their structure',
       const id = answerOf<{ id: string }>(
         await $.tool.call({ tool: ADD, type: 'question', header: 'Plan', question: 'How?', body_md: RICH, notes: true }),
       ).id
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       // Drawn as stored but for its code, which is drawn as fences of its own, each piece its own Markdown element (#51).
       const body = await drawnText(ui, `${id}:body`)
       expect((await ui.find({ key: `${id}:body:0` }))?.type).toBe('Markdown')
@@ -69,7 +70,7 @@ describe('free-text fields are several lines tall', () => {
         await $.tool.call({ tool: ADD, type: 'choice', header: 'C', question: 'Which?', options: OPTIONS, notes: true }),
       ).id
       const task = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'do', header: 'D', question: 'Rotate' })).id
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       for (const key of [`${choice}:other`, `${choice}:notes`, `${task}:feedback`]) {
         const field = await ui.find({ key })
         expect(field?.type).toBe('Input')
@@ -106,7 +107,7 @@ describe('the owner\'s rules hold in the pane, and the store is never changed', 
     await $.session.start(START_EVENT)
     const body = 'Look: ![chart](https://x.test/c.png)\r\n[local](file:///etc/hosts) <img src=x> and `![code](kept)`\u0007'
     const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q', body_md: body })).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(
       'Look: !\u200b[chart](https://x.test/c.png)\n[local](fil\u200be:///etc/hosts) <\u200bimg src=x> and `!\u200b[code](kept)`\ufffd',
     )
@@ -126,7 +127,7 @@ describe('show in full', () => {
       const item = await answerOne($, w, surface, { type: 'question', header: 'Plan', question: 'How?', body_md: RICH }, [
         { type: 'text', text: long },
       ])
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       await ui.press({ key: TOGGLE })
       const clipped = await drawnText(ui, `${item.id}:Answer`)
       expect(typeof clipped).toBe('string')
@@ -153,7 +154,7 @@ describe('show in full', () => {
     const item = await answerOne($, w, 'desktop', { type: 'question', header: 'Plan', question: 'How?' }, [
       { type: 'text', text: Array.from({ length: 12 }, () => RICH).join('\n\n') },
     ])
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: TOGGLE })
     w.seed({ version: 1, items: [], sessions: {} })
     await ui.press({ key: `${item.id}:full` })
@@ -170,7 +171,7 @@ describe('every title and every full view is drawn safely', () => {
       await $.session.start(START_EVENT)
       const call = { tool: ADD, type: 'question', header: 'Bell\u0007', question: 'Why\u001b[31m?', body_md: 'Body ![x](https://x.test/x.png)' } as const
       const id = answerOf<{ id: string }>(await $.tool.call(call)).id
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       expect(await ui.find({ type: 'Text', text: '[Bell�] Why�[31m?' })).toBeDefined()
       await ui.input({ key: `${id}:text`, text: `${'word '.repeat(150)}\n\n<img src=x>` })
       expect(w.store().items[0]?.status).toBe('answered')
@@ -201,13 +202,13 @@ describe('every title and every full view is drawn safely', () => {
     await $.session.start(START_EVENT)
     await answerOne($, w, 'desktop', { type: 'question', header: 'Plan', question: 'How?' }, [{ type: 'text', text: 'yes' }])
     earlier = true
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await ui.find({ type: 'Text', text: /^No humantray here/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /\[Old\]/ })).toBeUndefined()
     await ui.unmount()
     earlier = false
     await $.session.start(START_EVENT)
-    const fresh = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const fresh = await mount($, { ...PANE, surface: 'desktop' })
     await fresh.press({ key: TOGGLE })
     expect(await fresh.find({ type: 'Text', text: '[Plan] How?' })).toBeDefined()
     await fresh.unmount()

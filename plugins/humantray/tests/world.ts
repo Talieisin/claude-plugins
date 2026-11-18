@@ -9,6 +9,7 @@ import type { On, PromptSubmitInput, PromptSubmitResult, RenderSurface } from 'c
 import { type Engine, mock } from 'claude-code/testing'
 
 import type { Item, StoreFile } from '../types'
+import { mount } from './surface-rules'
 
 export const ROOT = '/repo'
 export const GIT = '/repo/.git'
@@ -452,7 +453,7 @@ export async function answerOne(
 ): Promise<Item> {
   const added = await $.tool.call({ ...call, tool: ADD })
   const id = answerOf<{ id: string }>(added).id
-  const ui = await $.ui.mount({ ...PANE, surface })
+  const ui = await mount($, { ...PANE, surface })
   for (const step of steps) {
     if ('press' in step) await ui.press({ key: `${id}:${step.press}` })
     else if ('change' in step) await ui.input({ key: `${id}:${step.change}`, text: step.text, kind: 'change' })
