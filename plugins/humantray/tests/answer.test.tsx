@@ -5,6 +5,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Item, ItemResponse } from '../types'
 import { ADD, answerOf, FILE, PANE, START_EVENT, type Step, answerOne, stored, world } from './world'
+import { mount } from './surface-rules'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
@@ -86,7 +87,7 @@ describe('notes', () => {
     await $.session.start(START_EVENT)
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Q', notes: false })
     const id = answerOf<{ id: string }>(added).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await ui.find({ key: `${id}:notes` })).toBeUndefined()
     expect(await ui.find({ key: `${id}:ack` })).toBeDefined()
     await ui.unmount()
@@ -113,7 +114,7 @@ describe('empty and conflicting answers', () => {
     const added = await $.tool.call({ tool: ADD, type: 'choice', header: 'C', question: 'Which?', options: OPTIONS })
     const id = answerOf<{ id: string }>(added).id
     const before = w.files.get(FILE)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:submit` })
     expect(await ui.find({ type: 'Text', text: 'Pick an option or fill in Other.' })).toBeDefined()
     expect(w.files.get(FILE)).toBe(before)
@@ -127,7 +128,7 @@ describe('empty and conflicting answers', () => {
     const added = await $.tool.call({ tool: ADD, type: 'question', header: 'Q', question: 'Name?' })
     const id = answerOf<{ id: string }>(added).id
     const before = w.files.get(FILE)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     await ui.input({ key: `${id}:text`, text: '  ' })
     expect(await ui.find({ type: 'Text', text: 'Type an answer.' })).toBeDefined()
     expect(w.files.get(FILE)).toBe(before)
@@ -166,7 +167,7 @@ describe('empty and conflicting answers', () => {
     const call = { type: 'choice', header: 'C', question: 'Which?', options: OPTIONS, multiSelect: true, key: 'c' }
     const added = await $.tool.call({ ...call, tool: ADD })
     const id = answerOf<{ id: string }>(added).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:opt:0` })
     await ui.press({ key: `${id}:opt:1` })
     await $.tool.call({ ...call, tool: ADD, options: OPTIONS.slice(1) })
@@ -188,7 +189,7 @@ describe('cards', () => {
       const second = await $.tool.call({ tool: ADD, type, header: 'Two', question: 'Second' })
       const firstId = answerOf<{ id: string }>(first).id
       const secondId = answerOf<{ id: string }>(second).id
-      const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+      const ui = await mount($, { ...PANE, surface: 'desktop' })
       expect(await ui.findAll({ type: 'Button', key: `${firstId}:${control}` })).toHaveLength(1)
       await ui.press({ key: `${secondId}:${control}` })
       await ui.unmount()
@@ -202,7 +203,7 @@ describe('cards', () => {
     const w = world(on)
     w.seed({ version: 1, items: [stored({ id: '01AAAAAAAAAAAAAAAAAAAAOTHER', type: 'ack', session_id: 'session-b' })], sessions: {} })
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await ui.find({ type: 'Text', text: /another session/ })).toBeDefined()
     await ui.unmount()
   })
@@ -223,7 +224,7 @@ describe('compare-and-set', () => {
     item.delivered = true
     w.seed(file)
     const before = w.files.get(FILE)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     expect(w.files.get(FILE)).toBe(before)
     expect(w.submits).toEqual([])
@@ -244,7 +245,7 @@ describe('compare-and-set', () => {
       const added = await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })
       const id = answerOf<{ id: string }>(added).id
       w.seed(text)
-      const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+      const ui = await mount($, { ...PANE, surface: 'desktop' })
       await ui.press({ key: `${id}:approve` })
       expect(await ui.find({ type: 'Text', text: /is unreadable/ })).toBeDefined()
       expect(w.files.get(FILE)).toBe(text)
@@ -259,7 +260,7 @@ describe('compare-and-set', () => {
     const added = await $.tool.call({ tool: ADD, type: 'question', header: 'Q', question: 'Name?' })
     const id = answerOf<{ id: string }>(added).id
     const before = w.files.get(FILE)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.input({ key: `${id}:text`, text: 'a'.repeat(10_001) })
     expect(await ui.find({ type: 'Text', text: 'An answer can be at most 10000 characters.' })).toBeDefined()
     expect(w.files.get(FILE)).toBe(before)
@@ -288,7 +289,7 @@ describe('Enter in a free-text field keeps the text shown', () => {
         world(on, { surfaces: [surface] })
         await $.session.start(START_EVENT)
         const id = answerOf<{ id: string }>(await $.tool.call({ ...call, tool: ADD })).id
-        const ui = await $.ui.mount({ ...PANE, surface })
+        const ui = await mount($, { ...PANE, surface })
         await ui.input({ key: `${id}:${field}`, text: TYPED.slice(0, 5), kind: 'change' })
         await ui.input({ key: `${id}:${field}`, text: TYPED })
         expect(await ui.find({ key: `${id}:${field}` })).toBeUndefined()

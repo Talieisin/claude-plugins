@@ -3,6 +3,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { ADD, answerOf, BAND, START_EVENT, TURN, stored, world } from './world'
+import { mount } from './surface-rules'
 
 describe('no surface', () => {
   test('a start with no surface opens nothing and toasts nothing; the tools work; a later attach opens the pane', async ($, on) => {
@@ -57,7 +58,7 @@ describe('the band', () => {
     world(on)
     await $.session.start(START_EVENT)
     for (const surface of ['terminal', 'desktop'] as const) {
-      const band = await $.ui.mount({ ...BAND, surface })
+      const band = await mount($, { ...BAND, surface })
       expect(await band.find({ type: 'Text', text: /Humantray/ })).toBeUndefined()
       await band.unmount()
     }
@@ -69,7 +70,7 @@ describe('the band', () => {
     await $.tool.call({ tool: ADD, type: 'ack', header: 'One', question: 'First' })
     await $.tool.call({ tool: ADD, type: 'do', header: 'Two', question: 'Second' })
     for (const surface of ['terminal', 'desktop'] as const) {
-      const band = await $.ui.mount({ ...BAND, surface })
+      const band = await mount($, { ...BAND, surface })
       expect((await band.find({ type: 'Text', text: /Humantray/ }))?.text).toBe('Humantray: 2 open')
       await band.unmount()
     }
@@ -77,7 +78,7 @@ describe('the band', () => {
     file.items.push(stored({ id: '01AAAAAAAAAAAAAAAAAAAAOTHER', type: 'ack', session_id: 'session-b' }))
     w.seed(file)
     await $.turn.complete(TURN)
-    const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    const band = await mount($, { ...BAND, surface: 'desktop' })
     expect((await band.find({ type: 'Text', text: /Humantray/ }))?.text).toBe('Humantray: 3 open')
     await band.unmount()
   })

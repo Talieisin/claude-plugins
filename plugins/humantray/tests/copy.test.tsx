@@ -12,6 +12,7 @@ import { forDrawing } from '../hooks/items'
 import { COPY_PAGE, copyLabel, hasNativeCopy, unsafeNote } from '../hooks/copy'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 import { ADD, PANE, START_EVENT, answerOf, drawnText, world } from './world'
+import { mount } from './surface-rules'
 
 type Copied = { text: string; surface?: string }
 type Ran = { argv: string[]; stdin?: string; env?: Record<string, string> }
@@ -58,7 +59,7 @@ describe('the copy buttons', () => {
       const { copies, surface } = copyWorld(on)
       await $.session.start(START_EVENT)
       const { id } = await addDo($, each.md)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       for (const [k, text] of each.blocks.entries()) {
         const key = `${id}:copy:${String(k + 1)}`
         const node = await ui.find({ key })
@@ -91,7 +92,7 @@ describe('the copy buttons', () => {
     const { id, short } = await addDo($, RUNBOOK)
     const blocks = codeBlocksOf(RUNBOOK)
     expect(blocks).toHaveLength(12)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     for (let n = 1; n <= 9; n++) expect((await ui.find({ key: `${id}:copy:${String(n)}` }))?.props.label).toBe(copyLabel(blocks[n - 1] as never, n))
     expect(await ui.find({ key: `${id}:copy:10` })).toBeUndefined()
     expect((await ui.find({ key: `${id}:copy:more` }))?.props.label).toBe('Code blocks 1–9 of 12: show the next')
@@ -127,7 +128,7 @@ describe('the pane draws each code block as a Markdown element of its own (#51)'
     await $.session.start(START_EVENT)
     const md = ['[a]: https://example.test "', '', '```sh', 'echo "', '**if this is bold, the code left its fence**', '```'].join('\n')
     const { id } = await addDo($, md)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect((await ui.find({ key: `${id}:body` }))?.type).toBe('Box')
     expect((await ui.find({ key: `${id}:body:0` }))?.props.text).toBe('[a]: https://example.test "')
     expect((await ui.find({ key: `${id}:body:1` }))?.props.text).toBe('*Code 1*\n\n```sh\necho "\n**if this is bold, the code left its fence**\n```')
@@ -141,7 +142,7 @@ describe('where the copy goes', () => {
     const { w, copies, ran } = copyWorld(on, { surface: 'terminal' })
     await $.session.start(START_EVENT)
     const { id, short } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     await ui.press({ key: `${id}:copy:1` })
     expect(copies).toEqual([{ text: TEXT, surface: 'terminal' }])
     expect(ran).toEqual([])
@@ -152,7 +153,7 @@ describe('where the copy goes', () => {
     const { w, ran } = copyWorld(on, { surface: 'terminal', copy: { isCopied: false, reason: 'no-clipboard' } })
     await $.session.start(START_EVENT)
     const { id, short } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     await ui.press({ key: `${id}:copy:1` })
     expect(ran).toEqual([])
     expect(w.toasts.at(-1)).toBe(`Humantray: block 1 of ${short} not copied: no-clipboard. Copy it from the humantray page.`)
@@ -162,7 +163,7 @@ describe('where the copy goes', () => {
     const { w, ran } = copyWorld(on, { surface: 'mobile', copy: { isCopied: false, reason: 'no-clipboard' } })
     await $.session.start(START_EVENT)
     const { id, short } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'mobile' })
+    const ui = await mount($, { ...PANE, surface: 'mobile' })
     await ui.press({ key: `${id}:copy:1` })
     expect(ran).toEqual([])
     expect(w.toasts.at(-1)).toBe(`Humantray: block 1 of ${short} not copied: this app has no clipboard route here (no-clipboard). Copy it from the humantray page.`)
@@ -181,7 +182,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
       copyWorld(on, { surface })
       await $.session.start(START_EVENT)
       const { id } = await addDo($, RUNBOOK)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       expect(await ui.findAll({ type: 'Button', text: 'Copy' })).toEqual([])
       expect(await ui.find({ key: `${id}:copy` })).toBeUndefined()
       expect(await ui.find({ key: `${id}:copy:1` })).toBeUndefined()
@@ -199,7 +200,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     copyWorld(on, { surface: 'desktop' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(`\`\`\`sh\n${TEXT}\n\`\`\``)
   })
 
@@ -207,7 +208,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     const { w } = copyWorld(on, { surface: 'desktop' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const feedback = 'See below.\n\n*Code 1*\n\n```sh\nls\n```'
     await ui.input({ key: `${id}:feedback`, text: feedback, kind: 'change' })
     await ui.press({ key: `${id}:done` })
@@ -223,7 +224,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
       copyWorld(on, { surface })
       await $.session.start(START_EVENT)
       const { id } = await addDo($, '```\nok\n```\n\n```\na\u0007b\n```')
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       expect(await ui.findAll({ type: 'Button', text: 'Copy' })).toEqual([])
       expect(await ui.find({ key: `${id}:copy:1` })).toBeUndefined()
       expect(
@@ -246,7 +247,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     copyWorld(on, { surface: 'desktop' })
     await $.session.start(START_EVENT)
     await addDo($, Array.from({ length: 6 }, (_, k) => `\`\`\`\nx\u0001${String(k)}\n\`\`\``).join('\n\n'))
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const notes = (await ui.findAll({ type: 'Text' })).filter(t => /control characters/.test(t.text ?? ''))
     expect(notes.map(t => t.text)).toEqual([unsafeNote([1, 2, 3, 4, 5, 6])])
   })
@@ -255,7 +256,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     copyWorld(on, { surface: 'terminal' })
     await $.session.start(START_EVENT)
     await addDo($, '```\na\u0007b\n```')
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect(await ui.find({ type: 'Text', text: 'Code block 1 holds control characters: not offered for copy' })).toBeDefined()
   })
 
@@ -263,7 +264,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     copyWorld(on, { surface: 'terminal' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect((await ui.find({ key: `${id}:copy:1` }))?.type).toBe('Button')
     expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(`*Code 1*\n\n\`\`\`sh\n${TEXT}\n\`\`\``)
   })
@@ -272,7 +273,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     const { w } = copyWorld(on, { surface: 'desktop' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, RUNBOOK)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.input({ key: `${id}:feedback`, text: 'word '.repeat(200), kind: 'change' })
     await ui.press({ key: `${id}:done` })
     await w.drain()
@@ -305,7 +306,7 @@ describe('the card keeps its inner padding on every surface', () => {
       const { w } = copyWorld(on, { surface })
       await $.session.start(START_EVENT)
       const { id } = await addDo($, BODY)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       expect(spacing((await ui.find({ key: `${id}:card` }))?.props)).toEqual(card[surface])
       expect((await ui.find({ key: `${id}:card` }))?.props.borderStyle).toBe('round')
       // The gap is under the field, so the Done row does not touch it.
@@ -325,7 +326,7 @@ describe('the card keeps its inner padding on every surface', () => {
     copyWorld(on, { surface: 'terminal' })
     await $.session.start(START_EVENT)
     const { id } = await addDo($, BODY)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect(spacing((await ui.find({ key: `${id}:card` }))?.props)).toEqual({ padding: 'sm' })
     expect(spacing((await ui.find({ key: `${id}:feedback:field` }))?.props)).toEqual({})
   })
@@ -336,7 +337,7 @@ describe('"Show in full" in History offers the same copies', () => {
     const { w, copies } = copyWorld(on)
     await $.session.start(START_EVENT)
     const { id } = await addDo($, RUNBOOK)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     // Feedback past what History's list draws, so the entry offers "Show in full".
     await ui.input({ key: `${id}:feedback`, text: 'word '.repeat(200), kind: 'change' })
     await ui.press({ key: `${id}:done` })

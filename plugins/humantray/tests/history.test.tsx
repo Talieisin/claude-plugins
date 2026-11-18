@@ -22,6 +22,7 @@ import {
   stored,
   world,
 } from './world'
+import { mount } from './surface-rules'
 
 const OTHER = 'github.com/owner/other'
 const TOGGLE = 'humantray:view'
@@ -45,7 +46,7 @@ describe('a ticked item leaves the main list and appears in History', () => {
       const call = { tool: ADD, type: 'choice', header: 'Colour', question: 'Which?', options: OPTIONS, notes: true, key: 'colour' } as const
       const id = answerOf<{ id: string }>(await $.tool.call(call)).id
       await $.tool.call(call)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (0)')
       expect(await ui.find({ key: `${id}:submit` })).toBeDefined()
 
@@ -81,7 +82,7 @@ describe('a ticked item leaves the main list and appears in History', () => {
     w.answerSubmit = () => ({ drop: 'the prompt was removed from the queue before it ran' })
     await $.session.start(START_EVENT)
     const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.press({ key: TOGGLE })
     expect((await ui.find({ type: 'Text', text: /^HT-/ }))?.text).toMatch(/ · not delivered$/)
@@ -105,7 +106,7 @@ describe('History', () => {
       ),
     )
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: TOGGLE })
     const titles = (await ui.findAll({ type: 'Text', text: /^\[/ })).map(t => t.text)
     expect(titles).toEqual([`[Theirs] Seeded ${finished(5).id}`, `[Inherited] Seeded ${finished(1).id}`, `[Mine] Seeded ${finished(3).id}`])
@@ -128,7 +129,7 @@ describe('History', () => {
       ]),
     )
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: TOGGLE })
     const lines = new Map((await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => [t.text?.slice(0, 8), t.text ?? '']))
     expect(lines.get(finished(1).short)).toMatch(/ · delivered$/)
@@ -146,7 +147,7 @@ describe('History', () => {
     const w = world(on)
     w.seed(file([...finishedMany(5, { repo: OTHER }), ...finishedMany(3, {}, 100)]))
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (8)')
     await ui.press({ key: TOGGLE })
     const headings = await ui.findAll({ type: 'Text', text: /^github\.com\// })
@@ -161,7 +162,7 @@ describe('History', () => {
     const w = world(on)
     w.seed(file(finishedMany(3)))
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: TOGGLE })
     expect(await ui.find({ type: 'Text', text: /^github\.com\// })).toBeUndefined()
     expect(await ui.findAll({ type: 'Text', text: /^HT-/ })).toHaveLength(3)
@@ -173,7 +174,7 @@ describe('History', () => {
     const theirs = stored({ id: '01THEIRS000000000000000000', type: 'approve', repo: OTHER, header: 'Elsewhere' })
     w.seed(file([theirs]))
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${theirs.id}:approve` })
     expect(await ui.find({ key: `${theirs.id}:approve` })).toBeUndefined()
     expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (1)')
@@ -190,7 +191,7 @@ describe('History', () => {
     const pruned = oldestOfMany(203, 3)
     const kept = new Set(w.store().items.map(item => item.id))
     expect(pruned.some(id => kept.has(id))).toBe(false)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
     await ui.press({ key: TOGGLE })
     const shown = await allPages(ui)
@@ -214,7 +215,7 @@ describe('History', () => {
       })
       w.seed(file(long))
       await $.session.start(START_EVENT)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
       await ui.press({ key: TOGGLE })
       const id = (await ui.find({ type: 'Text', text: /^HT-/ }))?.text.slice(3, 8) ?? ''
@@ -268,7 +269,7 @@ describe('a time no Date can hold', () => {
     const w = world(on)
     w.seed(file([finished(1, { response_at: 1e20 }), finished(2), stored({ id: '01OPEN00000000000000000000', type: 'ack', header: 'Open' })]))
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: TOGGLE })
     const lines = (await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => t.text ?? '')
     expect(lines).toHaveLength(2)
@@ -432,7 +433,7 @@ describe('a finished item never changes again', () => {
     const open = stored({ id: '01STALE0000000000000000000', type: 'approve' })
     w.seed(file([open]))
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const p = finished(0, { id: open.id, short: open.short, question: open.question, key: open.key })
     w.seed(file([p]))
     const before = w.files.get(FILE)
@@ -451,7 +452,7 @@ describe('a finished item never changes again', () => {
       return { text: e.text }
     }
     const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?' })).id
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.unmount()
     expect(w.submits).toHaveLength(1)
@@ -476,12 +477,12 @@ describe('reload', () => {
         ? { value: { value: { shape: 'tray-2', value: { items: [open, open], me: 'session-a', mine: [] } }, version: 1 } }
         : next(e),
     )
-    const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+    const band = await mount($, { ...BAND, surface: 'desktop' })
     expect(await band.find({ type: 'Text', text: /Humantray/ })).toBeUndefined()
     await band.unmount()
     earlier = false
     await $.session.start(START_EVENT)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (1)')
     await ui.unmount()
   })
