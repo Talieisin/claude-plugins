@@ -285,6 +285,28 @@ describe('finding the artifacts', () => {
 })
 
 describe('reading and drawing', () => {
+  vtest('a choice card on an app surface: checkbox rows, pressed by the unchanged keys, answered by envelope (#64)', async ($, on) => {
+    const { w, a, sends } = viewerWorld(on)
+    const options = [
+      { label: 'One', description: 'The first' },
+      { label: 'Two', description: '' },
+    ]
+    put(a, URL_A, rowOf({ id: ID1, type: 'choice', options, multiSelect: true }))
+    await turnOn($, w)
+    const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+    expect((await ui.find({ key: `v:${ID1}:options` }))?.type).toBe('Box')
+    expect((await ui.find({ key: `v:${ID1}:opt:0` }))?.text).toBe('☐ One')
+    expect((await ui.find({ key: `v:${ID1}:opt:0:about` }))?.text).toContain('The first')
+    expect(await ui.find({ key: `v:${ID1}:opt:1:about` })).toBeUndefined()
+    await ui.press({ key: `v:${ID1}:opt:0` })
+    await ui.press({ key: `v:${ID1}:opt:1` })
+    expect((await ui.find({ key: `v:${ID1}:opt:1` }))?.props.label).toBe('Two, selected')
+    await ui.press({ key: `v:${ID1}:submit` })
+    await w.clock.settle()
+    expect(sends).toHaveLength(1)
+    expect(readEnvelope(sends[0]?.text ?? '')).toMatchObject({ id: ID1, response: { selected: ['One', 'Two'] }, status: 'answered' })
+  })
+
   vtest('grouped by repository, then lead, then asker, with a checked session link and last activity', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))

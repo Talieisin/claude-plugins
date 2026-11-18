@@ -52,10 +52,10 @@ describe('item rows', () => {
     }
   })
 
-  test('rows and a meta/page written by 0.1.0 still read: the writer version is only stamped (0.2.1)', () => {
+  test('rows and a meta/page written by 0.1.0 still read: the writer version is only stamped (0.2.2)', () => {
     const row = itemToRow(withRemote({ id: ID, type: 'approve' }))
     expect(row.writer_version).toBe(WRITER_VERSION)
-    expect(WRITER_VERSION).toBe('0.2.1')
+    expect(WRITER_VERSION).toBe('0.2.2')
     const read = checkItemRow({ ...row, writer_version: '0.1.0' })
     expect('ok' in read && read.ok.writer_version).toBe('0.1.0')
     expect(checkMeta({ ...meta(1), plugin_version: '0.1.0' }, REPO)).toBeDefined()
