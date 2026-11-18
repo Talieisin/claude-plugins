@@ -69,6 +69,7 @@ import {
 } from './items'
 import { codeBlocksOf } from './code'
 import { registerConfig, registerConfigTool } from './config-tool'
+import { DESCRIPTION_INDENT, choiceMark, choiceName, drawsChoiceRows } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
@@ -705,6 +706,8 @@ export const register: Register = on => {
     // the buttons do not touch it. VS Code's table draws a step down as rows:
     // `sm` none, `md` one; so there the gap under a field is `md`.
     const cardSpacing: BoxProps = native ? { paddingX: 'sm', paddingTop: 'sm', paddingBottom: 'md' } : { padding: 'sm' }
+    // Whether a choice's options are checkbox and radio rows (#64).
+    const rows = drawsChoiceRows(e.surface)
     const fieldSpacing: BoxProps = e.surface === 'desktop' ? { marginBottom: 'sm' } : e.surface === 'vscode' ? { marginBottom: 'md' } : {}
     const drawn = (key: string, text: string, labelled = false) => {
       const unlabel = native && labelled
@@ -836,30 +839,56 @@ export const register: Register = on => {
         controls.push(field('text', 'Answer (Markdown)', press({ kind: 'submit' })))
       } else {
         const isMulti = item.multiSelect === true
+        const options: ReturnType<typeof h>[] = []
         ;(item.options ?? []).forEach((option, index) => {
           const isOn = draft.selected.includes(option.label)
-          const mark = isMulti ? (isOn ? '[x]' : '[ ]') : isOn ? '(•)' : '( )'
-          controls.push(
-            <Button
-              key={`${key}:opt:${index}`}
-              plain
-              onPress={() =>
-                setDraft($, draftId, current => ({
-                  error: '',
-                  ...(isMulti
-                    ? {
-                        selected: current.selected.includes(option.label)
-                          ? current.selected.filter(label => label !== option.label)
-                          : [...current.selected, option.label],
-                      }
-                    : { selected: [option.label], other: '' }),
-                }))
-              }
-            >
-              {mark} {option.label} <Text dimColor>{option.description}</Text>
-            </Button>,
+          const mark = choiceMark(e.surface, isMulti, isOn)
+          const onPress = () =>
+            setDraft($, draftId, current => ({
+              error: '',
+              ...(isMulti
+                ? {
+                    selected: current.selected.includes(option.label)
+                      ? current.selected.filter(label => label !== option.label)
+                      : [...current.selected, option.label],
+                  }
+                : { selected: [option.label], other: '' }),
+            }))
+          if (!rows) {
+            options.push(
+              <Button key={`${key}:opt:${index}`} plain onPress={onPress}>
+                {mark} {option.label} <Text dimColor>{option.description}</Text>
+              </Button>,
+            )
+            return
+          }
+          // The desktop app, VS Code and a phone (#64): the mark and the label
+          // are the pressable row, named with its state; the description is
+          // dim text under it, set in to line up with the label. Inside a
+          // `plain` Button a dim Text is not drawn dim on the desktop app.
+          const description = option.description.trim() === '' ? null : (
+            <Box key={`${key}:opt:${index}:about`} paddingLeft={DESCRIPTION_INDENT}>
+              <Text dimColor>{option.description}</Text>
+            </Box>
+          )
+          options.push(
+            <Box key={`${key}:opt:${index}:row`} flexDirection="column">
+              <Button key={`${key}:opt:${index}`} label={choiceName(option.label, isOn)} plain onPress={onPress}>
+                {`${mark} ${option.label}`}
+              </Button>
+              {description}
+            </Box>,
           )
         })
+        if (rows) {
+          controls.push(
+            <Box key={`${key}:options`} flexDirection="column" {...fieldSpacing}>
+              {options}
+            </Box>,
+          )
+        } else {
+          controls.push(...options)
+        }
         // Other text clears a single choice's pick.
         const other = (value: string) => (current: Draft) => ({
           other: value,
