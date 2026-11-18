@@ -12,7 +12,8 @@ import { FIND_MS, GIVE_UP_MS, LEASE_MS, MAX_LISTED, TICK_MS, isGivenUp, lastActi
 import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
 import { codeBlocksOf } from '../hooks/code'
 import { RUNBOOK } from './code-fixtures'
-import { ADD, COMMAND, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
+import { ADD, COMMAND, HOUR, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
+import { when } from '../hooks/items'
 import { mount } from './surface-rules'
 
 type On = Parameters<typeof world>[0]
@@ -225,6 +226,22 @@ describe('the lease: one viewer per computer', () => {
     expect(await ui.find({ type: 'Text', text: 'No open items.' })).toBeUndefined()
     await ui.press({ key: 'humantray:kind:todo' })
     expect(await ui.find({ type: 'Text', text: 'No open to-dos.' })).toBeDefined()
+  })
+
+  vtest('who asked and when (#75): a card says when it was raised; History says who asked, from the row', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, delivered: true }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'ack' }))
+    put(a, URL_A, rowOf({ id: ID3, type: 'ack', status: 'acknowledged', response: { acknowledged: true }, delivered: true }, { session_title: null }))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).toContain(`${when(START - HOUR)} · HT-${ID2.slice(-5)}`)
+    await ui.press({ key: 'humantray:tab:history' })
+    await w.clock.settle()
+    const text = await shownText(ui)
+    expect(text).toContain(`HT-${ID1.slice(-5)} · worker for #1 · answered `)
+    expect(text).toContain(`HT-${ID3.slice(-5)} · another session · answered `)
+    expect(text).not.toContain('this session')
   })
 
   vtest('a plain session with the setting stored does not become a viewer', async ($, on) => {

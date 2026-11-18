@@ -53,7 +53,7 @@ import {
   withDeadline,
 } from './artifact-store'
 import { ARTIFACT_URL, makeEnvelope } from './envelope'
-import { type Action, buildResponse, historyOf, isLineDue, shortOf } from './items'
+import { type Action, buildResponse, cleanTitle, historyOf, isLineDue, shortOf } from './items'
 import { type RowRead, SESSION_ID, countsAsAnswer, isTitleFor, pickArtifact, rowToItem } from './rows'
 import { isCloud } from './store-pass'
 
@@ -722,12 +722,16 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
       leads: [...leads.values()],
     })
   }
+  // Who asked each answered item (#75), from its row: the asking session's
+  // title as the row carries it, else "another session". The items are made
+  // as this session's (rowToItem) only so that historyOf reads them all.
+  const askedBy = new Map(finished.map(row => [row.id, cleanTitle(row.session_title) ?? 'another session']))
   const history: HistoryEntry[] = historyOf(
     { version: 1, items: finished.map(row => rowToItem(row, me, '', 0)), sessions: {} },
     '',
     me,
     now,
-  ).map(entry => ({ ...entry, isMine: true }))
+  ).map(entry => ({ ...entry, isMine: true, origin: askedBy.get(entry.id) ?? 'another session' }))
   const tray: ViewerTray = { repos, history, answerable, found, leaseFailed, at: now }
   if (!holding) return
   await update($, viewerTray, () => tray)

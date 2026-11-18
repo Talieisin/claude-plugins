@@ -808,7 +808,7 @@ export const register: Register = on => {
                 [{plain(entry.header)}] {plain(entry.question)}
               </Text>
               <Text dimColor>
-                {entry.short} · answered {when(entry.at)}
+                {entry.short} · {plain(entry.origin)} · answered {when(entry.at)}
                 {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
               </Text>
               {entry.answer !== '' && <Text>{plain(entry.answer)}</Text>}
@@ -933,8 +933,9 @@ export const register: Register = on => {
             <Text bold>
               [{plain(row.header)}] {plain(row.question)}
             </Text>
+            {/* When it was raised (#75), then the short id: who asked is the asker heading above. */}
             <Text dimColor>
-              {row.short}
+              {`${when(row.created)} · ${row.short}`}
               {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
               {card.old ? ' · old' : ''}
             </Text>
