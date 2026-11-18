@@ -218,7 +218,7 @@ export type MetaPage = {
  * What the store knows of a session: when it was last seen, who took over,
  * and its title (#75): the `session_title` its own hook inputs carried (the
  * desktop app's title, or a `/rename`), cleaned and cut. Absent for a session
- * with no title, or one recorded by humantray before 0.2.8.
+ * with no title, or one recorded by humantray before 0.2.9.
  */
 export type SessionRecord = { seen: number; successor?: string; title?: string }
 
