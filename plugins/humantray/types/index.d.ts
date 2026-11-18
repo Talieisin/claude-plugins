@@ -444,6 +444,8 @@ declare module 'claude-code' {
       /** A viewer card shown in full, or null. */
       vexpanded: Shaped<HistoryFull | null>
       drafts: StateFamily<Draft>
+      /** What was last pressed on each gallery card, by its draft id (#68); '' for nothing. */
+      gpressed: StateFamily<string>
     }
   }
 }

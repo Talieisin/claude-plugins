@@ -35,9 +35,9 @@
 // `prompt.submit` or `session.receive` (receive.ts) and delivers it as above.
 
 import { atom, read, update } from 'claude-code'
-import type { BoxProps, EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-import type { CodeBlock, Draft, HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
+import type { HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
 import {
   type Action,
   type AddOutcome,
@@ -61,16 +61,13 @@ import {
   prune,
   resolveOwner,
   shortOf,
-  splitDrawn,
-  unlabelled,
-  unlabelledPieces,
   ulid,
   validateAdd,
 } from './items'
+import { cardKit, draftOf, hasSurface, setDraft, toast } from './card'
 import { codeBlocksOf } from './code'
+import { registerGallery } from './gallery'
 import { registerConfig, registerConfigTool } from './config-tool'
-import { DESCRIPTION_INDENT, choiceMark, choiceName, drawsChoiceRows } from './choice'
-import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
@@ -81,16 +78,6 @@ import { rowToItem } from './rows'
 import { isViewing, resumeViewer, sendAgain, tick, viewerAnswer, viewerCommand } from './viewer'
 
 const PANE = 'humantray'
-type FieldName = 'other' | 'text' | 'feedback' | 'notes'
-/**
- * A free-text field's key: the card's key and the field's name, then the
- * card's count of Enters once there has been one (#48).
- */
-function fieldKeyOf(card: string, name: FieldName, entered: number): string {
-  return entered > 0 ? `${card}:${name}:${String(entered)}` : `${card}:${name}`
-}
-/** How many lines tall a free-text field is: room for a list or a short code block. */
-const ROWS = 3
 const TITLE = 'Humantray'
 const ADD = 'mcp__humantray__humantray_add'
 const LIST = 'mcp__humantray__humantray_list'
@@ -104,6 +91,8 @@ const page = atom({ plugin: 'humantray', key: 'page' } as const, 0)
 /** The History entry shown in full: read from the store when "Show in full" is pressed. */
 // full-3: a full entry carries its body's code blocks for copying (#51).
 const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as HistoryFull | null, { shape: 'full-3' })
+// Every card's draft (card.tsx and gallery.tsx declare the same reference):
+// the engine reads a `$.state` reference only from a literal in the calling file.
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 // The viewer's (#32): its tray (built in viewer.ts, which declares the same
 // atom), its Open page, and a card shown in full.
@@ -185,18 +174,6 @@ const fail = (message: string) => ({ deny: message })
 const when = (at: number): string => {
   const date = new Date(at)
   return Number.isFinite(date.getTime()) ? `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'at an unknown time'
-}
-
-async function hasSurface($: EngineInterface): Promise<boolean> {
-  try {
-    return (await $.session.surfaces()).length > 0
-  } catch {
-    return false
-  }
-}
-
-async function toast($: EngineInterface, text: string) {
-  if (await hasSurface($)) await $.ui.toast(text)
 }
 
 async function openPane($: EngineInterface) {
@@ -411,15 +388,6 @@ function armDelivery($: EngineInterface) {
   onDeliveryDue(() => sync($, true).catch(() => undefined))
 }
 
-async function setDraft($: EngineInterface, id: string, change: (draft: Draft) => Partial<Draft>) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const held = await $.state.get({ ...drafts, id })
-    const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
-    const written = await $.state.set({ ...drafts, id }, { ...draft, ...change(draft) }, { ifVersion: held.version })
-    if (written.isSet) return
-  }
-}
-
 type AnswerOutcome = { kind: 'stale' } | { kind: 'invalid'; message: string } | { kind: 'stored' }
 
 /** Stores an answer if the item is still open: a compare-and-set under the lock. */
@@ -468,6 +436,8 @@ async function answer($: EngineInterface, id: string, action: Action) {
 export const register: Register = on => {
   // humantray_config's call (#27), kept apart in config-tool.ts.
   registerConfig(on)
+  // The gallery's command and pane (#68), kept apart in gallery.tsx.
+  registerGallery(on)
   on('session.start', async ($, e, next) => {
     armDelivery($)
     // Each in its own try: one the engine refuses must not skip the rest of the
@@ -501,6 +471,11 @@ export const register: Register = on => {
         name: 'humantray-viewer',
         description: 'Show every repository\'s humantray here and answer it (local sessions); "off" to stop',
       })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({ name: 'humantray-gallery', description: 'Show every humantray card type and state, as fixtures (the release check)' })
     } catch {
       // Refused: the rest of the start still runs.
     }
@@ -688,232 +663,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Input, Link, Markdown, Text } = $.ui.resolve(e)
-    // Drawn Markdown (forDrawing's), one element a piece (#51): each text piece
-    // and each fence drawn here apart, so nothing in one can reach into the
-    // next in any surface's parser. One piece keeps the single element.
-    // Where the surface draws its own copy control on a code block (the
-    // desktop app, VS Code), no copy buttons and no `Code n` labels (#51).
-    // `labelled`: a body forDrawing labelled. Only there is a label dropped:
-    // an answer's parts are drawn with none, so a `*Code n*` line in them is
-    // the person's own and is kept.
-    const native = hasNativeCopy(e.surface)
-    // A card's spacing, in steps each surface sizes its own way. The terminal
-    // and a phone: `sm` all round, which the terminal draws as one cell across
-    // and none down. The desktop app and VS Code (the owner's layout check on
-    // 0.2.0): `sm` across and at the top, a step more under the buttons so
-    // they sit clear of the card's bottom edge, and a gap under each field so
-    // the buttons do not touch it. VS Code's table draws a step down as rows:
-    // `sm` none, `md` one; so there the gap under a field is `md`.
-    const cardSpacing: BoxProps = native ? { paddingX: 'sm', paddingTop: 'sm', paddingBottom: 'md' } : { padding: 'sm' }
-    // Whether a choice's options are checkbox and radio rows (#64).
-    const rows = drawsChoiceRows(e.surface)
-    const fieldSpacing: BoxProps = e.surface === 'desktop' ? { marginBottom: 'sm' } : e.surface === 'vscode' ? { marginBottom: 'md' } : {}
-    const drawn = (key: string, text: string, labelled = false) => {
-      const unlabel = native && labelled
-      const pieces = unlabel ? unlabelledPieces(text) : splitDrawn(text)
-      if (pieces.length <= 1) return <Markdown key={key} text={unlabel ? unlabelled(text) : text} />
-      return (
-        <Box key={key} flexDirection="column" gap={1}>
-          {pieces.map((piece, n) => (
-            <Markdown key={`${key}:${String(n)}`} text={piece} />
-          ))}
-        </Box>
-      )
-    }
-    // A card's code blocks, one copy button each (#51): the stored text, never
-    // the drawn. At most COPY_PAGE at once, so a card full of fences stays
-    // small; a button pages through the rest. `draftId` keeps the page shown.
-    const copyList = async (key: string, draftId: string, short: string, blocks: readonly CodeBlock[]) => {
-      if (native) {
-        // No buttons: the app copies each block itself. A block with control
-        // characters is drawn with U+FFFD in their place (forDrawing), so its
-        // copy is not exact: the card says so (decided for the owner on #51),
-        // in one note that names a few such blocks and counts the rest, so a
-        // card of many stays small.
-        const unsafe = blocks.flatMap((block, k) => (block.unsafe ? [k + 1] : []))
-        if (unsafe.length === 0) return null
-        return (
-          <Text key={`${key}:copy:unsafe`} dimColor>
-            {unsafeNote(unsafe)}
-          </Text>
-        )
-      }
-      const offered = blocks.flatMap((block, k) => (block.text === '' ? [] : [{ block, n: k + 1 }]))
-      if (offered.length === 0) return null
-      const held = await $.state.get({ ...drafts, id: draftId })
-      const at = { ...EMPTY_DRAFT, ...(held.value ?? {}) }.codeAt
-      const pages = Math.ceil(offered.length / COPY_PAGE)
-      const from = (((at % pages) + pages) % pages) * COPY_PAGE
-      const shown = offered.slice(from, from + COPY_PAGE)
-      const rows = shown.map(({ block, n }) =>
-        block.unsafe ? (
-          <Text key={`${key}:copy:${String(n)}`} dimColor>
-            {`Code block ${String(n)} holds control characters: not offered for copy`}
-          </Text>
-        ) : (
-          <Button
-            key={`${key}:copy:${String(n)}`}
-            label={copyLabel(block, n)}
-            onPress={async press => {
-              const outcome = await copyBlock($, press.surface, block)
-              await toast($, copyToast(outcome, block, n, short)).catch(() => undefined)
-            }}
-          />
-        ),
-      )
-      if (pages > 1) {
-        rows.push(
-          <Button
-            key={`${key}:copy:more`}
-            label={`Code blocks ${String(from + 1)}–${String(from + shown.length)} of ${String(offered.length)}: show the next`}
-            onPress={() => setDraft($, draftId, current => ({ codeAt: current.codeAt + 1 }))}
-          />,
-        )
-      }
-      return (
-        <Box key={`${key}:copy`} flexDirection="column">
-          {rows}
-        </Box>
-      )
-    }
-    // One card's controls, by type: the local pane's (keys and drafts by the
-    // item's id) and the viewer's (#32; by `v:` and the id) alike.
-    const controlsFor = (item: Item, key: string, draftId: string, draft: Draft, press: (action: Action) => () => Promise<void>) => {
-      // Free text is several lines tall and kept exactly as typed, Markdown and all.
-      // The engine empties a field on Enter, and the same `value` drawn again
-      // does not refill it (#48), so a field's key carries the card's count of
-      // Enters: after one the field is drawn afresh, holding the draft, and the
-      // focus is put back on it before anything else Enter does.
-      const fieldKey = (name: FieldName) => fieldKeyOf(key, name, draft.entered)
-      const entered = async (name: FieldName, change: (current: Draft) => Partial<Draft>) => {
-        await setDraft($, draftId, current => ({ ...change(current), error: '', entered: current.entered + 1 }))
-        const held = await $.state.get({ ...drafts, id: draftId })
-        const count = { ...EMPTY_DRAFT, ...(held.value ?? {}) }.entered
-        await $.ui.focus({ requestId: PANE, key: fieldKeyOf(key, name, count) }).catch(() => undefined)
-      }
-      // The label above the field, and the field the card's full width (#51,
-      // the owner's layout request): an Input's own label is drawn beside the
-      // field, which the desktop app squeezes into a narrow box.
-      const labelled = (name: FieldName, label: string, input: ReturnType<typeof h>) => (
-        <Box key={`${key}:${name}:field`} flexDirection="column" alignItems="stretch" width="100%" {...fieldSpacing}>
-          <Text dimColor>{label}</Text>
-          {input}
-        </Box>
-      )
-      const field = (name: FieldName, label: string, onEnter?: () => Promise<void>) =>
-        labelled(
-          name,
-          label,
-          <Input
-            key={fieldKey(name)}
-            rows={ROWS}
-            value={draft[name]}
-            onInput={value => setDraft($, draftId, () => ({ [name]: value, error: '' }))}
-            onSubmit={async value => {
-              await entered(name, () => ({ [name]: value }))
-              if (onEnter !== undefined) await onEnter()
-            }}
-          />,
-        )
-
-      const controls = []
-      if (item.type === 'ack') {
-        controls.push(<Button key={`${key}:ack`} label="Acknowledge" variant="primary" onPress={press({ kind: 'ack' })} />)
-      } else if (item.type === 'do') {
-        controls.push(field('feedback', 'Feedback (optional, Markdown)'))
-        controls.push(
-          <Box key={`${key}:outcomes`} flexDirection="row" gap={1}>
-            <Button key={`${key}:done`} label="Done" variant="primary" onPress={press({ kind: 'do', outcome: 'done' })} />
-            <Button key={`${key}:not_done`} label="Not done" onPress={press({ kind: 'do', outcome: 'not_done' })} />
-          </Box>,
-        )
-      } else if (item.type === 'approve') {
-        controls.push(
-          <Box key={`${key}:verdicts`} flexDirection="row" gap={1}>
-            <Button key={`${key}:approve`} label="Approve" variant="primary" onPress={press({ kind: 'approve', choice: 'Approve' })} />
-            <Button key={`${key}:reject`} label="Reject" onPress={press({ kind: 'approve', choice: 'Reject' })} />
-          </Box>,
-        )
-      } else if (item.type === 'question') {
-        controls.push(field('text', 'Answer (Markdown)', press({ kind: 'submit' })))
-      } else {
-        const isMulti = item.multiSelect === true
-        const options: ReturnType<typeof h>[] = []
-        ;(item.options ?? []).forEach((option, index) => {
-          const isOn = draft.selected.includes(option.label)
-          const mark = choiceMark(e.surface, isMulti, isOn)
-          const onPress = () =>
-            setDraft($, draftId, current => ({
-              error: '',
-              ...(isMulti
-                ? {
-                    selected: current.selected.includes(option.label)
-                      ? current.selected.filter(label => label !== option.label)
-                      : [...current.selected, option.label],
-                  }
-                : { selected: [option.label], other: '' }),
-            }))
-          if (!rows) {
-            options.push(
-              <Button key={`${key}:opt:${index}`} plain onPress={onPress}>
-                {mark} {option.label} <Text dimColor>{option.description}</Text>
-              </Button>,
-            )
-            return
-          }
-          // The desktop app, VS Code and a phone (#64): the mark and the label
-          // are the pressable row, named with its state; the description is
-          // dim text under it, set in to line up with the label. Inside a
-          // `plain` Button a dim Text is not drawn dim on the desktop app.
-          const description = option.description.trim() === '' ? null : (
-            <Box key={`${key}:opt:${index}:about`} paddingLeft={DESCRIPTION_INDENT}>
-              <Text dimColor>{option.description}</Text>
-            </Box>
-          )
-          options.push(
-            <Box key={`${key}:opt:${index}:row`} flexDirection="column">
-              <Button key={`${key}:opt:${index}`} label={choiceName(option.label, isOn)} plain onPress={onPress}>
-                {`${mark} ${option.label}`}
-              </Button>
-              {description}
-            </Box>,
-          )
-        })
-        if (rows) {
-          controls.push(
-            <Box key={`${key}:options`} flexDirection="column" {...fieldSpacing}>
-              {options}
-            </Box>,
-          )
-        } else {
-          controls.push(...options)
-        }
-        // Other text clears a single choice's pick.
-        const other = (value: string) => (current: Draft) => ({
-          other: value,
-          selected: !isMulti && value.trim() !== '' ? [] : current.selected,
-        })
-        controls.push(
-          labelled(
-            'other',
-            'Other (Markdown)',
-            <Input
-              key={fieldKey('other')}
-              rows={ROWS}
-              value={draft.other}
-              onInput={value => setDraft($, draftId, current => ({ ...other(value)(current), error: '' }))}
-              onSubmit={value => entered('other', other(value))}
-            />,
-          ),
-        )
-      }
-      if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
-      if (item.type === 'choice' || item.type === 'question') {
-        controls.push(<Button key={`${key}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />)
-      }
-      return controls
-    }
+    const { Box, Button, Link, Text } = $.ui.resolve(e)
+    // The card kit (card.tsx, #68): the open card and its parts, shared with the gallery.
+    const { cardSpacing, drawn, copyList, controlsFor, openCard } = cardKit($, e, PANE)
 
     const shown = await read($, tray)
     const viewing = await read($, viewerTray)
@@ -1176,20 +928,9 @@ export const register: Register = on => {
         )
         for (const item of shown.items) {
           const id = item.id
-          const held = await $.state.get({ ...drafts, id })
-          const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
-          local.push(
-            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
-              <Text bold>
-                [{plain(item.header)}] {plain(item.question)}
-              </Text>
-              <Text dimColor>{item.short}</Text>
-              {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md), true)}
-              {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
-              {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
-              {draft.error !== '' && <Text color="error">{draft.error}</Text>}
-            </Box>,
-          )
+          const draft = await draftOf($, id)
+          const press = (action: Action) => () => answer($, id, action)
+          local.push(await openCard({ item, key: id, draftId: id, draft, press, mine: true, suffixes: false }))
         }
       }
       return (
@@ -1352,29 +1093,9 @@ export const register: Register = on => {
     const cards = []
     for (const item of shown.items) {
       const id = item.id
-      const held = await $.state.get({ ...drafts, id })
-      const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
+      const draft = await draftOf($, id)
       const press = (action: Action) => () => answer($, id, action)
-      const controls = controlsFor(item, id, id, draft, press)
-
-      const from = shown.mine.includes(id) ? '' : ' · another session'
-      const bumped = item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
-      cards.push(
-        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
-          <Text bold>
-            [{plain(item.header)}] {plain(item.question)}
-          </Text>
-          <Text dimColor>
-            {item.short}
-            {from}
-            {bumped}
-          </Text>
-          {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md), true)}
-          {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
-          {controls}
-          {draft.error !== '' && <Text color="error">{draft.error}</Text>}
-        </Box>,
-      )
+      cards.push(await openCard({ item, key: id, draftId: id, draft, press, mine: shown.mine.includes(id), suffixes: true }))
     }
     return (
       <Box flexDirection="column" gap={1}>

@@ -31,6 +31,8 @@ export type World = {
   received: string[]
   /** The plugin's $.store as it holds it now (a copy). */
   kv: (key: string) => unknown
+  /** Every key and value of the plugin's $.store, as held (JSON text), in the order written. */
+  kvAll: () => Array<[string, string]>
   /** Writes the plugin's $.store directly, as another session sharing it would. */
   kvSet: (key: string, value: unknown) => void
   /** Every line the mod logged with $.ui.log. */
@@ -160,6 +162,7 @@ export function world(
       return text === undefined ? undefined : (JSON.parse(text) as unknown)
     },
     storeOverride: () => undefined,
+    kvAll: () => [...kv],
     kvSet: (key, value) => {
       kv.set(key, JSON.stringify(value))
     },

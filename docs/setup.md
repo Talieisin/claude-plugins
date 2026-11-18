@@ -192,6 +192,20 @@ what is open. Finished items move to History, which keeps the last 200 per
 repository. A `claude -p` run draws nothing, so a session there asks as it
 always did.
 
+**The release check: `/humantray-gallery`.** After a humantray release, run
+`/humantray-gallery` once on each surface you use that draws the pane (the
+terminal, the desktop app, VS Code; a phone only where its app draws a pane:
+see "No pane on mobile yet" below). It opens a pane of fixture cards, one of every card
+type and state, drawn by the same code as the real pane: ack, do, approve and
+question; a choice with one answer and with several, each with and without a
+pick; a card with notes, a Markdown body, code blocks and a mermaid block; the
+error line; a card from another session and a bumped one. Each card has a short
+label above it saying what to look for. The cards are fixtures: nothing is
+stored, sent or written to the page, and no session is told anything. Picks
+and typing change the gallery's own cards, so toggling can be tried; Done,
+Submit and the other answer buttons only note under the card that they were
+pressed. `Reset gallery` puts every card back. It needs no repository.
+
 **In a cloud environment.** Add one line to the setup script, after the others
 (it is in [`templates/setup-script.sh`](../templates/setup-script.sh),
 commented out):
