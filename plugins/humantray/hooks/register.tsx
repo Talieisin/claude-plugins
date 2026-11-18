@@ -35,7 +35,7 @@
 // `prompt.submit` or `session.receive` (receive.ts) and delivers it as above.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { BoxProps, EngineInterface, Register } from 'claude-code'
 
 import type { CodeBlock, Draft, HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
 import {
@@ -697,6 +697,15 @@ export const register: Register = on => {
     // an answer's parts are drawn with none, so a `*Code n*` line in them is
     // the person's own and is kept.
     const native = hasNativeCopy(e.surface)
+    // A card's spacing, in steps each surface sizes its own way. The terminal
+    // and a phone: `sm` all round, which the terminal draws as one cell across
+    // and none down. The desktop app and VS Code (the owner's layout check on
+    // 0.2.0): `sm` across and at the top, a step more under the buttons so
+    // they sit clear of the card's bottom edge, and a gap under each field so
+    // the buttons do not touch it. VS Code's table draws a step down as rows:
+    // `sm` none, `md` one; so there the gap under a field is `md`.
+    const cardSpacing: BoxProps = native ? { paddingX: 'sm', paddingTop: 'sm', paddingBottom: 'md' } : { padding: 'sm' }
+    const fieldSpacing: BoxProps = e.surface === 'desktop' ? { marginBottom: 'sm' } : e.surface === 'vscode' ? { marginBottom: 'md' } : {}
     const drawn = (key: string, text: string, labelled = false) => {
       const unlabel = native && labelled
       const pieces = unlabel ? unlabelledPieces(text) : splitDrawn(text)
@@ -784,7 +793,7 @@ export const register: Register = on => {
       // the owner's layout request): an Input's own label is drawn beside the
       // field, which the desktop app squeezes into a narrow box.
       const labelled = (name: FieldName, label: string, input: ReturnType<typeof h>) => (
-        <Box key={`${key}:${name}:field`} flexDirection="column" alignItems="stretch" width="100%">
+        <Box key={`${key}:${name}:field`} flexDirection="column" alignItems="stretch" width="100%" {...fieldSpacing}>
           <Text dimColor>{label}</Text>
           {input}
         </Box>
@@ -920,7 +929,7 @@ export const register: Register = on => {
         return (
           <Box flexDirection="column" gap={1}>
             <Button key="v:back" label="Back" onPress={() => update($, viewerExpanded, () => null)} />
-            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" padding="sm">
+            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" {...cardSpacing}>
               <Text bold>
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
@@ -952,7 +961,7 @@ export const register: Register = on => {
             )
           }
           rows.push(
-            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" padding="sm">
+            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" {...cardSpacing}>
               <Text bold>
                 [{plain(entry.header)}] {plain(entry.question)}
               </Text>
@@ -1098,7 +1107,7 @@ export const register: Register = on => {
           }
         }
         nodes.push(
-          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" padding="sm">
+          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
             <Text bold>
               [{plain(row.header)}] {plain(row.question)}
             </Text>
@@ -1141,7 +1150,7 @@ export const register: Register = on => {
           const held = await $.state.get({ ...drafts, id })
           const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
           local.push(
-            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" padding="sm">
+            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
               <Text bold>
                 [{plain(item.header)}] {plain(item.question)}
               </Text>
@@ -1196,7 +1205,7 @@ export const register: Register = on => {
     // One History entry: read only, with no control (an answered item is never
     // reopened) but "Show in full" when anything was shortened.
     const historyCard = (entry: HistoryEntry) => (
-      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" padding="sm">
+      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" {...cardSpacing}>
         <Text bold>
           [{plain(entry.header)}] {plain(entry.question)}
         </Text>
@@ -1243,7 +1252,7 @@ export const register: Register = on => {
           <Box flexDirection="column" gap={1}>
             {toggle}
             <Button key="humantray:history:back" label="Back to History" onPress={() => update($, expanded, () => null)} />
-            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" padding="sm">
+            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" {...cardSpacing}>
               <Text bold>
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
@@ -1322,7 +1331,7 @@ export const register: Register = on => {
       const from = shown.mine.includes(id) ? '' : ' · another session'
       const bumped = item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
       cards.push(
-        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" padding="sm">
+        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
           <Text bold>
             [{plain(item.header)}] {plain(item.question)}
           </Text>
