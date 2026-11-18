@@ -10,7 +10,7 @@ import type { BoxProps, EngineInterface, RenderInput } from 'claude-code'
 import type { CodeBlock, Draft, Item } from '../types'
 import { type Action, EMPTY_DRAFT, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from './items'
 import { codeBlocksOf } from './code'
-import { DESCRIPTION_INDENT, choiceMark, choiceName, drawsChoiceRows } from './choice'
+import { DESCRIPTION_INDENT, choiceMark, drawsChoiceRows } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 
 export type FieldName = 'other' | 'text' | 'feedback' | 'notes'
@@ -239,9 +239,13 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
           return
         }
         // The desktop app, VS Code and a phone (#64): the mark and the label
-        // are the pressable row, named with its state; the description is
-        // dim text under it, set in to line up with the label. Inside a
-        // `plain` Button a dim Text is not drawn dim on the desktop app.
+        // are the pressable row; the description is dim text under it, set in
+        // to line up with the label. Inside a `plain` Button a dim Text is not
+        // drawn dim on the desktop app. No `label` prop: the desktop app draws
+        // a Button's label in place of its children, so a label naming the
+        // state ("Blue, not selected", 0.2.2) hid the glyph. With none, the
+        // engine names the control by its one string child, mark and label,
+        // and the glyph carries the state.
         const description = option.description.trim() === '' ? null : (
           <Box key={`${key}:opt:${index}:about`} paddingLeft={DESCRIPTION_INDENT}>
             <Text dimColor>{option.description}</Text>
@@ -249,7 +253,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         )
         options.push(
           <Box key={`${key}:opt:${index}:row`} flexDirection="column">
-            <Button key={`${key}:opt:${index}`} label={choiceName(option.label, isOn)} plain onPress={onPress}>
+            <Button key={`${key}:opt:${index}`} plain onPress={onPress}>
               {`${mark} ${option.label}`}
             </Button>
             {description}

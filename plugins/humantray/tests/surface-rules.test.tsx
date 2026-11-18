@@ -46,6 +46,7 @@ describe('each rule fails on the faulty #64 tree', () => {
     expect(RULES.map(rule => [rule.name, rule.from])).toEqual([
       ['no-ignored-style-in-button', '#64'],
       ['no-terminal-marks', '#64'],
+      ['button-label-is-its-text', '#64'],
     ])
   })
 
@@ -96,11 +97,53 @@ describe('each rule fails on the faulty #64 tree', () => {
   }
 })
 
+describe('the label rule: a Button draws its own text (#64, 0.2.3)', () => {
+  /** One option as 0.2.3 drew it on the app surfaces: a label naming the state, which the desktop app drew in place of "○ Blue". */
+  const OPTION_0_2_3 = {
+    type: 'Box',
+    props: { key: 'X:options' },
+    children: [
+      {
+        type: 'Box',
+        props: { key: 'X:opt:0:row', flexDirection: 'column' },
+        children: [{ type: 'Button', props: { key: 'X:opt:0', label: 'Blue, not selected', plain: true }, children: ['○ Blue'] }],
+      },
+    ],
+  }
+
+  for (const surface of APPS) {
+    test(`${surface}: a 0.2.3 option fails it alone, naming the option's key`, () => {
+      const faults = surfaceFaults(OPTION_0_2_3, surface)
+      expect(rulesIn(faults)).toEqual(['button-label-is-its-text'])
+      expect(faults).toEqual([
+        'button-label-is-its-text (#64) at X:opt:0: a label "Blue, not selected" the app draws in place of the children "○ Blue"',
+      ])
+    })
+  }
+
+  test('the terminal is not checked', () => {
+    expect(surfaceFaults(OPTION_0_2_3, 'terminal')).toEqual([])
+  })
+
+  test('a label equal to its text, a label with no children, and children with no label pass', () => {
+    const tree = {
+      type: 'Box',
+      props: { key: 'I:card' },
+      children: [
+        { type: 'Button', props: { key: 'I:a', label: '◉ Blue' }, children: ['◉ Blue'] },
+        { type: 'Button', props: { key: 'I:b', label: 'Submit', variant: 'primary' } },
+        { type: 'Button', props: { key: 'I:c', plain: true }, children: ['○ Green'] },
+      ],
+    }
+    for (const surface of APPS) expect(surfaceFaults(tree, surface)).toEqual([])
+  })
+})
+
 describe('the marks rule: controls, not content', () => {
   const card = (children: unknown[]) => ({ type: 'Box', props: { key: 'I:card' }, children })
 
   test('a mark later in a Button, or in a label after the start, is an option label of its own', () => {
-    const tree = card([{ type: 'Button', props: { key: 'I:opt:0', label: 'Keep [x] as typed, not selected', plain: true }, children: ['☐ Keep [x] as typed'] }])
+    const tree = card([{ type: 'Button', props: { key: 'I:opt:0', label: '☐ Keep [x] as typed', plain: true }, children: ['☐ Keep [x] as typed'] }])
     expect(surfaceFaults(tree, 'desktop')).toEqual([])
   })
 
