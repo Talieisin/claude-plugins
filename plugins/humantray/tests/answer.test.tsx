@@ -108,6 +108,20 @@ describe('notes', () => {
     }
   }
 
+  test('an approve item raised before 0.2.7 (no notes) gains notes when it is raised again', async ($, on) => {
+    const w = world(on)
+    await $.session.start(START_EVENT)
+    const call = { tool: ADD, type: 'approve', header: 'Plan', question: 'Old?' }
+    const id = answerOf<{ id: string }>(await $.tool.call(call)).id
+    // As 0.2.6 stored it.
+    const file = w.store()
+    delete file.items.find(item => item.id === id)?.notes
+    w.files.set(FILE, JSON.stringify(file))
+    expect(w.store().items.find(item => item.id === id)?.notes).toBeUndefined()
+    await $.tool.call(call)
+    expect(w.store().items.find(item => item.id === id)?.notes).toBe(true)
+  })
+
   test('notes: false draws no notes field', async ($, on) => {
     world(on)
     await $.session.start(START_EVENT)
