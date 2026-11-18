@@ -10,7 +10,7 @@ import type { BoxProps, EngineInterface, RenderInput } from 'claude-code'
 import type { CodeBlock, Draft, Item } from '../types'
 import { type Action, EMPTY_DRAFT, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from './items'
 import { codeBlocksOf } from './code'
-import { BAND, CONTROL_SIZE, RULE_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from './choice'
+import { DESCRIPTION_INDENT, choiceMark, drawsChoiceRows } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 
 export type FieldName = 'other' | 'text' | 'feedback' | 'notes'
@@ -65,9 +65,6 @@ export type Press = (action: Action) => () => Promise<void>
  */
 export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string) {
   const { Box, Button, Input, Markdown, Text } = $.ui.resolve(e)
-  // Svg for the dialog look (#72), from a table narrowed past the terminal,
-  // which has none.
-  const Svg = e.surface === 'terminal' ? null : $.ui.resolve(e).Svg
   // Drawn Markdown (forDrawing's), one element a piece (#51): each text piece
   // and each fence drawn here apart, so nothing in one can reach into the
   // next in any surface's parser. One piece keeps the single element.
@@ -85,9 +82,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
   // the buttons do not touch it. VS Code's table draws a step down as rows:
   // `sm` none, `md` one; so there the gap under a field is `md`.
   const cardSpacing: BoxProps = native ? { paddingX: 'sm', paddingTop: 'sm', paddingBottom: 'md' } : { padding: 'sm' }
-  // Whether a choice's options are checkbox and radio rows (#64), and the
-  // card is drawn as the desktop app's own question dialog (#72): a header
-  // band, rows with a control, and the actions bottom right.
+  // Whether a choice's options are checkbox and radio rows (#64).
   const rows = drawsChoiceRows(e.surface)
   const fieldSpacing: BoxProps = e.surface === 'desktop' ? { marginBottom: 'sm' } : e.surface === 'vscode' ? { marginBottom: 'md' } : {}
   const drawn = (key: string, text: string, labelled = false) => {
@@ -198,32 +193,20 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         />,
       )
 
-    // The actions bottom right on the app surfaces (#72), as the desktop
-    // app's dialog has them; the terminal keeps them where they were.
-    const right: BoxProps = rows ? { justifyContent: 'flex-end' } : {}
-    const actions = (button: ReturnType<typeof h>) =>
-      rows ? (
-        <Box key={`${key}:actions`} flexDirection="row" {...right}>
-          {button}
-        </Box>
-      ) : (
-        button
-      )
-
     const controls = []
     if (item.type === 'ack') {
-      controls.push(actions(<Button key={`${key}:ack`} label="Acknowledge" variant="primary" onPress={press({ kind: 'ack' })} />))
+      controls.push(<Button key={`${key}:ack`} label="Acknowledge" variant="primary" onPress={press({ kind: 'ack' })} />)
     } else if (item.type === 'do') {
       controls.push(field('feedback', 'Feedback (optional, Markdown)'))
       controls.push(
-        <Box key={`${key}:outcomes`} flexDirection="row" gap={1} {...right}>
+        <Box key={`${key}:outcomes`} flexDirection="row" gap={1}>
           <Button key={`${key}:done`} label="Done" variant="primary" onPress={press({ kind: 'do', outcome: 'done' })} />
           <Button key={`${key}:not_done`} label="Not done" onPress={press({ kind: 'do', outcome: 'not_done' })} />
         </Box>,
       )
     } else if (item.type === 'approve') {
       controls.push(
-        <Box key={`${key}:verdicts`} flexDirection="row" gap={1} {...right}>
+        <Box key={`${key}:verdicts`} flexDirection="row" gap={1}>
           <Button key={`${key}:approve`} label="Approve" variant="primary" onPress={press({ kind: 'approve', choice: 'Approve' })} />
           <Button key={`${key}:reject`} label="Reject" onPress={press({ kind: 'approve', choice: 'Reject' })} />
         </Box>,
@@ -232,119 +215,82 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
       controls.push(field('text', 'Answer (Markdown)', press({ kind: 'submit' })))
     } else {
       const isMulti = item.multiSelect === true
-      // Other text clears a single choice's pick.
-      const other = (value: string) => (current: Draft) => ({
-        other: value,
-        selected: !isMulti && value.trim() !== '' ? [] : current.selected,
-      })
-      const otherInput = (
-        <Input
-          key={fieldKey('other')}
-          rows={ROWS}
-          value={draft.other}
-          onInput={value => setDraft($, draftId, current => ({ ...other(value)(current), error: '' }))}
-          onSubmit={value => entered('other', other(value))}
-        />
-      )
-      const pick = (label: string) => () =>
-        setDraft($, draftId, current => ({
-          error: '',
-          ...(isMulti
-            ? {
-                selected: current.selected.includes(label) ? current.selected.filter(each => each !== label) : [...current.selected, label],
-              }
-            : { selected: [label], other: '', otherOpen: false }),
-        }))
-      if (!rows || Svg === null) {
-        ;(item.options ?? []).forEach((option, index) => {
-          const mark = choiceMark(isMulti, draft.selected.includes(option.label))
-          controls.push(
-            <Button key={`${key}:opt:${index}`} plain onPress={pick(option.label)}>
+      const options: ReturnType<typeof h>[] = []
+      ;(item.options ?? []).forEach((option, index) => {
+        const isOn = draft.selected.includes(option.label)
+        const mark = choiceMark(e.surface, isMulti, isOn)
+        const onPress = () =>
+          setDraft($, draftId, current => ({
+            error: '',
+            ...(isMulti
+              ? {
+                  selected: current.selected.includes(option.label)
+                    ? current.selected.filter(label => label !== option.label)
+                    : [...current.selected, option.label],
+                }
+              : { selected: [option.label], other: '' }),
+          }))
+        if (!rows) {
+          options.push(
+            <Button key={`${key}:opt:${index}`} plain onPress={onPress}>
               {mark} {option.label} <Text dimColor>{option.description}</Text>
             </Button>,
           )
-        })
-        controls.push(labelled('other', 'Other (Markdown)', otherInput))
-      } else {
-        // The desktop app, VS Code and a phone (#72): each option a full-width
-        // row that lights under the pointer, a drawn radio or checkbox on the
-        // left, the label beside it and the description dim under the label,
-        // a thin rule between rows. The label Button is the press: a Button
-        // holds only strings and Text, so the Svg beside it cannot be pressed;
-        // the label's column grows to the row's width, so the press covers
-        // the row right of the control where the app stretches the button.
-        // No `label` prop on it: the desktop app draws a label in place of the
-        // children (#64, 0.2.3).
-        const row = (rowKey: string, on: boolean, button: ReturnType<typeof h>, under: ReturnType<typeof h> | null) => (
-          <Box key={`${rowKey}:row`} flexDirection="row" gap={1} paddingY="xs" hover={{ backgroundColor: BAND }}>
-            <Svg source={controlSvg(isMulti, on)} alt={controlAlt(isMulti, on)} width={CONTROL_SIZE} height={CONTROL_SIZE} />
-            <Box key={`${rowKey}:text`} flexDirection="column" flexGrow={1} alignItems="stretch">
-              {button}
-              {under}
-            </Box>
+          return
+        }
+        // The desktop app, VS Code and a phone (#64): the mark and the label
+        // are the pressable row; the description is dim text under it, set in
+        // to line up with the label. Inside a `plain` Button a dim Text is not
+        // drawn dim on the desktop app. No `label` prop: the desktop app draws
+        // a Button's label in place of its children, so a label naming the
+        // state ("Blue, not selected", 0.2.2) hid the glyph. With none, the
+        // engine names the control by its one string child, mark and label,
+        // and the glyph carries the state.
+        const description = option.description.trim() === '' ? null : (
+          <Box key={`${key}:opt:${index}:about`} paddingLeft={DESCRIPTION_INDENT}>
+            <Text dimColor>{option.description}</Text>
           </Box>
         )
-        const rule = <Svg source={RULE_SVG} alt="" height={1} />
-        const options: ReturnType<typeof h>[] = []
-        ;(item.options ?? []).forEach((option, index) => {
-          const description =
-            option.description.trim() === '' ? null : (
-              <Box key={`${key}:opt:${index}:about`}>
-                <Text dimColor>{option.description}</Text>
-              </Box>
-            )
-          options.push(
-            row(
-              `${key}:opt:${index}`,
-              draft.selected.includes(option.label),
-              <Button key={`${key}:opt:${index}`} plain onPress={pick(option.label)}>
-                {option.label}
-              </Button>,
-              description,
-            ),
-          )
-          options.push(rule)
-        })
-        // Other is the last row, with the same control. It is on while it is
-        // open or holds text; pressing it on opens its field in the row (and
-        // clears a single choice's pick), pressing it off closes the field and
-        // clears the text, so an unticked Other delivers nothing.
-        const otherOn = otherIsOn(draft)
         options.push(
-          row(
-            `${key}:opt:other`,
-            otherOn,
-            <Button
-              key={`${key}:opt:other`}
-              plain
-              onPress={async () => {
-                await setDraft($, draftId, current =>
-                  otherIsOn(current)
-                    ? { otherOpen: false, other: '', error: '' }
-                    : { otherOpen: true, error: '', ...(isMulti ? {} : { selected: [] }) },
-                )
-                if (!otherOn) await $.ui.focus({ requestId: pane, key: fieldKey('other') }).catch(() => undefined)
-              }}
-            >
-              Other
-            </Button>,
-            otherOn ? (
-              <Box key={`${key}:other:field`} flexDirection="column" alignItems="stretch" width="100%">
-                {otherInput}
-              </Box>
-            ) : null,
-          ),
+          <Box key={`${key}:opt:${index}:row`} flexDirection="column">
+            <Button key={`${key}:opt:${index}`} plain onPress={onPress}>
+              {`${mark} ${option.label}`}
+            </Button>
+            {description}
+          </Box>,
         )
+      })
+      if (rows) {
         controls.push(
           <Box key={`${key}:options`} flexDirection="column" {...fieldSpacing}>
             {options}
           </Box>,
         )
+      } else {
+        controls.push(...options)
       }
+      // Other text clears a single choice's pick.
+      const other = (value: string) => (current: Draft) => ({
+        other: value,
+        selected: !isMulti && value.trim() !== '' ? [] : current.selected,
+      })
+      controls.push(
+        labelled(
+          'other',
+          'Other (Markdown)',
+          <Input
+            key={fieldKey('other')}
+            rows={ROWS}
+            value={draft.other}
+            onInput={value => setDraft($, draftId, current => ({ ...other(value)(current), error: '' }))}
+            onSubmit={value => entered('other', other(value))}
+          />,
+        ),
+      )
     }
     if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
     if (item.type === 'choice' || item.type === 'question') {
-      controls.push(actions(<Button key={`${key}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />))
+      controls.push(<Button key={`${key}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />)
     }
     return controls
   }
@@ -359,45 +305,20 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
     const { item, key, draftId, draft, press } = card
     const from = card.suffixes && !card.mine ? ' · another session' : ''
     const bumped = card.suffixes && item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
-    const heading = (
-      <Text bold>
-        [{plain(item.header)}] {plain(item.question)}
-      </Text>
-    )
-    const short = (
-      <Text dimColor>
-        {item.short}
-        {from}
-        {bumped}
-      </Text>
-    )
-    const rest = [
-      item.body_md !== '' && drawn(`${key}:body`, forDrawing(item.body_md), true),
-      await copyList(key, draftId, item.short, codeBlocksOf(item.body_md)),
-      ...controlsFor(item, key, draftId, draft, press),
-      draft.error !== '' && <Text color="error">{draft.error}</Text>,
-    ]
-    if (!rows) {
-      return (
-        <Box key={`${key}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
-          {heading}
-          {short}
-          {rest}
-        </Box>
-      )
-    }
-    // The app surfaces (#72): the heading in a shaded band across the top,
-    // as the desktop app's own dialog has it; the rest under it with the
-    // card's spacing.
     return (
-      <Box key={`${key}:card`} flexDirection="column" borderStyle="round">
-        <Box key={`${key}:head`} flexDirection="column" backgroundColor={BAND} paddingX="sm" paddingY="sm">
-          {heading}
-          {short}
-        </Box>
-        <Box key={`${key}:main`} flexDirection="column" {...cardSpacing}>
-          {rest}
-        </Box>
+      <Box key={`${key}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
+        <Text bold>
+          [{plain(item.header)}] {plain(item.question)}
+        </Text>
+        <Text dimColor>
+          {item.short}
+          {from}
+          {bumped}
+        </Text>
+        {item.body_md !== '' && drawn(`${key}:body`, forDrawing(item.body_md), true)}
+        {await copyList(key, draftId, item.short, codeBlocksOf(item.body_md))}
+        {controlsFor(item, key, draftId, draft, press)}
+        {draft.error !== '' && <Text color="error">{draft.error}</Text>}
       </Box>
     )
   }

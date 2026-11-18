@@ -443,20 +443,6 @@ export const LIST = 'mcp__humantray__humantray_list'
 /** A step on one card: a press, Enter in a field, or an edit left in a field. */
 export type Step = { press: string } | { type: string; text: string } | { change: string; text: string }
 
-/**
- * Opens a choice card's Other field where it is closed (#72): on the app
- * surfaces Other is a row whose press opens the field; the terminal always
- * draws the field. `key` is the card's key: the item's id, or `v:` and it.
- */
-export async function openOther(
-  ui: { find: (q: { key: string }) => Promise<unknown>; press: (q: { key: string }) => Promise<unknown> },
-  key: string,
-): Promise<void> {
-  if ((await ui.find({ key: `${key}:other:field` })) !== undefined) return
-  if ((await ui.find({ key: `${key}:opt:other` })) === undefined) return
-  await ui.press({ key: `${key}:opt:other` })
-}
-
 /** Adds one item, mounts the pane, and runs the steps on its card (keys without the id). */
 export async function answerOne(
   $: Engine,
@@ -470,12 +456,8 @@ export async function answerOne(
   const ui = await mount($, { ...PANE, surface })
   for (const step of steps) {
     if ('press' in step) await ui.press({ key: `${id}:${step.press}` })
-    else {
-      const name = 'change' in step ? step.change : step.type
-      if (name === 'other') await openOther(ui, id)
-      if ('change' in step) await ui.input({ key: `${id}:${step.change}`, text: step.text, kind: 'change' })
-      else await ui.input({ key: `${id}:${step.type}`, text: step.text })
-    }
+    else if ('change' in step) await ui.input({ key: `${id}:${step.change}`, text: step.text, kind: 'change' })
+    else await ui.input({ key: `${id}:${step.type}`, text: step.text })
   }
   await ui.unmount()
   const item = w.store().items.find(one => one.id === id)

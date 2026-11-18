@@ -49,6 +49,7 @@ describe('each rule fails on the faulty #64 tree', () => {
       ['button-label-is-its-text', '#64'],
       ['svg-has-height', '#72'],
       ['control-beside-its-button', '#72'],
+      ['no-text-colour-as-fill', '#72'],
     ])
   })
 
@@ -170,6 +171,31 @@ describe('the Svg rules (#72)', () => {
   test('a decorative Svg (no state in its alt) needs no Button; the terminal is not checked', () => {
     expect(surfaceFaults(card([svg({ height: 1 })]), 'desktop')).toEqual([])
     expect(surfaceFaults(card([svg({})]), 'terminal')).toEqual([])
+  })
+})
+
+describe('the fill rule (#72, 0.2.5)', () => {
+  /** The 0.2.5 header band, as it was drawn: filled with `subtle`. */
+  const BAND_0_2_5 = {
+    type: 'Box',
+    props: { key: 'X:card', borderStyle: 'round' },
+    children: [{ type: 'Box', props: { key: 'X:head', backgroundColor: 'subtle' }, children: [{ type: 'Text', props: { bold: true }, children: ['[Q] Which?'] }] }],
+  }
+
+  for (const surface of APPS) {
+    test(`${surface}: the 0.2.5 header band fails it alone, naming the band's key`, () => {
+      const faults = surfaceFaults(BAND_0_2_5, surface)
+      expect(rulesIn(faults)).toEqual(['no-text-colour-as-fill'])
+      expect(faults[0]).toContain('at X:head:')
+    })
+  }
+
+  test('a hover fill with a text colour fails; a raw colour, or no fill, passes; the terminal is not checked', () => {
+    const row = (props: Record<string, unknown>) => ({ type: 'Box', props: { key: 'X:row', ...props }, children: [] })
+    expect(rulesIn(surfaceFaults(row({ hover: { backgroundColor: 'inactive' } }), 'desktop'))).toEqual(['no-text-colour-as-fill'])
+    expect(surfaceFaults(row({ backgroundColor: '#f5f5f5' }), 'desktop')).toEqual([])
+    expect(surfaceFaults(row({}), 'vscode')).toEqual([])
+    expect(surfaceFaults(BAND_0_2_5, 'terminal')).toEqual([])
   })
 })
 
