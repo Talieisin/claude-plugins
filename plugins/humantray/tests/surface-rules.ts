@@ -28,7 +28,7 @@ export const textOf = (node: DrawnNode): string =>
   (node.children ?? []).map(child => (typeof child === 'string' ? child : isNode(child) ? textOf(child) : '')).join('')
 
 /** A node as a rule meets it: with its nearest key and its ancestors' types and keys. */
-type Visit = { node: DrawnNode; key: string; ancestors: readonly DrawnNode[] }
+type Visit = { node: DrawnNode; key: string; ancestors: readonly DrawnNode[]; surface: string }
 
 /** One rule: a name, the fault it came from, and the faults it finds at one node. */
 export type SurfaceRule = { name: string; from: string; check: (visit: Visit) => string[] }
@@ -159,6 +159,22 @@ export const RULES: readonly SurfaceRule[] = [
     },
   },
   {
+    // #75, on 0.2.7: on the desktop app each option's description started
+    // about 3 CSS pixels right of its label (the owner's check). A cell is
+    // too coarse to move the description, so the label is moved: a thin
+    // space (U+2009) after the mark's space. On the desktop app an option's
+    // Button under a choice's options carries it.
+    name: 'label-meets-its-description',
+    from: '#75',
+    check: visit => {
+      const { node, surface } = visit
+      if (surface !== 'desktop' || node.type !== 'Button' || !inside(visit, a => (keyOf(a) ?? '').endsWith(':options'))) return []
+      const label = node.props?.label
+      const text = textOf(node) || (typeof label === 'string' ? label : '')
+      return CHOICE_MARKS.some(mark => text.startsWith(`${mark} \u2009`)) ? [] : [`an option's label without the thin space that lines it up with its description: ${JSON.stringify(text)}`]
+    },
+  },
+  {
     // #72, on 0.2.5: the header band and the row hover were filled with
     // `subtle`, a theme key meant for text, and the desktop app painted them
     // dark grey. No Box on an app surface is filled with a text colour.
@@ -210,7 +226,7 @@ export function surfaceFaults(tree: unknown, surface: string, rules: readonly Su
     const nearest = keyOf(value) ?? [...ancestors].reverse().find(keyed)?.props?.key
     const key = typeof nearest === 'string' ? nearest : '(no key)'
     for (const rule of rules) {
-      for (const detail of rule.check({ node: value, key, ancestors })) faults.push(`${rule.name} (${rule.from}) at ${key}: ${detail}`)
+      for (const detail of rule.check({ node: value, key, ancestors, surface })) faults.push(`${rule.name} (${rule.from}) at ${key}: ${detail}`)
     }
     for (const child of value.children ?? []) walk(child, [...ancestors, value])
   }

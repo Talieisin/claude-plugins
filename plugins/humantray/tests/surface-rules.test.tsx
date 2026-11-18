@@ -49,6 +49,7 @@ describe('each rule fails on the faulty #64 tree', () => {
       ['button-label-is-its-text', '#64'],
       ['svg-has-height', '#72'],
       ['mark-in-its-button', '#75'],
+      ['label-meets-its-description', '#75'],
       ['no-text-colour-as-fill', '#72'],
       ['button-alone-in-a-stretched-box', '#72'],
     ])
@@ -110,7 +111,7 @@ describe('the label rule: a Button draws its own text (#64, 0.2.3)', () => {
       {
         type: 'Box',
         props: { key: 'X:opt:0:row', flexDirection: 'column' },
-        children: [{ type: 'Button', props: { key: 'X:opt:0', label: 'Blue, not selected', plain: true }, children: ['○ Blue'] }],
+        children: [{ type: 'Button', props: { key: 'X:opt:0', label: 'Blue, not selected', plain: true }, children: ['○ \u2009Blue'] }],
       },
     ],
   }
@@ -120,7 +121,7 @@ describe('the label rule: a Button draws its own text (#64, 0.2.3)', () => {
       const faults = surfaceFaults(OPTION_0_2_3, surface)
       expect(rulesIn(faults)).toEqual(['button-label-is-its-text'])
       expect(faults).toEqual([
-        'button-label-is-its-text (#64) at X:opt:0: a label "Blue, not selected" the app draws in place of the children "○ Blue"',
+        'button-label-is-its-text (#64) at X:opt:0: a label "Blue, not selected" the app draws in place of the children "○ \u2009Blue"',
       ])
     })
   }
@@ -154,6 +155,9 @@ describe('the Svg rules (#72)', () => {
       expect(faults[0]).toContain('at I:card:')
     })
 
+    // This rule alone: on the desktop app a Button without the thin space also fails label-meets-its-description.
+    const markRule = RULES.filter(rule => rule.name === 'mark-in-its-button')
+
     test(`${surface}: a drawn control fails mark-in-its-button, alone or beside its Button (#75: an Svg cannot be pressed)`, () => {
       const control = svg({ alt: 'Radio button, not selected', height: 16 })
       const alone = card([{ type: 'Box', props: { key: 'I:opt:0:row' }, children: [control] }])
@@ -168,7 +172,7 @@ describe('the Svg rules (#72)', () => {
           ],
         },
       ])
-      const faults = surfaceFaults(beside, surface)
+      const faults = surfaceFaults(beside, surface, markRule)
       expect(rulesIn(faults)).toEqual(['mark-in-its-button'])
       expect(faults).toHaveLength(2)
     })
@@ -176,17 +180,28 @@ describe('the Svg rules (#72)', () => {
     test(`${surface}: an option's Button passes with its glyph first, and fails without it or with the mark beside it`, () => {
       const options = (line: unknown[]) => card([{ type: 'Box', props: { key: 'I:options' }, children: [{ type: 'Box', props: { key: 'I:opt:0:line' }, children: line }] }])
       for (const mark of ['☐', '☑', '○', '◉']) {
-        expect(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: [`${mark} Blue`] }]), surface)).toEqual([])
+        expect(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: [`${mark} Blue`] }]), surface, markRule)).toEqual([])
       }
-      expect(rulesIn(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] }]), surface))).toEqual(['mark-in-its-button'])
+      expect(rulesIn(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] }]), surface, markRule))).toEqual(['mark-in-its-button'])
       // A mark as Text beside the Button is not part of the press.
       const textBeside = options([
         { type: 'Text', props: {}, children: ['☐'] },
         { type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] },
       ])
-      expect(rulesIn(surfaceFaults(textBeside, surface))).toEqual(['mark-in-its-button'])
+      expect(rulesIn(surfaceFaults(textBeside, surface, markRule))).toEqual(['mark-in-its-button'])
     })
   }
+
+  test('label-meets-its-description (#75, 0.2.7): on the desktop app an option label carries the thin space after its mark; elsewhere none is asked for', () => {
+    const options = (text: string) =>
+      card([{ type: 'Box', props: { key: 'I:options' }, children: [{ type: 'Box', props: { key: 'I:opt:0:line' }, children: [{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: [text] }] }] }])
+    expect(surfaceFaults(options('○ \u2009Blue'), 'desktop')).toEqual([])
+    // 0.2.7's label, 3 CSS pixels left of its description.
+    expect(rulesIn(surfaceFaults(options('○ Blue'), 'desktop'))).toEqual(['label-meets-its-description'])
+    for (const surface of ['vscode', 'mobile']) expect(surfaceFaults(options('○ Blue'), surface)).toEqual([])
+    // A Button outside a choice's options is not an option.
+    expect(surfaceFaults(card([{ type: 'Button', props: { key: 'I:ack', label: 'Acknowledge' } }]), 'desktop')).toEqual([])
+  })
 
   test('a decorative Svg (no state in its alt) needs no Button; the terminal is not checked', () => {
     expect(surfaceFaults(card([svg({ height: 1 })]), 'desktop')).toEqual([])
@@ -280,7 +295,7 @@ describe('the marks rule: controls, not content', () => {
   const card = (children: unknown[]) => ({ type: 'Box', props: { key: 'I:card' }, children })
 
   test('a mark later in a Button, or in a label after the start, is an option label of its own', () => {
-    const tree = card([{ type: 'Button', props: { key: 'I:opt:0', label: '☐ Keep [x] as typed', plain: true }, children: ['☐ Keep [x] as typed'] }])
+    const tree = card([{ type: 'Button', props: { key: 'I:opt:0', label: '☐ \u2009Keep [x] as typed', plain: true }, children: ['☐ \u2009Keep [x] as typed'] }])
     expect(surfaceFaults(tree, 'desktop')).toEqual([])
   })
 

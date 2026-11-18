@@ -7,6 +7,7 @@ import type { RenderSurface } from 'claude-code'
 
 import type { Item, StoreFile } from '../types'
 import { GALLERY, GALLERY_FIXTURES, GALLERY_RAISED, type GalleryFixture, galleryDraftId, galleryOrigin } from '../hooks/gallery'
+import { THIN_SPACE } from '../hooks/choice'
 import { dumpTree } from './card-dump'
 import { mount } from './surface-rules'
 import { SURFACES } from './card-fixtures'
@@ -246,14 +247,14 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
     const { ui } = await openGallery($, 'desktop')
     // What an option shows (#75): its mark glyph and its label, in its Button.
     const label = async (key: string) => ((await ui.find({ key })) as FoundLike | undefined)?.text ?? ''
-    expect(await label('g:choice-multi:opt:1')).toBe('☐ Green')
+    expect(await label('g:choice-multi:opt:1')).toBe(`☐ ${THIN_SPACE}Green`)
     await ui.press({ key: 'g:choice-multi:opt:1' })
-    expect(await label('g:choice-multi:opt:1')).toBe('☑ Green')
+    expect(await label('g:choice-multi:opt:1')).toBe(`☑ ${THIN_SPACE}Green`)
     // A single choice starts with its pick, and a press moves it.
-    expect(await label('g:choice-single-picked:opt:1')).toBe('◉ Green')
+    expect(await label('g:choice-single-picked:opt:1')).toBe(`◉ ${THIN_SPACE}Green`)
     await ui.press({ key: 'g:choice-single-picked:opt:0' })
-    expect(await label('g:choice-single-picked:opt:1')).toBe('○ Green')
-    expect(await label('g:choice-single-picked:opt:0')).toBe('◉ Blue')
+    expect(await label('g:choice-single-picked:opt:1')).toBe(`○ ${THIN_SPACE}Green`)
+    expect(await label('g:choice-single-picked:opt:0')).toBe(`◉ ${THIN_SPACE}Blue`)
 
     const note = async (name: string) => ((await ui.find({ key: `g:${name}:pressed` })) as FoundLike | undefined)?.text
     expect(await note('do')).toBeUndefined()
@@ -272,8 +273,8 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
 
     await ui.press({ key: 'g:reset' })
     expect(await note('do')).toBeUndefined()
-    expect(await label('g:choice-multi:opt:1')).toBe('☐ Green')
-    expect(await label('g:choice-single-picked:opt:1')).toBe('◉ Green')
+    expect(await label('g:choice-multi:opt:1')).toBe(`☐ ${THIN_SPACE}Green`)
+    expect(await label('g:choice-single-picked:opt:1')).toBe(`◉ ${THIN_SPACE}Green`)
     expect((await ui.find({ key: 'g:error:card' }))?.text).toContain('Type an answer.')
     expect(w.submits).toEqual([])
   })

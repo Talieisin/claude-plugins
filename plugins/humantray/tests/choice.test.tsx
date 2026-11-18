@@ -8,7 +8,7 @@
 
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 
-import { CHOICE_GLYPHS, choiceGlyph, choiceMark, descriptionIndent, drawsChoiceRows, otherIsOn } from '../hooks/choice'
+import { CHOICE_GLYPHS, THIN_SPACE, choiceGlyph, choiceMark, choiceText, descriptionIndent, drawsChoiceRows, otherIsOn } from '../hooks/choice'
 import { EMPTY_DRAFT } from '../hooks/items'
 import { ADD, PANE, START_EVENT, answerOf, world } from './world'
 import { CHOICE_MARKS, mount } from './surface-rules'
@@ -60,6 +60,12 @@ describe('the pure rules', () => {
     expect(CHOICE_GLYPHS).toEqual(CHOICE_MARKS)
   })
 
+  test('the option text: mark, space, label; on the desktop app a thin space more, to meet the description (#75, 0.2.7 check)', () => {
+    expect(choiceText('desktop', true, true, 'Blue')).toBe(`☑ ${THIN_SPACE}Blue`)
+    expect(THIN_SPACE).toBe('\u2009')
+    for (const surface of ['vscode', 'mobile']) expect(choiceText(surface, false, false, 'Blue')).toBe('○ Blue')
+  })
+
   test('the indent under a label: the glyph and its space, and the desktop button\'s inset', () => {
     expect(descriptionIndent('desktop')).toBe(3)
     expect(descriptionIndent('vscode')).toBe(2)
@@ -101,7 +107,7 @@ describe('the app surfaces draw each option as one pressable row (#72, #75)', ()
           const button = (await ui.find({ key: `${id}:opt:${String(index)}` })) as Node | undefined
           expect(button?.props.plain).toBe(true)
           // The glyph and the label, one string (drawn as the Button's label): a click on the box is a click on the Button (#75).
-          expect(said(button)).toBe(`${choiceGlyph(multi, false)} ${option.label}`)
+          expect(said(button)).toBe(choiceText(surface, multi, false, option.label))
           expect(elements(button)).toEqual([])
           const under = (await ui.find({ key: `${id}:opt:${String(index)}:under` })) as Node | undefined
           const about = (await ui.find({ key: `${id}:opt:${String(index)}:about` })) as Node | undefined
@@ -122,7 +128,7 @@ describe('the app surfaces draw each option as one pressable row (#72, #75)', ()
         }
         // Other: the same row, closed, with no field.
         expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Button'])
-        expect(said((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)).toBe(`${choiceGlyph(multi, false)} Other`)
+        expect(said((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)).toBe(choiceText(surface, multi, false, 'Other'))
         expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
         // No drawn control anywhere on the card.
         expect(JSON.stringify(await ui.find({ key: `${id}:card` }))).not.toContain('"Svg"')
@@ -180,7 +186,7 @@ describe('Other on the app surfaces is a row that opens its field under it (#72,
         const ui = await mount($, { ...PANE, surface })
         await ui.press({ key: `${id}:opt:other` })
         const other = async () => said((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)
-        expect(await other()).toBe(`${choiceGlyph(multi, true)} Other`)
+        expect(await other()).toBe(choiceText(surface, multi, true, 'Other'))
         // The field is under the line, not beside the Button, and set in like a description: not the card's full width.
         expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Button'])
         const under = (await ui.find({ key: `${id}:opt:other:under` })) as Node | undefined
@@ -190,7 +196,7 @@ describe('Other on the app surfaces is a row that opens its field under it (#72,
         await ui.input({ key: `${id}:other`, text: 'Teal', kind: 'change' })
         await ui.press({ key: `${id}:opt:other` })
         expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
-        expect(await other()).toBe(`${choiceGlyph(multi, false)} Other`)
+        expect(await other()).toBe(choiceText(surface, multi, false, 'Other'))
         // Opened again, the field is empty.
         await ui.press({ key: `${id}:opt:other` })
         expect((await ui.find({ key: `${id}:other` }))?.props.value).toBe('')
@@ -237,7 +243,7 @@ describe('Other on the app surfaces is a row that opens its field under it (#72,
     await ui.press({ key: `${id}:opt:1` })
     // Opening Other clears a single choice's pick.
     await ui.press({ key: `${id}:opt:other` })
-    expect(said((await ui.find({ key: `${id}:opt:1` })) as Node | undefined)).toBe(`${choiceGlyph(false, false)} Shell syntax`)
+    expect(said((await ui.find({ key: `${id}:opt:1` })) as Node | undefined)).toBe(choiceText('desktop', false, false, 'Shell syntax'))
     await ui.press({ key: `${id}:submit` })
     expect((await ui.find({ key: `${id}:card` }))?.text).toContain('Pick an option or fill in Other.')
     // Picking an option closes Other and clears its text.
