@@ -307,7 +307,11 @@ describe('the card keeps its inner padding on every surface', () => {
       await $.session.start(START_EVENT)
       const { id } = await addDo($, BODY)
       const ui = await mount($, { ...PANE, surface })
-      expect(spacing((await ui.find({ key: `${id}:card` }))?.props)).toEqual(card[surface])
+      // On an app surface the open card's spacing is on its body, under the
+      // header band (#72); the card itself has none. The terminal: on the card.
+      const body = surface === 'terminal' ? `${id}:card` : `${id}:main`
+      expect(spacing((await ui.find({ key: body }))?.props)).toEqual(card[surface])
+      if (surface !== 'terminal') expect(spacing((await ui.find({ key: `${id}:card` }))?.props)).toEqual({})
       expect((await ui.find({ key: `${id}:card` }))?.props.borderStyle).toBe('round')
       // The gap is under the field, so the Done row does not touch it.
       expect(spacing((await ui.find({ key: `${id}:feedback:field` }))?.props)).toEqual(field[surface])

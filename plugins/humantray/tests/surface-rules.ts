@@ -117,6 +117,35 @@ export const RULES: readonly SurfaceRule[] = [
       return label === text ? [] : [`a label ${JSON.stringify(label)} the app draws in place of the children ${JSON.stringify(text)}`]
     },
   },
+  {
+    // #72: the hairline between option rows was first written as an Svg with
+    // no `height`, which a surface draws at "the markup's own height at the
+    // drawn width": scaled to the slot, a fraction of a pixel. Every Svg here
+    // says how tall it is.
+    name: 'svg-has-height',
+    from: '#72',
+    check: ({ node }) => {
+      if (node.type !== 'Svg') return []
+      const height = node.props?.height
+      return typeof height === 'number' && height > 0 ? [] : ['an Svg with no height, drawn at its markup\'s height scaled to the slot']
+    },
+  },
+  {
+    // #72: an option's drawn control (an Svg whose alt names its state)
+    // cannot be pressed: a Button holds only strings and Text. So it must
+    // sit beside the Button that is its press, in the same row, never alone.
+    name: 'control-beside-its-button',
+    from: '#72',
+    check: ({ node, ancestors }) => {
+      if (node.type !== 'Svg') return []
+      const alt = node.props?.alt
+      if (typeof alt !== 'string' || !/selected$/.test(alt)) return []
+      const row = ancestors.at(-1)
+      const hasButton = (value: unknown): boolean => isNode(value) && (value.type === 'Button' || (value.children ?? []).some(hasButton))
+      const beside = (row?.children ?? []).some(child => child !== node && hasButton(child))
+      return beside ? [] : [`a control (${JSON.stringify(alt)}) with no Button beside it to press`]
+    },
+  },
 ]
 
 /**

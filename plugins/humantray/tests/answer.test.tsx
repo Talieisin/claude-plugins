@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { Item, ItemResponse } from '../types'
-import { ADD, answerOf, FILE, PANE, START_EVENT, type Step, answerOne, stored, world } from './world'
+import { ADD, answerOf, FILE, PANE, START_EVENT, type Step, answerOne, openOther, stored, world } from './world'
 import { mount } from './surface-rules'
 
 const SURFACES = ['terminal', 'desktop'] as const
@@ -290,6 +290,7 @@ describe('Enter in a free-text field keeps the text shown', () => {
         await $.session.start(START_EVENT)
         const id = answerOf<{ id: string }>(await $.tool.call({ ...call, tool: ADD })).id
         const ui = await mount($, { ...PANE, surface })
+        if (field === 'other') await openOther(ui, id)
         await ui.input({ key: `${id}:${field}`, text: TYPED.slice(0, 5), kind: 'change' })
         await ui.input({ key: `${id}:${field}`, text: TYPED })
         expect(await ui.find({ key: `${id}:${field}` })).toBeUndefined()
