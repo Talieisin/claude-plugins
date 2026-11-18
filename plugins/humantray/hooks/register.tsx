@@ -69,7 +69,7 @@ import {
 } from './items'
 import { codeBlocksOf } from './code'
 import { registerConfig, registerConfigTool } from './config-tool'
-import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy } from './copy'
+import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
@@ -716,20 +716,15 @@ export const register: Register = on => {
       if (native) {
         // No buttons: the app copies each block itself. A block with control
         // characters is drawn with U+FFFD in their place (forDrawing), so its
-        // copy is not exact: the card says so (decided for the owner on #51).
-        const notes = blocks.flatMap((block, k) =>
-          block.unsafe
-            ? [
-                <Text key={`${key}:copy:${String(k + 1)}`} dimColor>
-                  {`Code block ${String(k + 1)} holds control characters: the app's copy of it has \ufffd where they were`}
-                </Text>,
-              ]
-            : [],
-        )
-        return notes.length === 0 ? null : (
-          <Box key={`${key}:copy`} flexDirection="column">
-            {notes}
-          </Box>
+        // copy is not exact: the card says so (decided for the owner on #51),
+        // in one note that names a few such blocks and counts the rest, so a
+        // card of many stays small.
+        const unsafe = blocks.flatMap((block, k) => (block.unsafe ? [k + 1] : []))
+        if (unsafe.length === 0) return null
+        return (
+          <Text key={`${key}:copy:unsafe`} dimColor>
+            {unsafeNote(unsafe)}
+          </Text>
         )
       }
       const offered = blocks.flatMap((block, k) => (block.text === '' ? [] : [{ block, n: k + 1 }]))

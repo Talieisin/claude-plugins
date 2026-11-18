@@ -403,6 +403,33 @@ describe('reading and drawing', () => {
     expect(await drawnLength(ui)).toBeLessThan(100_000)
   })
 
+  for (const surface of ['desktop', 'vscode'] as const) {
+    vtest(`${surface}: 50 open items whose 20,000-character bodies are all short fences holding control characters: one note a card, the page under both limits (#51)`, async ($, on) => {
+      // The reader's probe on PR #61: a fence per few characters, each with a control character in it.
+      const { w, a } = viewerWorld(on, { surfaces: [surface] })
+      const body = Array.from({ length: 2_000 }, (_, k) => `\`\`\`\nx\u0001${String(k)}\n\`\`\``).join('\n\n').slice(0, 20_000)
+      for (let n = 0; n < 50; n++) {
+        const id = `01AAAAAAAAAAAAAAAAAAAB${String(n).padStart(4, '0')}`
+        put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
+      }
+      await turnOn($, w)
+      const ui = await $.ui.mount({ ...PANE, surface })
+      const tree = await ui.drawn()
+      const count = (node: unknown): number => {
+        const children = (node as { children?: unknown[] }).children ?? []
+        return 1 + children.reduce<number>((sum, child) => sum + (typeof child === 'object' && child !== null ? count(child) : 0), 0)
+      }
+      expect(count(tree)).toBeLessThan(20_000)
+      expect(await drawnLength(ui)).toBeLessThan(100_000)
+      const keys = (await ui.findAll({ type: 'Button' })).map(b => String((b as unknown as { key?: string }).key ?? ''))
+      expect(keys.filter(key => key.endsWith(':done'))).toHaveLength(10)
+      expect(keys.filter(key => key.includes(':copy'))).toEqual([])
+      const notes = (await ui.findAll({ type: 'Text' })).filter(t => /^Code blocks? .* control characters/.test(t.text ?? ''))
+      expect(notes).toHaveLength(10)
+      expect(notes[0]?.text).toMatch(/^Code blocks 1, 2, 3 and \d+ more hold control characters: the app's copy of them has \ufffd where they were$/)
+    })
+  }
+
   vtest('the desktop app: no copy buttons and no Code n labels on a viewer card, its answer controls kept; the terminal draws both (#51)', async ($, on) => {
     const { w, a } = viewerWorld(on, { surfaces: ['desktop', 'terminal'] })
     put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: '```sh\nls -l\n```\n\nthen\n\n```\npwd\n```' }))

@@ -9,7 +9,7 @@ import { type Engine, describe, expect, test } from 'claude-code/testing'
 
 import { codeBlocksOf } from '../hooks/code'
 import { forDrawing } from '../hooks/items'
-import { COPY_PAGE, copyLabel, hasNativeCopy } from '../hooks/copy'
+import { COPY_PAGE, copyLabel, hasNativeCopy, unsafeNote } from '../hooks/copy'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 import { ADD, PANE, START_EVENT, answerOf, drawnText, world } from './world'
 
@@ -232,6 +232,24 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
       expect(await drawnText(ui, `${id}:body`)).toContain('a\ufffdb')
     })
   }
+
+  test('the note names three blocks at most and counts the rest: one line however many', () => {
+    const tail = ": the app's copy of them has \ufffd where they were"
+    expect(unsafeNote([2])).toBe("Code block 2 holds control characters: the app's copy of it has \ufffd where they were")
+    expect(unsafeNote([2, 5])).toBe(`Code blocks 2 and 5 hold control characters${tail}`)
+    expect(unsafeNote([1, 4, 7])).toBe(`Code blocks 1, 4 and 7 hold control characters${tail}`)
+    expect(unsafeNote([3, 7, 12, 13, 14])).toBe(`Code blocks 3, 7, 12 and 2 more hold control characters${tail}`)
+    expect(unsafeNote(Array.from({ length: 1_500 }, (_, k) => k + 1)).length).toBeLessThan(120)
+  })
+
+  test('the desktop app: several unsafe blocks on one card, one note', async ($, on) => {
+    copyWorld(on, { surface: 'desktop' })
+    await $.session.start(START_EVENT)
+    await addDo($, Array.from({ length: 6 }, (_, k) => `\`\`\`\nx\u0001${String(k)}\n\`\`\``).join('\n\n'))
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const notes = (await ui.findAll({ type: 'Text' })).filter(t => /control characters/.test(t.text ?? ''))
+    expect(notes.map(t => t.text)).toEqual([unsafeNote([1, 2, 3, 4, 5, 6])])
+  })
 
   test('the terminal: a block holding control characters is not offered for copy, as before', async ($, on) => {
     copyWorld(on, { surface: 'terminal' })

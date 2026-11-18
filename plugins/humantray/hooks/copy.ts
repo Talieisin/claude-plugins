@@ -27,6 +27,28 @@ export type CopyOutcome = { ok: true } | { ok: false; why: string }
  */
 export const hasNativeCopy = (surface: string | undefined): boolean => surface === 'desktop' || surface === 'vscode'
 
+/** Unsafe blocks a note names before it counts the rest. */
+export const NAMED_UNSAFE = 3
+
+/**
+ * The note on a surface with its own copy control (`hasNativeCopy`) for the
+ * blocks holding control characters, by number: a few named, the rest
+ * counted, so one card says it in one line however many there are (#51).
+ */
+export const unsafeNote = (numbers: readonly number[]): string => {
+  const named = numbers.slice(0, NAMED_UNSAFE).map(String)
+  const more = numbers.length - named.length
+  const which =
+    more > 0
+      ? `${named.join(', ')} and ${String(more)} more`
+      : named.length === 1
+        ? (named[0] ?? '')
+        : `${named.slice(0, -1).join(', ')} and ${named.at(-1) ?? ''}`
+  return numbers.length === 1
+    ? `Code block ${which} holds control characters: the app's copy of it has \ufffd where they were`
+    : `Code blocks ${which} hold control characters: the app's copy of them has \ufffd where they were`
+}
+
 /** A copy button's label: its number among the card's blocks (as the drawn "Code n" above each block), the language, and the first line, cut to fit a docked pane. */
 export const copyLabel = (block: CodeBlock, n: number): string => {
   const first = block.text.split('\n').find(line => line.trim() !== '') ?? ''
