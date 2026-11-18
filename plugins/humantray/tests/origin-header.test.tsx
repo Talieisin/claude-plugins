@@ -6,7 +6,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Item, StoreFile } from '../types'
 import { TITLE_MAX, checkStoreFile, cleanTitle, kindCounts, noteSession, originOf, repoLabel, when } from '../hooks/items'
-import { ADD, PANE, START, START_EVENT, TURN, answerOf, finished, finishedMany, stored, world } from './world'
+import { ADD, CLEAN_TITLE, DIRTY_TITLE, PANE, START, START_EVENT, TURN, answerOf, finished, finishedMany, stored, world } from './world'
 import { mount } from './surface-rules'
 
 const file = (items: Item[], sessions: StoreFile['sessions'] = {}): StoreFile => ({ version: 1, items, sessions })
@@ -144,6 +144,25 @@ describe('the origin line, drawn (#75)', () => {
       await ui.unmount()
     })
   }
+})
+
+describe('a dirty title is drawn cleaned (#75)', () => {
+  test('in the local pane: a cloud item’s title from get_session', async ($, on) => {
+    const w = world(on)
+    const item = stored({
+      id: '01AAAAAAAAAAAAAAAAAAADIRTY1',
+      type: 'ack',
+      header: 'D',
+      question: 'Dirty',
+      session_id: 'session-x',
+      remote: { session_id: 'session_01AAAAAAAAAAAAAAAAAAAAAA', session_title: DIRTY_TITLE, parent_session_id: null, lead_session_id: null },
+    })
+    w.seed(file([item]))
+    await $.session.start(START_EVENT)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    expect((await ui.find({ type: 'Text', text: new RegExp(`${item.short}$`) }))?.text).toBe(`${CLEAN_TITLE} · ${when(item.created)} · ${item.short}`)
+    await ui.unmount()
+  })
 })
 
 describe('a cached tray from before who-asked (#75)', () => {

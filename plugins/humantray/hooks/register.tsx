@@ -935,7 +935,7 @@ export const register: Register = on => {
             </Text>
             {/* When it was raised (#75), then the short id: who asked is the asker heading above. */}
             <Text dimColor>
-              {`${when(row.created)} · ${row.short}`}
+              {`${when(row.created)} · ${plain(row.short)}`}
               {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
               {card.old ? ' · old' : ''}
             </Text>
@@ -1055,7 +1055,7 @@ export const register: Register = on => {
     }
     const toggle = header({
       prefix: 'humantray',
-      title: `humantray · ${repoLabel(shown.repo)}`,
+      title: `humantray · ${plain(repoLabel(shown.repo))}`,
       open: shown.items.length,
       history: shown.history.length,
       view: showing,

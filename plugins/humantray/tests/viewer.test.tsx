@@ -12,7 +12,7 @@ import { FIND_MS, GIVE_UP_MS, LEASE_MS, MAX_LISTED, TICK_MS, isGivenUp, lastActi
 import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
 import { codeBlocksOf } from '../hooks/code'
 import { RUNBOOK } from './code-fixtures'
-import { ADD, COMMAND, HOUR, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
+import { ADD, CLEAN_TITLE, COMMAND, DIRTY_TITLE, HOUR, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
 import { when } from '../hooks/items'
 import { mount } from './surface-rules'
 
@@ -242,6 +242,25 @@ describe('the lease: one viewer per computer', () => {
     expect(text).toContain(`HT-${ID1.slice(-5)} · worker for #1 · answered `)
     expect(text).toContain(`HT-${ID3.slice(-5)} · another session · answered `)
     expect(text).not.toContain('this session')
+  })
+
+  vtest('a dirty row title (#75) is drawn cleaned in the asker heading, the Lead line and History', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    const dirty = { session_id: LEAD, session_title: DIRTY_TITLE, parent_session_id: null, lead_session_id: LEAD }
+    put(a, URL_A, rowOf({ id: ID1, type: 'ack' }, dirty))
+    put(a, URL_A, rowOf({ id: ID2, type: 'ack', status: 'acknowledged', response: { acknowledged: true }, delivered: true }, dirty))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    const open = await shownText(ui)
+    expect(open).toContain(`Lead: ${CLEAN_TITLE}`)
+    expect(open.split('\n')).toContain(CLEAN_TITLE)
+    expect(open).not.toContain('x'.repeat(51))
+    expect(open).not.toContain('\u202e')
+    await ui.press({ key: 'humantray:tab:history' })
+    await w.clock.settle()
+    const history = await shownText(ui)
+    expect(history).toContain(`HT-${ID2.slice(-5)} · ${CLEAN_TITLE} · answered `)
+    expect(history).not.toContain('x'.repeat(51))
   })
 
   vtest('a plain session with the setting stored does not become a viewer', async ($, on) => {

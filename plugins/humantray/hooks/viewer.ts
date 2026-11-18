@@ -674,12 +674,14 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
       const lead = leads.get(leadKey) ?? { lead: row.lead_session_id, title: null, askers: [] }
       leads.set(leadKey, lead)
       let asker = lead.askers.find(each => each.session_id === row.session_id)
+      // Titles as every view draws them (#75): cleaned and cut (cleanTitle).
+      const title = cleanTitle(row.session_title) ?? null
       if (asker === undefined) {
-        asker = { session_id: row.session_id, title: row.session_title, link: SESSION_ID.test(row.session_id), lastActive: 0, cards: [] }
+        asker = { session_id: row.session_id, title, link: SESSION_ID.test(row.session_id), lastActive: 0, cards: [] }
         lead.askers.push(asker)
       }
       asker.cards.push(card)
-      if (row.session_id === row.lead_session_id && row.session_title !== null) lead.title = row.session_title
+      if (row.session_id === row.lead_session_id && title !== null) lead.title = title
     }
     for (const { row, version } of read?.open ?? []) {
       const key = outboxKey(url, row.id)
