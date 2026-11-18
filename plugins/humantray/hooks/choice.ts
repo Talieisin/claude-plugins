@@ -15,8 +15,5 @@ export const drawsChoiceRows = (surface: string | undefined): boolean => surface
 export const choiceMark = (surface: string | undefined, multi: boolean, on: boolean): string =>
   drawsChoiceRows(surface) ? (multi ? (on ? '☑' : '☐') : on ? '◉' : '○') : multi ? (on ? '[x]' : '[ ]') : on ? '(•)' : '( )'
 
-/** An option's accessible name on the app surfaces: its label and whether it is picked. */
-export const choiceName = (label: string, on: boolean): string => `${label}, ${on ? 'selected' : 'not selected'}`
-
 /** Cells the description under a label is set in by: the mark and its space. */
 export const DESCRIPTION_INDENT = 2

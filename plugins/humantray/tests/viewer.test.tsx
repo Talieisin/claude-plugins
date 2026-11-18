@@ -301,7 +301,7 @@ describe('reading and drawing', () => {
     expect(await ui.find({ key: `v:${ID1}:opt:1:about` })).toBeUndefined()
     await ui.press({ key: `v:${ID1}:opt:0` })
     await ui.press({ key: `v:${ID1}:opt:1` })
-    expect((await ui.find({ key: `v:${ID1}:opt:1` }))?.props.label).toBe('Two, selected')
+    expect((await ui.find({ key: `v:${ID1}:opt:1` }))?.text).toBe('☑ Two')
     await ui.press({ key: `v:${ID1}:submit` })
     await w.clock.settle()
     expect(sends).toHaveLength(1)

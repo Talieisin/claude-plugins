@@ -101,6 +101,22 @@ export const RULES: readonly SurfaceRule[] = [
       return []
     },
   },
+  {
+    // #64, on 0.2.3: the desktop app draws a Button's `label` prop in place of
+    // its children. An option drawn `label="Blue, not selected"` around
+    // "○ Blue" showed "Blue, not selected" and no glyph. So a Button whose
+    // label is not its children's text draws something other than its
+    // children. A Button with a label and no children is a plain label.
+    name: 'button-label-is-its-text',
+    from: '#64',
+    check: ({ node }) => {
+      if (node.type !== 'Button') return []
+      const label = node.props?.label
+      if (typeof label !== 'string' || (node.children ?? []).length === 0) return []
+      const text = textOf(node)
+      return label === text ? [] : [`a label ${JSON.stringify(label)} the app draws in place of the children ${JSON.stringify(text)}`]
+    },
+  },
 ]
 
 /**

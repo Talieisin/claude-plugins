@@ -5,7 +5,7 @@
 
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 
-import { DESCRIPTION_INDENT, choiceMark, choiceName, drawsChoiceRows } from '../hooks/choice'
+import { DESCRIPTION_INDENT, choiceMark, drawsChoiceRows } from '../hooks/choice'
 import { ADD, PANE, START_EVENT, answerOf, world } from './world'
 import { mount } from './surface-rules'
 
@@ -53,11 +53,6 @@ describe('the pure rules', () => {
     expect([choiceMark('terminal', true, false), choiceMark('terminal', true, true)]).toEqual(['[ ]', '[x]'])
     expect([choiceMark('terminal', false, false), choiceMark('terminal', false, true)]).toEqual(['( )', '(•)'])
   })
-
-  test('the accessible name carries the state', () => {
-    expect(choiceName('Shell syntax', true)).toBe('Shell syntax, selected')
-    expect(choiceName('Shell syntax', false)).toBe('Shell syntax, not selected')
-  })
 })
 
 describe('the app surfaces draw checkbox and radio rows', () => {
@@ -84,7 +79,8 @@ describe('the app surfaces draw checkbox and radio rows', () => {
           expect(button?.type).toBe('Button')
           expect(button?.props.plain).toBe(true)
           expect(button?.text).toBe(`${off} ${option.label}`)
-          expect(button?.props.label).toBe(`${option.label}, not selected`)
+          // No label of its own, which the desktop app would draw in place of the glyph (0.2.3).
+          expect(button?.props.label ?? button?.text).toBe(`${off} ${option.label}`)
           // Nothing but the mark and the label inside the pressable.
           expect(elements(button)).toEqual([])
           expect(button?.text).not.toContain(option.description.trim() || '\u0000')
@@ -103,11 +99,11 @@ describe('the app surfaces draw checkbox and radio rows', () => {
           }
         }
 
-        // Pressed by the unchanged key, the mark and the name follow.
+        // Pressed by the unchanged key, the mark follows.
         await ui.press({ key: `${id}:opt:1` })
         const picked = (await ui.find({ key: `${id}:opt:1` })) as Node | undefined
         expect(picked?.text).toBe(`${onMark} Shell syntax`)
-        expect(picked?.props.label).toBe('Shell syntax, selected')
+        expect(picked?.props.label ?? picked?.text).toBe(`${onMark} Shell syntax`)
         await ui.press({ key: `${id}:opt:0` })
         const first = (await ui.find({ key: `${id}:opt:0` })) as Node | undefined
         const second = (await ui.find({ key: `${id}:opt:1` })) as Node | undefined
