@@ -62,12 +62,14 @@ import {
   resolveOwner,
   shortOf,
   splitDrawn,
+  unlabelled,
+  unlabelledPieces,
   ulid,
   validateAdd,
 } from './items'
 import { codeBlocksOf } from './code'
 import { registerConfig, registerConfigTool } from './config-tool'
-import { COPY_PAGE, copyBlock, copyLabel, copyToast } from './copy'
+import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy } from './copy'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
 import { START_DEADLINE_MS, deliveryIdle, onDeliveryDue, pageState, requestPass } from './store-pass'
@@ -689,9 +691,12 @@ export const register: Register = on => {
     // Drawn Markdown (forDrawing's), one element a piece (#51): each text piece
     // and each fence drawn here apart, so nothing in one can reach into the
     // next in any surface's parser. One piece keeps the single element.
+    // Where the surface draws its own copy control on a code block (the
+    // desktop app, VS Code), no copy buttons and no `Code n` labels (#51).
+    const native = hasNativeCopy(e.surface)
     const drawn = (key: string, text: string) => {
-      const pieces = splitDrawn(text)
-      if (pieces.length <= 1) return <Markdown key={key} text={text} />
+      const pieces = native ? unlabelledPieces(text) : splitDrawn(text)
+      if (pieces.length <= 1) return <Markdown key={key} text={native ? unlabelled(text) : text} />
       return (
         <Box key={key} flexDirection="column" gap={1}>
           {pieces.map((piece, n) => (
@@ -704,6 +709,7 @@ export const register: Register = on => {
     // the drawn. At most COPY_PAGE at once, so a card full of fences stays
     // small; a button pages through the rest. `draftId` keeps the page shown.
     const copyList = async (key: string, draftId: string, short: string, blocks: readonly CodeBlock[]) => {
+      if (native) return null
       const offered = blocks.flatMap((block, k) => (block.text === '' ? [] : [{ block, n: k + 1 }]))
       if (offered.length === 0) return null
       const held = await $.state.get({ ...drafts, id: draftId })
@@ -897,7 +903,7 @@ export const register: Register = on => {
         return (
           <Box flexDirection="column" gap={1}>
             <Button key="v:back" label="Back" onPress={() => update($, viewerExpanded, () => null)} />
-            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`v:${full.id}:full`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
@@ -929,7 +935,7 @@ export const register: Register = on => {
             )
           }
           rows.push(
-            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`v:${entry.id}:history`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(entry.header)}] {plain(entry.question)}
               </Text>
@@ -1075,7 +1081,7 @@ export const register: Register = on => {
           }
         }
         nodes.push(
-          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+          <Box key={`${key}:card`} flexDirection="column" borderStyle="round" padding="sm">
             <Text bold>
               [{plain(row.header)}] {plain(row.question)}
             </Text>
@@ -1118,7 +1124,7 @@ export const register: Register = on => {
           const held = await $.state.get({ ...drafts, id })
           const draft = { ...EMPTY_DRAFT, ...(held.value ?? {}) }
           local.push(
-            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`${id}:card`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(item.header)}] {plain(item.question)}
               </Text>
@@ -1173,7 +1179,7 @@ export const register: Register = on => {
     // One History entry: read only, with no control (an answered item is never
     // reopened) but "Show in full" when anything was shortened.
     const historyCard = (entry: HistoryEntry) => (
-      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" paddingX={1}>
+      <Box key={`${entry.id}:history`} flexDirection="column" borderStyle="round" padding="sm">
         <Text bold>
           [{plain(entry.header)}] {plain(entry.question)}
         </Text>
@@ -1220,7 +1226,7 @@ export const register: Register = on => {
           <Box flexDirection="column" gap={1}>
             {toggle}
             <Button key="humantray:history:back" label="Back to History" onPress={() => update($, expanded, () => null)} />
-            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" paddingX={1}>
+            <Box key={`${full.id}:full`} flexDirection="column" borderStyle="round" padding="sm">
               <Text bold>
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
@@ -1299,7 +1305,7 @@ export const register: Register = on => {
       const from = shown.mine.includes(id) ? '' : ' · another session'
       const bumped = item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
       cards.push(
-        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" paddingX={1}>
+        <Box key={`${id}:card`} flexDirection="column" borderStyle="round" padding="sm">
           <Text bold>
             [{plain(item.header)}] {plain(item.question)}
           </Text>

@@ -5,11 +5,15 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { forDrawing } from '../hooks/items'
+import { hasNativeCopy } from '../hooks/copy'
+import { forDrawing, unlabelledPieces } from '../hooks/items'
 
 import { ADD, FILE, PANE, RICH, START_EVENT, answerOf, answerOne, drawnText, world } from './world'
 
 const SURFACES = ['terminal', 'desktop'] as const
+
+/** A body as the pane draws it on `surface`: with no `Code n` labels where the surface has its own copy control (#51). */
+const bodyOn = (surface: string, md: string): string => (hasNativeCopy(surface) ? unlabelledPieces(forDrawing(md)).join('\n\n') : forDrawing(md))
 const TOGGLE = 'humantray:view'
 
 const OPTIONS = [
@@ -29,7 +33,7 @@ describe('a rich Markdown body and a rich Markdown answer keep their structure',
       // Drawn as stored but for its code, which is drawn as fences of its own, each piece its own Markdown element (#51).
       const body = await drawnText(ui, `${id}:body`)
       expect((await ui.find({ key: `${id}:body:0` }))?.type).toBe('Markdown')
-      expect(body).toBe(forDrawing(RICH))
+      expect(body).toBe(bodyOn(surface, RICH))
       for (const kept of ['## Steps', '1. Rotate the **key**', '   - in `prod` first', '> Check the logs first.', '| prod | yes |']) {
         expect(String(body)).toContain(kept)
       }
@@ -133,7 +137,7 @@ describe('show in full', () => {
 
       await ui.press({ key: `${item.id}:full` })
       expect(await drawnText(ui, `${item.id}:full:Answer`)).toBe(forDrawing(long, false))
-      expect(await drawnText(ui, `${item.id}:full:body`)).toBe(forDrawing(RICH))
+      expect(await drawnText(ui, `${item.id}:full:body`)).toBe(bodyOn(surface, RICH))
       // The toggle leaves the full view, and coming back shows the list.
       await ui.press({ key: TOGGLE })
       await ui.press({ key: TOGGLE })

@@ -364,7 +364,8 @@ describe('reading and drawing', () => {
   })
 
   vtest('50 open items whose 20,000-character bodies are all short fences: copy buttons capped per card, the page still under the limit (#51)', async ($, on) => {
-    const { w, a } = viewerWorld(on)
+    // The terminal viewer: the desktop app draws no copy buttons (below).
+    const { w, a } = viewerWorld(on, { surfaces: ['terminal'] })
     // A fence per 60 characters, each with a long first line: as many copy labels as a body can make.
     const fence = (k: number) => `\`\`\`sh\n${'x'.repeat(40)}${String(k).padStart(4, '0')}\n\`\`\``
     const body = Array.from({ length: 360 }, (_, k) => fence(k)).join('\n\n').slice(0, 20_000)
@@ -373,7 +374,7 @@ describe('reading and drawing', () => {
       put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
     }
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     const buttons = await ui.findAll({ type: 'Button' })
     const copies = buttons.filter(b => /:copy:\d+$/.test(String((b as unknown as { key?: string }).key ?? '')))
     expect(copies.length).toBe(10 * 9)
@@ -384,7 +385,7 @@ describe('reading and drawing', () => {
   })
 
   vtest('50 open items whose fences carry 2,000-character language words: every card on the page keeps its text and its answer controls (#51)', async ($, on) => {
-    const { w, a } = viewerWorld(on)
+    const { w, a } = viewerWorld(on, { surfaces: ['terminal'] })
     // Nine fences a body, each info word 2,000 characters: the reader's case on PR #56.
     const body = Array.from({ length: 9 }, (_, k) => `\`\`\`${'L'.repeat(2_000)}\nstep ${String(k)}\n\`\`\``).join('\n\n')
     const ids: string[] = []
@@ -394,12 +395,29 @@ describe('reading and drawing', () => {
       put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
     }
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
     const keys = (await ui.findAll({ type: 'Button' })).map(b => String((b as unknown as { key?: string }).key ?? ''))
     expect(keys.filter(key => key.endsWith(':done'))).toHaveLength(10)
     expect(keys.filter(key => /:copy:\d+$/.test(key))).toHaveLength(90)
     for (const b of await ui.findAll({ type: 'Button' })) expect(((b as unknown as { props?: { label?: string } }).props?.label ?? '').length).toBeLessThan(100)
     expect(await drawnLength(ui)).toBeLessThan(100_000)
+  })
+
+  vtest('the desktop app: no copy buttons and no Code n labels on a viewer card, its answer controls kept; the terminal draws both (#51)', async ($, on) => {
+    const { w, a } = viewerWorld(on, { surfaces: ['desktop', 'terminal'] })
+    put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: '```sh\nls -l\n```\n\nthen\n\n```\npwd\n```' }))
+    await turnOn($, w)
+    const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const keys = (await desktop.findAll({ type: 'Button' })).map(b => String((b as unknown as { key?: string }).key ?? ''))
+    expect(keys.filter(key => key.includes(':copy'))).toEqual([])
+    expect(keys).toContain(`v:${ID1}:done`)
+    expect(await drawnText(desktop, `v:${ID1}:body`)).toBe('```sh\nls -l\n```\n\nthen\n\n```\npwd\n```')
+    expect((await desktop.find({ key: `v:${ID1}:card` }))?.props.padding).toBe('sm')
+    await desktop.unmount()
+    const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect((await terminal.find({ key: `v:${ID1}:copy:1` }))?.type).toBe('Button')
+    expect((await terminal.find({ key: `v:${ID1}:copy:2` }))?.type).toBe('Button')
+    expect(await drawnText(terminal, `v:${ID1}:body`)).toBe('*Code 1*\n\n```sh\nls -l\n```\n\nthen\n\n*Code 2*\n\n```\npwd\n```')
   })
 
   vtest('humantray_list in the viewer session lists no store items', async ($, on) => {

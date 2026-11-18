@@ -814,6 +814,17 @@ export const splitDrawn = (drawn: string): string[] => {
   return pieces
 }
 
+/**
+ * Drawn Markdown's pieces (`splitDrawn`) less their `Code n` labels, for a
+ * surface that draws no copy buttons (`hasNativeCopy`): a label numbers a
+ * block for its button, so with no button it is only a gap (#51). Only a
+ * label `splitDrawn` put with its fence goes; the code is untouched.
+ */
+export const unlabelledPieces = (drawn: string): string[] => splitDrawn(drawn).map(unlabelled)
+
+/** One piece less the `Code n` label at its head, if it is a fence drawn here with one. */
+export const unlabelled = (piece: string): string => piece.replace(/^\*Code \d+\*\n\n(?=`{3,})/, '')
+
 /** How many columns a line's leading spaces, tabs (to their stop) and quote marks take. */
 const prefixWidth = (line: string): number => {
   let col = 0
