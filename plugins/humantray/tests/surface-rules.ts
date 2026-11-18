@@ -1,0 +1,188 @@
+// Surface rules (#67): paint traps the test kit cannot see by itself. The kit
+// checks the tree each surface is handed, never what the app paints, so a
+// valid tree can still draw wrong on the desktop app, VS Code or a phone.
+// Each rule here names a fault the owner found by eye; each new one the owner
+// finds becomes a rule here, with the issue it came from.
+//
+// Every test mounts through `mount` below, never `$.ui.mount` itself, so every
+// drawing on an app surface is held to the rules: after the mount, after each
+// act, before each read and before it is let go. The full verification checks
+// that `$.ui.mount(` appears in no other test file.
+//
+// This file imports nothing from `world.ts`, which may import it.
+
+import type { RenderComponent, RenderSurface } from 'claude-code'
+import type { Engine, MountTarget, Mounted } from 'claude-code/testing'
+
+/** The surfaces whose paint the rules are about: the app's, not the terminal's. */
+export const APP_SURFACES: readonly string[] = ['desktop', 'vscode', 'mobile']
+
+/** A drawn element as plain data: what `ui.drawn()` gives. */
+export type DrawnNode = { type: string; props?: Record<string, unknown>; children?: unknown[] }
+
+export const isNode = (value: unknown): value is DrawnNode =>
+  typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
+
+/** Every string under a node, in order. */
+export const textOf = (node: DrawnNode): string =>
+  (node.children ?? []).map(child => (typeof child === 'string' ? child : isNode(child) ? textOf(child) : '')).join('')
+
+/** A node as a rule meets it: with its nearest key and its ancestors' types and keys. */
+type Visit = { node: DrawnNode; key: string; ancestors: readonly DrawnNode[] }
+
+/** One rule: a name, the fault it came from, and the faults it finds at one node. */
+export type SurfaceRule = { name: string; from: string; check: (visit: Visit) => string[] }
+
+/**
+ * Styles the app does not draw on a `Text` inside a `Button`. From #64: on the
+ * desktop app a `plain` Button drew its option's description, a dim `Text`
+ * inside it, at full strength. Add a style here when the owner finds another.
+ */
+export const IGNORED_IN_BUTTON: readonly string[] = ['dimColor']
+
+/** A terminal mark at the start of a line: `[ ]`, `[x]`, `( )`, `(•)`. */
+const MARK = /^\s*(?:[-*+]\s+)?(?:\[[ xX]\]|\(\s?\)|\(•\))/
+
+/**
+ * Item content: the author's or the person's own text, which may hold a mark
+ * of its own (a `- [ ] task` list) and is not a control. A body and its
+ * pieces, an answer's parts (Answer, Other, Feedback, Notes), in the pane,
+ * History, an entry in full and the viewer alike.
+ */
+const CONTENT = /:(?:body|Answer|Other|Feedback|Notes)(?::\d+)?$/
+
+const keyOf = (node: DrawnNode): string | undefined => {
+  const key = node.props?.key
+  return typeof key === 'string' ? key : undefined
+}
+
+const keyed = (node: DrawnNode): boolean => keyOf(node) !== undefined
+
+const inside = (visit: Visit, test: (node: DrawnNode) => boolean) => visit.ancestors.some(test)
+
+export const RULES: readonly SurfaceRule[] = [
+  {
+    // #64: `[ ] Label <Text dimColor>description</Text>` in one plain Button;
+    // the desktop app drew the description at full strength.
+    name: 'no-ignored-style-in-button',
+    from: '#64',
+    check: ({ node, ancestors }) => {
+      if (node.type !== 'Text' || !ancestors.some(a => a.type === 'Button')) return []
+      return IGNORED_IN_BUTTON.filter(style => node.props?.[style] !== undefined && node.props[style] !== false).map(
+        style => `a Text with ${style} inside a Button, which the app does not draw there`,
+      )
+    },
+  },
+  {
+    // #64: the terminal's `[ ]`, `[x]`, `( )` and `(•)` marks drawn on an app
+    // surface, which has its own glyphs (☐ ☑ ○ ◉). Controls only: a Button's
+    // text and label, a Text inside a Button or a choice's options, and any
+    // Markdown that is not item content.
+    name: 'no-terminal-marks',
+    from: '#64',
+    check: visit => {
+      const { node } = visit
+      if (node.type === 'Button') {
+        const found = []
+        if (MARK.test(textOf(node))) found.push(`a terminal mark in the Button's text: ${JSON.stringify(textOf(node))}`)
+        const label = node.props?.label
+        if (typeof label === 'string' && MARK.test(label)) found.push(`a terminal mark in the Button's label: ${JSON.stringify(label)}`)
+        return found
+      }
+      if (node.type === 'Text') {
+        const control = inside(visit, a => a.type === 'Button' || (keyOf(a) ?? '').endsWith(':options'))
+        return control && MARK.test(textOf(node)) ? [`a terminal mark in a control's Text: ${JSON.stringify(textOf(node))}`] : []
+      }
+      if (node.type === 'Markdown') {
+        const text = node.props?.text
+        if (CONTENT.test(keyOf(node) ?? '') || typeof text !== 'string') return []
+        return text.split('\n').some(line => MARK.test(line)) ? [`a terminal mark in Markdown that is not item content`] : []
+      }
+      return []
+    },
+  },
+]
+
+/**
+ * The faults in a drawn tree on a surface, one line each: the rule, the
+ * nearest key, and what it found. None on the terminal or a surface not
+ * listed in APP_SURFACES.
+ */
+export function surfaceFaults(tree: unknown, surface: string, rules: readonly SurfaceRule[] = RULES): string[] {
+  if (!APP_SURFACES.includes(surface)) return []
+  const faults: string[] = []
+  const walk = (value: unknown, ancestors: DrawnNode[]) => {
+    if (!isNode(value)) return
+    const nearest = keyOf(value) ?? [...ancestors].reverse().find(keyed)?.props?.key
+    const key = typeof nearest === 'string' ? nearest : '(no key)'
+    for (const rule of rules) {
+      for (const detail of rule.check({ node: value, key, ancestors })) faults.push(`${rule.name} (${rule.from}) at ${key}: ${detail}`)
+    }
+    for (const child of value.children ?? []) walk(child, [...ancestors, value])
+  }
+  walk(tree, [])
+  return faults
+}
+
+/** Members that read the tree: the rules run before they answer. */
+const READS = new Set(['find', 'findAll', 'drawn', 'keepsBeneath'])
+/** Members that change it: the rules run once they have settled. */
+const ACTS = new Set(['press', 'input', 'select', 'key', 'pointer', 'post', 'advance', 'resize', 'redraw'])
+
+/**
+ * `$.ui.mount`, with the surface rules held on every drawing on an app
+ * surface: after the mount, after each act, before each read and before
+ * `unmount`. A fault rejects with every fault in the tree listed. An act that
+ * fails rejects with its own error, unchanged. The terminal is not checked.
+ *
+ * @example
+ * const ui = await mount($, { ...PANE, surface })
+ */
+export async function mount<P extends RenderSurface, C extends RenderComponent>($: Engine, target: MountTarget<P, C>): Promise<Mounted<P, C>> {
+  const ui = await $.ui.mount(target)
+  if (!APP_SURFACES.includes(target.surface)) return ui
+  const members = ui as unknown as Record<string, unknown> & { drawn: () => Promise<unknown> }
+  const check = async (when: string) => {
+    let tree: unknown
+    try {
+      tree = await members.drawn()
+    } catch {
+      // A tree the surface refused: the test's own read or act says so.
+      return
+    }
+    const faults = surfaceFaults(tree, target.surface)
+    if (faults.length > 0) throw new Error(`surface rules on ${target.surface}, ${when}:\n${faults.join('\n')}`)
+  }
+  await check('after the mount')
+  // The kit's handle is frozen, so the checked handle is a new object with
+  // the same members, each method wrapped.
+  const checked: Record<string, unknown> = {}
+  for (const name of Object.getOwnPropertyNames(members)) {
+    const value = members[name]
+    if (typeof value !== 'function') {
+      checked[name] = value
+      continue
+    }
+    const call = (...args: unknown[]): unknown => (value as (...a: unknown[]) => unknown).apply(members, args)
+    if (READS.has(name)) {
+      checked[name] = async (...args: unknown[]) => {
+        await check(`before ${name}`)
+        return call(...args)
+      }
+    } else if (ACTS.has(name)) {
+      checked[name] = async (...args: unknown[]) => {
+        const result = await call(...args)
+        await check(`after ${name}`)
+        return result
+      }
+    } else if (name === 'unmount') {
+      checked[name] = async () => {
+        await check('before unmount')
+        return call()
+      }
+    } else {
+      checked[name] = call
+    }
+  }
+  return Object.freeze(checked) as unknown as Mounted<P, C>
+}

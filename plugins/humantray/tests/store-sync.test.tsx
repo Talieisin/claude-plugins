@@ -10,6 +10,7 @@ import { NEWER_ANSWER } from '../hooks/rows'
 import { FIND_AGAIN_MS } from '../hooks/store-pass'
 import { LEAD, ME, OTHER, TITLE, URL_A, artifactWorld, meta, response } from './artifact-world'
 import { ADD, COMMAND, PANE, START, START_EVENT, TURN, answerOf, stored, world } from './world'
+import { mount } from './surface-rules'
 
 const CLOUD = { env: { CLAUDE_CODE_REMOTE: 'true' } }
 const TURN_START = { text: '', turnId: 'turn-1' } as const
@@ -645,7 +646,7 @@ describe('the pane and the store', () => {
     await $.turn.start(TURN_START)
     await settle(w)
     expect(w.store().items[0]?.response_refused).toBeDefined()
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:reject` })
     await ui.unmount()
     await settle(w)

@@ -13,6 +13,7 @@ import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifac
 import { codeBlocksOf } from '../hooks/code'
 import { RUNBOOK } from './code-fixtures'
 import { ADD, COMMAND, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
+import { mount } from './surface-rules'
 
 type On = Parameters<typeof world>[0]
 
@@ -198,7 +199,7 @@ describe('the lease: one viewer per computer', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await $.session.start(START_EVENT)
     await w.clock.settle()
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('Viewer: 2 repositories')
   })
 
@@ -219,7 +220,7 @@ describe('the lease: one viewer per computer', () => {
     const before = a.calls.length
     await tickOnce(w)
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('Viewer:')
     expect(a.calls.length).toBe(before)
   })
@@ -254,7 +255,7 @@ describe('finding the artifacts', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     put(a, later, rowOf({ id: ID2, type: 'approve' }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text).toContain('Question 01')
     expect(text).not.toContain('Question 02')
@@ -293,7 +294,7 @@ describe('reading and drawing', () => {
     ]
     put(a, URL_A, rowOf({ id: ID1, type: 'choice', options, multiSelect: true }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+    const ui = await mount($, { ...PANE, surface: 'vscode' })
     expect((await ui.find({ key: `v:${ID1}:options` }))?.type).toBe('Box')
     expect((await ui.find({ key: `v:${ID1}:opt:0` }))?.text).toBe('☐ One')
     expect((await ui.find({ key: `v:${ID1}:opt:0:about` }))?.text).toContain('The first')
@@ -314,7 +315,7 @@ describe('reading and drawing', () => {
     put(a, URL_A, rowOf({ id: ID3, type: 'ack' }, { session_id: 'https://evil.example/', session_title: 'odd', lead_session_id: LEAD }))
     put(a, URL_B, rowOf({ id: '01AAAAAAAAAAAAAAAAAAAVIEW04', type: 'ack', repo: REPO2 }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text.indexOf('github.com/owner/other')).toBeLessThan(text.indexOf('github.com/owner/repo'))
     expect(text).toContain('Lead: the lead')
@@ -331,7 +332,7 @@ describe('reading and drawing', () => {
     await turnOn($, w)
     a.garble = 1_000
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text).toContain('Question 01')
     expect(text).toContain('last read')
@@ -354,7 +355,7 @@ describe('reading and drawing', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     a.put(URL_A, `items/${ID2}`, { ...rowOf({ id: ID2, type: 'approve' }), schema: 2 } as unknown as Record<string, unknown>)
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text).toContain('1 rows could not be read')
     expect(text).not.toContain('Question 02')
@@ -365,7 +366,7 @@ describe('reading and drawing', () => {
     const { envelope: _e, ...old } = rowOf({ id: ID1, type: 'approve' })
     a.put(URL_A, `items/${ID1}`, old as unknown as Record<string, unknown>)
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await ui.findAll({ key: `v:${ID1}:approve` })).toEqual([])
     expect(await shownText(ui)).toContain('answer on the page')
   })
@@ -377,7 +378,7 @@ describe('reading and drawing', () => {
       put(a, URL_A, rowOf({ id, type: 'ack', body_md: `${'word '.repeat(3_990)}${MARK}` }))
     }
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const cards = await ui.findAll({ type: 'Box' })
     const cardCount = cards.filter(b => String((b as unknown as { key?: string }).key ?? '').endsWith(':card')).length
     expect(cardCount).toBeLessThanOrEqual(10)
@@ -396,7 +397,7 @@ describe('reading and drawing', () => {
       put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
     }
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     const buttons = await ui.findAll({ type: 'Button' })
     const copies = buttons.filter(b => /:copy:\d+$/.test(String((b as unknown as { key?: string }).key ?? '')))
     expect(copies.length).toBe(10 * 9)
@@ -417,7 +418,7 @@ describe('reading and drawing', () => {
       put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
     }
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     const keys = (await ui.findAll({ type: 'Button' })).map(b => String((b as unknown as { key?: string }).key ?? ''))
     expect(keys.filter(key => key.endsWith(':done'))).toHaveLength(10)
     expect(keys.filter(key => /:copy:\d+$/.test(key))).toHaveLength(90)
@@ -435,7 +436,7 @@ describe('reading and drawing', () => {
         put(a, URL_A, rowOf({ id, type: 'do', body_md: body }))
       }
       await turnOn($, w)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       const tree = await ui.drawn()
       const count = (node: unknown): number => {
         const children = (node as { children?: unknown[] }).children ?? []
@@ -456,7 +457,7 @@ describe('reading and drawing', () => {
     const { w, a } = viewerWorld(on, { surfaces: ['desktop', 'terminal'] })
     put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: '```sh\nls -l\n```\n\nthen\n\n```\npwd\n```' }))
     await turnOn($, w)
-    const desktop = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const desktop = await mount($, { ...PANE, surface: 'desktop' })
     const keys = (await desktop.findAll({ type: 'Button' })).map(b => String((b as unknown as { key?: string }).key ?? ''))
     expect(keys.filter(key => key.includes(':copy'))).toEqual([])
     expect(keys).toContain(`v:${ID1}:done`)
@@ -464,7 +465,7 @@ describe('reading and drawing', () => {
     expect((await desktop.find({ key: `v:${ID1}:card` }))?.props).toMatchObject({ paddingX: 'sm', paddingTop: 'sm', paddingBottom: 'md' })
     expect((await desktop.find({ key: `v:${ID1}:feedback:field` }))?.props.marginBottom).toBe('sm')
     await desktop.unmount()
-    const terminal = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const terminal = await mount($, { ...PANE, surface: 'terminal' })
     expect((await terminal.find({ key: `v:${ID1}:card` }))?.props.padding).toBe('sm')
     expect((await terminal.find({ key: `v:${ID1}:copy:1` }))?.type).toBe('Button')
     expect((await terminal.find({ key: `v:${ID1}:copy:2` }))?.type).toBe('Button')
@@ -484,7 +485,7 @@ describe('answering', () => {
     const env = viewerWorld(on)
     put(env.a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, env.w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `v:${ID1}:approve` })
     await env.w.clock.settle()
     await ui.unmount()
@@ -500,7 +501,7 @@ describe('answering', () => {
       return { isDelivered: true }
     }
     await turnOn($, env.w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `v:${ID1}:approve` })
     await env.w.clock.settle()
     expect(Object.keys(heldAtSend as Record<string, unknown>)).toEqual([`${URL_A} ${ID1}`])
@@ -520,7 +521,7 @@ describe('answering', () => {
 
   vtest('the card then reads "sent", and a second answer is refused', async ($, on) => {
     const { w } = await answered($, on)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text).toContain('Sent; waiting for the session to take it.')
     expect(await ui.findAll({ key: `v:${ID1}:approve` })).toEqual([])
@@ -546,7 +547,7 @@ describe('answering', () => {
     env.send.answer = () => ({ isDelivered: false, reason: 'the session is gone' })
     put(env.a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, env.w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `v:${ID1}:approve` })
     await env.w.clock.settle()
     expect(await shownText(ui)).toContain('Not sent: the session is gone')
@@ -561,7 +562,7 @@ describe('answering', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, answer_id: envelope?.answer_id, delivered: false }))
     await tickOnce(w, 2 * 60_000)
     expect(sends).toHaveLength(2)
-    let ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    let ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('Applied; waiting for the session to receive it.')
     await ui.unmount()
     put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, answer_id: envelope?.answer_id, delivered: true }))
@@ -569,7 +570,7 @@ describe('answering', () => {
     expect(sends).toHaveLength(2)
     await tickOnce(w, 30 * 60_000)
     expect(sends).toHaveLength(2)
-    ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: 'humantray:view' })
     await w.clock.settle()
     expect(await shownText(ui)).toContain(`HT-${ID1.slice(-5)}`)
@@ -580,7 +581,7 @@ describe('answering', () => {
     const envelope = readEnvelope(sends[0]?.text ?? '')
     put(a, URL_A, rowOf({ id: ID1, type: 'approve', bumps: 1, response_refused: { answer_id: envelope?.answer_id ?? '', reason: 'raised again', at: START } }))
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('The session refused the last answer: raised again')
     expect((await ui.findAll({ key: `v:${ID1}:approve` })).length).toBe(1)
   })
@@ -590,7 +591,7 @@ describe('answering', () => {
     const envelope = readEnvelope(sends[0]?.text ?? '')
     a.put(URL_A, `responses/${ID1}`, response(ID1, { answer_id: envelope?.answer_id, by: 'viewer' }))
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('Stored; waiting for the session to apply it.')
   })
 
@@ -598,7 +599,7 @@ describe('answering', () => {
     const { w, a } = await answered($, on)
     a.put(URL_A, `responses/${ID1}`, response(ID1))
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('Answered on the page')
   })
 
@@ -646,7 +647,7 @@ describe('answering', () => {
     await tickOnce(w, 2 * 60 * 60_000 - TICK_MS)
     expect(count).toBe(0)
     expect(sends.length).toBe(count)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('Not taken by the session in a day.')
     await ui.press({ key: `v:${ID1}:again` })
     await w.clock.settle()
@@ -678,7 +679,7 @@ describe('answering', () => {
     await $.session.start(START_EVENT)
     await w.clock.settle()
     expect(sends).toEqual([{ to: expect.stringContaining(ME) as unknown as string, text: left.text }])
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('Viewer: 2 repositories')
   })
 
@@ -718,7 +719,7 @@ describe('answering', () => {
     put(env.a, URL_A, rowOf({ id: ID1, type: 'question' }))
     put(env.a, URL_A, rowOf({ id: ID2, type: 'do', notes: true }))
     await turnOn($, env.w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.input({ key: `v:${ID1}:text`, text: '- a\n- b\n\n```sh\nmake\n```', kind: 'change' })
     await ui.press({ key: `v:${ID1}:submit` })
     await ui.input({ key: `v:${ID2}:notes`, text: '**done** at last', kind: 'change' })
@@ -734,7 +735,7 @@ describe('answering', () => {
     const env = viewerWorld(on)
     put(env.a, URL_A, rowOf({ id: ID2, type: 'do', notes: true }))
     await turnOn($, env.w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.input({ key: `v:${ID2}:feedback`, text: '- one\n- two' })
     expect(await ui.find({ key: `v:${ID2}:feedback` })).toBeUndefined()
     expect((await ui.find({ key: `v:${ID2}:feedback:1` }))?.props.value).toBe('- one\n- two')
@@ -766,7 +767,7 @@ describe('one tick at a time, and nothing written after off', () => {
     // A timer tick starts and waits on its first read (the clock stays under the call's time limit).
     await w.clock.advance(TICK_MS)
     const before = a.calls.length
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const pressed = ui.press({ key: 'humantray:view' })
     const ran = $.command.run({ ...VIEWER_COMMAND, args: '' })
     await w.clock.settle()
@@ -791,7 +792,7 @@ describe('one tick at a time, and nothing written after off', () => {
     const text = ((await ran) as { text?: string }).text ?? ''
     await w.clock.settle()
     expect(text).toContain('on for 1 repository: github.com/owner/other')
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const shown = await shownText(ui)
     expect(shown).toContain('Question 02')
     expect(shown).not.toContain('Question 01')
@@ -804,7 +805,7 @@ describe('one tick at a time, and nothing written after off', () => {
     await tickOnce(w)
     const release = holdStore(a)
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const before = a.calls.length
     const pressed = ui.press({ key: 'humantray:view' })
     await w.clock.settle()
@@ -825,7 +826,7 @@ describe('one tick at a time, and nothing written after off', () => {
     release()
     await w.clock.settle()
     await tickOnce(w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('Viewer:')
   })
 })
@@ -840,7 +841,7 @@ describe('finding the artifacts again', () => {
     }
     await tickOnce(w, FIND_MS)
     a.before = () => undefined
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text).toContain('Viewer: 2 repositories')
     expect(text).toContain('could not be read just now')
@@ -863,7 +864,7 @@ describe('finding the artifacts again', () => {
     await turnOn($, w)
     a.listFails = true
     await tickOnce(w, FIND_MS)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const text = await shownText(ui)
     expect(text).toContain('Viewer: 2 repositories')
     expect(text).toContain('could not be read just now')
@@ -902,7 +903,7 @@ describe('History freshness', () => {
       if (JSON.stringify(input.query ?? {}).includes('response_at')) a.garble = 1
     }
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('last read')
     await ui.press({ key: 'humantray:view' })
     await w.clock.settle()
@@ -940,7 +941,7 @@ describe('the lease before every outbox write and send', () => {
     const { w, a, sends } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     w.storeOverride = key => (key === 'viewer:lease' ? { instance: 'other', session: 'b', renewed: w.clock.now() } : undefined)
     await ui.press({ key: `v:${ID1}:approve` })
     await w.clock.settle()
@@ -953,7 +954,7 @@ describe('the lease before every outbox write and send', () => {
     const { w, a, sends } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await Promise.all([ui.press({ key: `v:${ID1}:approve` }), ui.press({ key: `v:${ID1}:approve` })])
     await w.clock.settle()
     expect(sends).toHaveLength(1)
@@ -964,7 +965,7 @@ describe('the lease before every outbox write and send', () => {
     const { w, a, sends } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }, { session_id: 'not-a-session' }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `v:${ID1}:approve` })
     await w.clock.settle()
     expect(sends).toEqual([])
@@ -1016,7 +1017,7 @@ describe('the lease before every outbox write and send', () => {
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
     await turnOn($, w)
     w.kvSet('viewer:outbox', 'not an outbox')
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `v:${ID1}:approve` })
     await w.clock.settle()
     expect(sends).toEqual([])
@@ -1030,7 +1031,7 @@ describe('the lease before every outbox write and send', () => {
     put(a, URL_A, rowOf({ id: ID2, type: 'approve' }))
     await turnOn($, w)
     send.answer = () => new Promise(() => undefined)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const pressed = ui.press({ key: `v:${ID1}:approve` })
     await w.clock.advance(31_000)
     await pressed
@@ -1049,7 +1050,7 @@ describe('the card body cut', () => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'ack', body_md: Array.from({ length: 40 }, (_, n) => `Paragraph ${n} ${'word '.repeat(30)}`).join('\n\n') }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const body = (await ui.findAll({ key: `v:${ID1}:body` }))[0] as unknown as { text?: string } | undefined
     expect((body?.text ?? '').length).toBeLessThanOrEqual(6_000)
     expect((body?.text ?? '').length).toBeGreaterThan(3_000)
@@ -1072,7 +1073,7 @@ describe('re-read at 8e06312', () => {
       await held
       return { isDelivered: true }
     }
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     const pressed = ui.press({ key: `v:${ID1}:approve` })
     await w.clock.settle()
     // A timer tick while the first send waits (under the send's time limit).
@@ -1090,7 +1091,7 @@ describe('re-read at 8e06312', () => {
     w.failStoreSet = key => key === 'viewer:lease'
     // Past the lease's life, so the failed renewal leaves no fresh lease.
     await tickOnce(w, LEASE_MS)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).toContain('The viewer lease could not be written')
     w.failStoreSet = () => false
     const before = a.calls.length
@@ -1107,7 +1108,7 @@ describe('re-read at 8e06312', () => {
     // Stale for the check at the start of the tick, so the tick writes its own; the read-back still names the other.
     await tickOnce(w)
     w.storeOverride = () => undefined
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('Viewer:')
   })
 })
@@ -1165,7 +1166,7 @@ describe('acceptance findings (#32)', () => {
     }
     await turnOn($, w)
     expect(w.kv('viewer:outbox')).toEqual({})
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('Applied; waiting')
     expect(sends).toEqual([])
   })
@@ -1188,7 +1189,7 @@ describe('copying code from a viewer card (#51)', () => {
     // A lead-in past the card's budget, so that the whole runbook is cut away.
     put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: `${'Lead-in words. '.repeat(450)}\n\n${RUNBOOK}` }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect(await drawnText(ui, `v:${ID1}:body`)).not.toContain('docker build')
     await ui.press({ key: `v:${ID1}:copy:1` })
     expect(copies.at(-1)).toBe(blocks[0]?.text)
@@ -1207,7 +1208,7 @@ describe('copying code from a viewer card (#51)', () => {
     const { w, a } = viewerWorld(on, { surfaces: ['terminal'] })
     put(a, URL_A, rowOf({ id: ID1, type: 'do', body_md: RUNBOOK }))
     await turnOn($, w)
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect(await drawnText(ui, `v:${ID1}:body`)).toContain('step6')
     expect(await ui.find({ key: `v:${ID1}:full` })).toBeUndefined()
   })
@@ -1218,7 +1219,7 @@ describe('copying code from a viewer card (#51)', () => {
     await turnOn($, w)
     const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'do', header: 'Mine', question: 'Mine', body_md: RUNBOOK })).id
     await w.clock.settle()
-    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const ui = await mount($, { ...PANE, surface: 'terminal' })
     expect(await ui.find({ type: 'Text', text: 'This session' })).toBeDefined()
     await ui.press({ key: `${id}:copy:2` })
     expect(copies.at(-1)).toBe(blocks[1]?.text)

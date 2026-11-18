@@ -3,7 +3,7 @@ name: humantray
 description: How to ask a person for something through the humantray instead of in prose - FYIs, choices, questions, tasks and approvals, raised once and referred to by id, with the answer arriving later by itself. Use when you need a decision, an answer, an action or an acknowledgement from a person and can carry on meanwhile, when you hand a person a runbook to carry out, and whenever a line starting `humantray HT-` arrives.
 ---
 
-<!-- humantray-skill-version: 4 (humantray plugin 0.2.2; raise both together) -->
+<!-- humantray-skill-version: 5 (humantray plugin 0.2.3; raise both together) -->
 
 # humantray
 

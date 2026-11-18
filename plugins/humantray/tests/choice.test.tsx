@@ -7,6 +7,7 @@ import { type Engine, describe, expect, test } from 'claude-code/testing'
 
 import { DESCRIPTION_INDENT, choiceMark, choiceName, drawsChoiceRows } from '../hooks/choice'
 import { ADD, PANE, START_EVENT, answerOf, world } from './world'
+import { mount } from './surface-rules'
 
 const OPTIONS = [
   { label: 'Plugin validate', description: 'Run claude plugin validate on the repository' },
@@ -67,7 +68,7 @@ describe('the app surfaces draw checkbox and radio rows', () => {
         world(on, { surfaces: [surface] })
         await $.session.start(START_EVENT)
         const id = await addChoice($, multi)
-        const ui = await $.ui.mount({ ...PANE, surface })
+        const ui = await mount($, { ...PANE, surface })
         const [off, onMark] = multi ? ['☐', '☑'] : ['○', '◉']
 
         // The tree is drawn: the group, each row and its Button are there.
@@ -125,7 +126,7 @@ describe('the terminal draws as in 0.2.1', () => {
       world(on)
       await $.session.start(START_EVENT)
       const id = await addChoice($, multi)
-      const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+      const ui = await mount($, { ...PANE, surface: 'terminal' })
       const [off, onMark] = multi ? ['[ ]', '[x]'] : ['( )', '(•)']
       expect(await ui.find({ key: `${id}:options` })).toBeUndefined()
       expect(await ui.find({ key: `${id}:opt:0:row` })).toBeUndefined()
@@ -151,7 +152,7 @@ describe('the answer is the same on every surface', () => {
       await $.session.start(START_EVENT)
       const multi = await addChoice($, true)
       const single = await addChoice($, false)
-      const ui = await $.ui.mount({ ...PANE, surface })
+      const ui = await mount($, { ...PANE, surface })
       for (const n of [0, 1, 2, 1]) await ui.press({ key: `${multi}:opt:${String(n)}` })
       await ui.press({ key: `${multi}:submit` })
       for (const n of [0, 2]) await ui.press({ key: `${single}:opt:${String(n)}` })

@@ -4,6 +4,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import { ADD, COMMAND, DIR, FILE, HOUR, LIST, LOCK, PANE, START, START_EVENT, answerOf, stored, world } from './world'
+import { mount } from './surface-rules'
 
 const CHOICE = {
   tool: ADD,
@@ -177,7 +178,7 @@ describe('bumping across /clear, /branch and /resume', () => {
     const listed = await $.tool.call({ tool: LIST })
     expect(answerOf<{ items: Array<{ id: string }> }>(listed).items.map(i => i.id)).toEqual([id])
     // The answer still reaches the live session, by the chain from session-a.
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${id}:approve` })
     await ui.unmount()
     await w.drain()
@@ -660,7 +661,7 @@ describe('registering at session start', () => {
     const ran = await $.command.run(COMMAND)
     expect((ran as { text?: string }).text).toBe('Humantray pane opened.')
     expect(w.opened.length).toBeGreaterThan(before)
-    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await ui.find({ type: 'Text', text: /Deployed/ })).toBeDefined()
     await ui.unmount()
   })
