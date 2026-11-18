@@ -108,12 +108,12 @@ const options = ({ rows }: Look, multi: boolean, picked: boolean) => {
     : picked
       ? 'Green blue with a white dot, the others an empty grey circle'
       : 'every one an empty grey circle'
-  return `each option a full-width row, ${control} drawn on the left (${state}), the label beside it in normal weight and the description dim on its own line under the label; Green has none; a thin grey rule between rows; the row lights under the pointer; Other is the last row, its field closed; on a phone each control and rule is a small web view, so check the card still scrolls smoothly`
+  return `each option a row, ${control} drawn on the left (${state}), the label beside it and the description dim on its own line under the label, lined up with it; Green has none; pressing a label picks it (the control is not pressable); no shade on the row; Other is the last row, its field closed; on a phone each control is a small web view, so check the card still scrolls smoothly`
 }
 
 /** What the dialog frame looks like on an app surface (#72): said once per card type. */
 const frame = ({ rows }: Look, actions: string) =>
-  rows ? `the title and short id in a shaded band across the top; ${actions} at the bottom right` : `${actions}`
+  rows ? `${actions} at the bottom right` : `${actions}`
 
 export const GALLERY_FIXTURES: GalleryFixture[] = [
   {
@@ -179,7 +179,7 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
     mine: true,
     look: look =>
       look.rows
-        ? 'choice, Other open: Blue ticked, Other ticked with its field open inside its row holding “Teal”; pressing Other again closes the field and clears it'
+        ? 'choice, Other open: Blue ticked, Other ticked with its field open under its label holding “Teal”; Blue, Red and Other each still press; pressing Other again closes the field and clears it'
         : 'choice, Other typed: [x] on Blue, “Teal” in the Other field',
   },
   {

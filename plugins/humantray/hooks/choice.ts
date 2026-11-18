@@ -50,15 +50,11 @@ export const controlSvg = (multi: boolean, on: boolean): string => {
 export const controlAlt = (multi: boolean, on: boolean): string => `${multi ? 'Checkbox' : 'Radio button'}, ${on ? 'selected' : 'not selected'}`
 
 /**
- * The thin rule between option rows: one pixel tall, stretched to the row's
- * width. Box has no single-side border. Drawn with `height={1}`; the markup's
- * own width (10000) is cut to the slot, and `preserveAspectRatio="none"`
- * stretches the viewBox to it, so it stays one pixel tall.
+ * An empty Svg the control's width, one pixel tall: set before an option's
+ * description or Other's field so they line up with the label beside the
+ * control, as a Box's cells cannot match the control's pixels.
  */
-export const RULE_SVG = `<svg ${SVG} width="10000" height="1" viewBox="0 0 100 1" preserveAspectRatio="none"><rect width="100" height="1" fill="${CONTROL_OFF}" fill-opacity="0.5"/></svg>`
-
-/** The header band's and a row's hover shade: a theme key, so it follows light and dark. */
-export const BAND = 'subtle'
+export const SPACER_SVG = `<svg ${SVG} width="16" height="1" viewBox="0 0 16 1"></svg>`
 
 /**
  * Whether a choice's Other is on (#72): while its row is open or it holds

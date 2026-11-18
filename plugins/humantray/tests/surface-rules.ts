@@ -40,6 +40,9 @@ export type SurfaceRule = { name: string; from: string; check: (visit: Visit) =>
  */
 export const IGNORED_IN_BUTTON: readonly string[] = ['dimColor']
 
+/** Theme keys meant for text, which the app paints dark as a fill (#72). */
+export const TEXT_COLOURS: readonly string[] = ['text', 'subtle', 'inactive', 'inverseText']
+
 /** A terminal mark at the start of a line: `[ ]`, `[x]`, `( )`, `(•)`. */
 const MARK = /^\s*(?:[-*+]\s+)?(?:\[[ xX]\]|\(\s?\)|\(•\))/
 
@@ -144,6 +147,43 @@ export const RULES: readonly SurfaceRule[] = [
       const hasButton = (value: unknown): boolean => isNode(value) && (value.type === 'Button' || (value.children ?? []).some(hasButton))
       const beside = (row?.children ?? []).some(child => child !== node && hasButton(child))
       return beside ? [] : [`a control (${JSON.stringify(alt)}) with no Button beside it to press`]
+    },
+  },
+  {
+    // #72, on 0.2.5: the header band and the row hover were filled with
+    // `subtle`, a theme key meant for text, and the desktop app painted them
+    // dark grey. No Box on an app surface is filled with a text colour.
+    // Only the fill is seen on a real drawing: `ui.drawn()` does not carry
+    // `hover`, so a hover fill is caught only in a hand-made tree.
+    name: 'no-text-colour-as-fill',
+    from: '#72',
+    check: ({ node }) => {
+      if (node.type !== 'Box') return []
+      const fill = node.props?.backgroundColor
+      const hover = (node.props?.hover as { backgroundColor?: unknown } | undefined)?.backgroundColor
+      return [fill, hover]
+        .filter((colour): colour is string => typeof colour === 'string' && TEXT_COLOURS.includes(colour))
+        .map(colour => `a Box filled with ${JSON.stringify(colour)}, a text colour the app paints dark`)
+    },
+  },
+  {
+    // #72, on 0.2.5: the desktop app took no press on an option's label
+    // Button whose column grew and stretched (flexGrow 1, alignItems
+    // stretch) and also held its description or Other's field; Other,
+    // alone in that same column while closed, took its presses (the owner's
+    // check). Which of the two props it is, the tree cannot say: a Button
+    // shares a Box that grows or stretches with nothing.
+    name: 'button-alone-in-a-stretched-box',
+    from: '#72',
+    check: ({ node, ancestors }) => {
+      if (node.type !== 'Button') return []
+      const parent = ancestors.at(-1)
+      if (parent === undefined || parent.type !== 'Box') return []
+      const grows = typeof parent.props?.flexGrow === 'number' && parent.props.flexGrow > 0
+      const stretches = parent.props?.alignItems === 'stretch'
+      if (!grows && !stretches) return []
+      const others = (parent.children ?? []).filter(child => child !== node && (isNode(child) || (typeof child === 'string' && child.trim() !== '')))
+      return others.length === 0 ? [] : [`a Button in a Box that ${grows ? 'grows' : 'stretches'} and holds something else, where the desktop app took no press`]
     },
   },
 ]

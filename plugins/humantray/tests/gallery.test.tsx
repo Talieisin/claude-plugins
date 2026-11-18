@@ -236,7 +236,7 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
     const { ui } = await openGallery($, 'desktop')
     // What an option shows (#72): its drawn control's state, and its label.
     const label = async (key: string) => {
-      const row = (await ui.find({ key: `${key}:row` })) as { children?: unknown[] } | undefined
+      const row = (await ui.find({ key: `${key}:line` })) as { children?: unknown[] } | undefined
       const control = (row?.children ?? []).find(child => (child as { type?: string }).type === 'Svg') as { props?: { alt?: string } } | undefined
       return `${control?.props?.alt ?? '(no control)'}: ${((await ui.find({ key })) as FoundLike | undefined)?.text ?? ''}`
     }

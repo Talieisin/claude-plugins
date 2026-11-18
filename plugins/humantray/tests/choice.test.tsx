@@ -7,7 +7,7 @@
 
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 
-import { BAND, CONTROL_OFF, CONTROL_ON, RULE_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from '../hooks/choice'
+import { CONTROL_OFF, CONTROL_ON, SPACER_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from '../hooks/choice'
 import { EMPTY_DRAFT } from '../hooks/items'
 import { ADD, PANE, START_EVENT, answerOf, world } from './world'
 import { mount } from './surface-rules'
@@ -76,22 +76,19 @@ describe('the pure rules', () => {
     expect(controlAlt(true, false)).toBe('Checkbox, not selected')
   })
 
-  test('the rule between rows stretches to the slot at one pixel: a viewBox and preserveAspectRatio="none"', () => {
-    expect(RULE_SVG).toContain('viewBox="0 0 100 1"')
-    expect(RULE_SVG).toContain('preserveAspectRatio="none"')
-    expect(RULE_SVG).toContain('height="1"')
-    expect(RULE_SVG).toContain('width="10000"')
+  test('the spacer under a label is the control\'s width, one pixel tall, and draws nothing', () => {
+    expect(SPACER_SVG).toBe('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="1" viewBox="0 0 16 1"></svg>')
   })
 })
 
-/** A row's children in order, by type: the control, then the label's column. */
-const rowShape = (row: Node | undefined) => elements(row).map(child => child.type)
+/** A drawn node's element children by type. */
+const shape = (node: Node | Child | undefined) => elements(node).map(child => child.type)
 
 describe('the app surfaces draw the desktop dialog look (#72)', () => {
   const field = { desktop: { marginBottom: 'sm' }, vscode: { marginBottom: 1 }, mobile: {} }
   for (const surface of APPS) {
     for (const multi of [true, false]) {
-      test(`${surface}, ${multi ? 'multi-select' : 'single choice'}: a row per option with an Svg control, the label alone in its Button, the description dim under it, a rule between rows, Other last`, async ($, on) => {
+      test(`${surface}, ${multi ? 'multi-select' : 'single choice'}: a row per option, an Svg control beside the label Button alone, the description dim under the label, Other last`, async ($, on) => {
         world(on, { surfaces: [surface] })
         await $.session.start(START_EVENT)
         const id = await addChoice($, multi)
@@ -100,35 +97,37 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
         const group = (await ui.find({ key: `${id}:options` })) as Node | undefined
         expect(group?.type).toBe('Box')
         expect(spacing(group?.props)).toEqual(field[surface])
-        // Option, rule, option, rule, option, rule, Other: a rule between rows, none after the last.
-        const parts = elements(group)
-        expect(parts.map(child => (child.type === 'Svg' ? 'rule' : String(child.props.key)))).toEqual([
-          `${id}:opt:0:row`, 'rule', `${id}:opt:1:row`, 'rule', `${id}:opt:2:row`, 'rule', `${id}:opt:other:row`,
+        // No rule between rows (0.2.5's were not drawn), and no fill or hover shade.
+        expect(elements(group).map(child => String(child.props.key))).toEqual([
+          `${id}:opt:0:row`, `${id}:opt:1:row`, `${id}:opt:2:row`, `${id}:opt:other:row`,
         ])
-        for (const rule of parts.filter(child => child.type === 'Svg')) {
-          expect(rule.props).toMatchObject({ source: RULE_SVG, height: 1 })
-        }
 
         for (const [index, option] of OPTIONS.entries()) {
           const row = (await ui.find({ key: `${id}:opt:${String(index)}:row` })) as Node | undefined
-          // Its hover (the whole row lit under the pointer) is the surface's: the drawn props do not carry it.
-          expect(row?.props).toMatchObject({ flexDirection: 'row' })
-          expect(rowShape(row)).toEqual(['Svg', 'Box'])
-          expect(elements(row)[0]?.props).toMatchObject({ source: controlSvg(multi, false), alt: controlAlt(multi, false), width: 16, height: 16 })
-          const column = (await ui.find({ key: `${id}:opt:${String(index)}:text` })) as Node | undefined
-          expect(column?.props).toMatchObject({ flexDirection: 'column', flexGrow: 1, alignItems: 'stretch' })
+          expect(row?.props).toEqual({ key: `${id}:opt:${String(index)}:row`, flexDirection: 'column' })
+          // The line: the control and the Button, and nothing else; no Box around the Button.
+          const line = (await ui.find({ key: `${id}:opt:${String(index)}:line` })) as Node | undefined
+          expect(line?.props).toEqual({ key: `${id}:opt:${String(index)}:line`, flexDirection: 'row', gap: 1 })
+          expect(shape(line)).toEqual(['Svg', 'Button'])
+          expect(elements(line)[0]?.props).toMatchObject({ source: controlSvg(multi, false), alt: controlAlt(multi, false), width: 16, height: 16 })
           const button = (await ui.find({ key: `${id}:opt:${String(index)}` })) as Node | undefined
-          expect(button?.type).toBe('Button')
           expect(button?.props.plain).toBe(true)
           // The label alone: no mark, no description, nothing but a string.
           expect(button?.props.label ?? button?.text).toBe(option.label)
           expect(elements(button)).toEqual([])
+          const under = (await ui.find({ key: `${id}:opt:${String(index)}:under` })) as Node | undefined
           const about = (await ui.find({ key: `${id}:opt:${String(index)}:about` })) as Node | undefined
           if (option.description.trim() === '') {
+            expect(under).toBeUndefined()
             expect(about).toBeUndefined()
-            expect(elements(column).map(child => child.type)).toEqual(['Button'])
+            expect(shape(row)).toEqual(['Box'])
           } else {
-            expect(elements(column).map(child => child.type)).toEqual(['Button', 'Box'])
+            // Under the line, in a Box of its own: a spacer the control's width, then the description.
+            expect(shape(row)).toEqual(['Box', 'Box'])
+            expect(shape(under)).toEqual(['Svg', 'Box'])
+            expect(elements(under)[0]?.props).toMatchObject({ source: SPACER_SVG, alt: '', width: 16, height: 1 })
+            // The desktop's native button sets its label in by about a cell: the description matches it.
+            expect(about?.props.paddingLeft).toBe(surface === 'desktop' ? 1 : 0)
             const text = elements(about)[0]
             expect(text?.type).toBe('Text')
             expect(text?.props.dimColor).toBe(true)
@@ -136,13 +135,12 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
           }
         }
         // Other: the same control, closed, with no field.
-        const otherRow = (await ui.find({ key: `${id}:opt:other:row` })) as Node | undefined
-        expect(elements(otherRow)[0]?.props.alt).toBe(controlAlt(multi, false))
+        expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Svg', 'Button'])
         expect(((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)?.props.label).toBe('Other')
         expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
 
-        // Pressed by the unchanged key, the control follows.
-        const control = async (n: number | 'other') => elements((await ui.find({ key: `${id}:opt:${String(n)}:row` })) as Node | undefined)[0]?.props.alt
+        // Pressed by the unchanged key, the control follows; an option with a description presses too.
+        const control = async (n: number | 'other') => elements((await ui.find({ key: `${id}:opt:${String(n)}:line` })) as Node | undefined)[0]?.props.alt
         await ui.press({ key: `${id}:opt:1` })
         expect(await control(1)).toBe(controlAlt(multi, true))
         await ui.press({ key: `${id}:opt:0` })
@@ -155,7 +153,7 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
   }
 
   for (const surface of APPS) {
-    test(`${surface}: the header in a shaded band, the body under it with the card's spacing, the actions bottom right`, async ($, on) => {
+    test(`${surface}: no header band and no fill; the card as before, its actions bottom right`, async ($, on) => {
       world(on, { surfaces: [surface] })
       await $.session.start(START_EVENT)
       const id = await addChoice($, false)
@@ -166,13 +164,9 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
       for (const card of [id, ack, task, plan]) {
         const frame = (await ui.find({ key: `${card}:card` })) as Node | undefined
         expect(frame?.props.borderStyle).toBe('round')
-        expect(elements(frame).map(child => child.props.key)).toEqual([`${card}:head`, `${card}:main`])
-        const head = (await ui.find({ key: `${card}:head` })) as Node | undefined
-        expect(head?.props.backgroundColor).toBe(BAND)
-        expect(elements(head).map(child => [child.type, child.props.bold ?? child.props.dimColor])).toEqual([
-          ['Text', true],
-          ['Text', true],
-        ])
+        expect(frame?.props.backgroundColor).toBeUndefined()
+        expect(await ui.find({ key: `${card}:head` })).toBeUndefined()
+        expect(shape(frame).slice(0, 2)).toEqual(['Text', 'Text'])
       }
       expect(((await ui.find({ key: `${id}:actions` })) as Node | undefined)?.props.justifyContent).toBe('flex-end')
       expect(((await ui.find({ key: `${ack}:actions` })) as Node | undefined)?.props.justifyContent).toBe('flex-end')
@@ -191,14 +185,17 @@ describe('Other on the app surfaces is a row that opens its field (#72)', () => 
       const id = await addChoice($, true)
       const ui = await mount($, { ...PANE, surface })
       await ui.press({ key: `${id}:opt:other` })
-      const column = (await ui.find({ key: `${id}:opt:other:text` })) as Node | undefined
-      expect(elements(column).map(child => child.props.key)).toEqual([`${id}:opt:other`, `${id}:other:field`])
+      // The field is under the line, not beside the Button: the Button keeps its line to itself.
+      expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Svg', 'Button'])
+      const under = (await ui.find({ key: `${id}:opt:other:under` })) as Node | undefined
+      expect(elements(under).map(child => child.props.key ?? child.type)).toEqual(['Svg', `${id}:other:field`])
       expect((await ui.find({ key: `${id}:other` }))?.type).toBe('Input')
-      expect(elements((await ui.find({ key: `${id}:opt:other:row` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(true, true))
+      const control = async () => elements((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)[0]?.props.alt
+      expect(await control()).toBe(controlAlt(true, true))
       await ui.input({ key: `${id}:other`, text: 'Teal', kind: 'change' })
       await ui.press({ key: `${id}:opt:other` })
       expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
-      expect(elements((await ui.find({ key: `${id}:opt:other:row` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(true, false))
+      expect(elements((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(true, false))
       // Opened again, the field is empty.
       await ui.press({ key: `${id}:opt:other` })
       expect((await ui.find({ key: `${id}:other` }))?.props.value).toBe('')
@@ -228,9 +225,9 @@ describe('Other on the app surfaces is a row that opens its field (#72)', () => 
     await ui.press({ key: `${id}:opt:1` })
     // Opening Other clears a single choice's pick.
     await ui.press({ key: `${id}:opt:other` })
-    expect(elements((await ui.find({ key: `${id}:opt:1:row` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(false, false))
+    expect(elements((await ui.find({ key: `${id}:opt:1:line` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(false, false))
     await ui.press({ key: `${id}:submit` })
-    expect((await ui.find({ key: `${id}:main` }))?.text).toContain('Pick an option or fill in Other.')
+    expect((await ui.find({ key: `${id}:card` }))?.text).toContain('Pick an option or fill in Other.')
     // Picking an option closes Other and clears its text.
     await ui.input({ key: `${id}:other`, text: 'Mauve', kind: 'change' })
     await ui.press({ key: `${id}:opt:2` })

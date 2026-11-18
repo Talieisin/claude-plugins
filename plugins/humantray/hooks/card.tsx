@@ -10,7 +10,7 @@ import type { BoxProps, EngineInterface, RenderInput } from 'claude-code'
 import type { CodeBlock, Draft, Item } from '../types'
 import { type Action, EMPTY_DRAFT, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from './items'
 import { codeBlocksOf } from './code'
-import { BAND, CONTROL_SIZE, RULE_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from './choice'
+import { CONTROL_SIZE, SPACER_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 
 export type FieldName = 'other' | 'text' | 'feedback' | 'notes'
@@ -266,30 +266,42 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         })
         controls.push(labelled('other', 'Other (Markdown)', otherInput))
       } else {
-        // The desktop app, VS Code and a phone (#72): each option a full-width
-        // row that lights under the pointer, a drawn radio or checkbox on the
-        // left, the label beside it and the description dim under the label,
-        // a thin rule between rows. The label Button is the press: a Button
-        // holds only strings and Text, so the Svg beside it cannot be pressed;
-        // the label's column grows to the row's width, so the press covers
-        // the row right of the control where the app stretches the button.
-        // No `label` prop on it: the desktop app draws a label in place of the
-        // children (#64, 0.2.3).
+        // The desktop app, VS Code and a phone (#72): each option a row with a
+        // drawn radio or checkbox on the left and the label Button beside it;
+        // under it, its description dim, or Other's open field, lined up with
+        // the label. The label Button is the press: a Button holds only
+        // strings and Text, so the Svg beside it cannot be pressed. No `label`
+        // prop on it: the desktop app draws a label in place of the children
+        // (#64, 0.2.3).
+        // The Button shares its Box with the Svg alone, never with what is
+        // under it, and no Box around it grows or stretches: on 0.2.5 the
+        // desktop app took no press on a label Button whose column (flexGrow
+        // 1, alignItems stretch) also held a description or Other's field,
+        // while Other, closed and alone in that column, took its presses (the
+        // owner's check). No fill and no hover shade: `subtle` painted dark
+        // grey over the row and its mark.
         const row = (rowKey: string, on: boolean, button: ReturnType<typeof h>, under: ReturnType<typeof h> | null) => (
-          <Box key={`${rowKey}:row`} flexDirection="row" gap={1} paddingY="xs" hover={{ backgroundColor: BAND }}>
-            <Svg source={controlSvg(isMulti, on)} alt={controlAlt(isMulti, on)} width={CONTROL_SIZE} height={CONTROL_SIZE} />
-            <Box key={`${rowKey}:text`} flexDirection="column" flexGrow={1} alignItems="stretch">
+          <Box key={`${rowKey}:row`} flexDirection="column">
+            <Box key={`${rowKey}:line`} flexDirection="row" gap={1}>
+              <Svg source={controlSvg(isMulti, on)} alt={controlAlt(isMulti, on)} width={CONTROL_SIZE} height={CONTROL_SIZE} />
               {button}
-              {under}
             </Box>
+            {under === null ? null : (
+              <Box key={`${rowKey}:under`} flexDirection="row" gap={1}>
+                <Svg source={SPACER_SVG} alt="" width={CONTROL_SIZE} height={1} />
+                {under}
+              </Box>
+            )}
           </Box>
         )
-        const rule = <Svg source={RULE_SVG} alt="" height={1} />
         const options: ReturnType<typeof h>[] = []
         ;(item.options ?? []).forEach((option, index) => {
+          // On the desktop app the native button sets its label in by about a
+          // cell (the owner's check on 0.2.5), so the description is set in to
+          // match.
           const description =
             option.description.trim() === '' ? null : (
-              <Box key={`${key}:opt:${index}:about`}>
+              <Box key={`${key}:opt:${index}:about`} paddingLeft={e.surface === 'desktop' ? 1 : 0}>
                 <Text dimColor>{option.description}</Text>
               </Box>
             )
@@ -303,7 +315,6 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
               description,
             ),
           )
-          options.push(rule)
         })
         // Other is the last row, with the same control. It is on while it is
         // open or holds text; pressing it on opens its field in the row (and
@@ -329,7 +340,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
               Other
             </Button>,
             otherOn ? (
-              <Box key={`${key}:other:field`} flexDirection="column" alignItems="stretch" width="100%">
+              <Box key={`${key}:other:field`} flexDirection="column" alignItems="stretch" flexGrow={1}>
                 {otherInput}
               </Box>
             ) : null,
@@ -377,27 +388,11 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
       ...controlsFor(item, key, draftId, draft, press),
       draft.error !== '' && <Text color="error">{draft.error}</Text>,
     ]
-    if (!rows) {
-      return (
-        <Box key={`${key}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
-          {heading}
-          {short}
-          {rest}
-        </Box>
-      )
-    }
-    // The app surfaces (#72): the heading in a shaded band across the top,
-    // as the desktop app's own dialog has it; the rest under it with the
-    // card's spacing.
     return (
-      <Box key={`${key}:card`} flexDirection="column" borderStyle="round">
-        <Box key={`${key}:head`} flexDirection="column" backgroundColor={BAND} paddingX="sm" paddingY="sm">
-          {heading}
-          {short}
-        </Box>
-        <Box key={`${key}:main`} flexDirection="column" {...cardSpacing}>
-          {rest}
-        </Box>
+      <Box key={`${key}:card`} flexDirection="column" borderStyle="round" {...cardSpacing}>
+        {heading}
+        {short}
+        {rest}
       </Box>
     )
   }

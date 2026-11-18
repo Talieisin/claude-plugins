@@ -301,7 +301,7 @@ describe('reading and drawing', () => {
     expect(await ui.find({ key: `v:${ID1}:opt:1:about` })).toBeUndefined()
     await ui.press({ key: `v:${ID1}:opt:0` })
     await ui.press({ key: `v:${ID1}:opt:1` })
-    expect(JSON.stringify(await ui.find({ key: `v:${ID1}:opt:1:row` }))).toContain('Checkbox, selected')
+    expect(JSON.stringify(await ui.find({ key: `v:${ID1}:opt:1:line` }))).toContain('Checkbox, selected')
     // Other is a row there too (#72): pressed, its field opens in the row.
     await ui.press({ key: `v:${ID1}:opt:other` })
     await ui.input({ key: `v:${ID1}:other`, text: 'Three', kind: 'change' })

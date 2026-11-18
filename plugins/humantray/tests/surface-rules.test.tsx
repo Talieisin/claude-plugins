@@ -49,6 +49,8 @@ describe('each rule fails on the faulty #64 tree', () => {
       ['button-label-is-its-text', '#64'],
       ['svg-has-height', '#72'],
       ['control-beside-its-button', '#72'],
+      ['no-text-colour-as-fill', '#72'],
+      ['button-alone-in-a-stretched-box', '#72'],
     ])
   })
 
@@ -170,6 +172,85 @@ describe('the Svg rules (#72)', () => {
   test('a decorative Svg (no state in its alt) needs no Button; the terminal is not checked', () => {
     expect(surfaceFaults(card([svg({ height: 1 })]), 'desktop')).toEqual([])
     expect(surfaceFaults(card([svg({})]), 'terminal')).toEqual([])
+  })
+})
+
+describe('the fill rule (#72, 0.2.5)', () => {
+  /** The 0.2.5 header band, as it was drawn: filled with `subtle`. */
+  const BAND_0_2_5 = {
+    type: 'Box',
+    props: { key: 'X:card', borderStyle: 'round' },
+    children: [{ type: 'Box', props: { key: 'X:head', backgroundColor: 'subtle' }, children: [{ type: 'Text', props: { bold: true }, children: ['[Q] Which?'] }] }],
+  }
+
+  for (const surface of APPS) {
+    test(`${surface}: the 0.2.5 header band fails it alone, naming the band's key`, () => {
+      const faults = surfaceFaults(BAND_0_2_5, surface)
+      expect(rulesIn(faults)).toEqual(['no-text-colour-as-fill'])
+      expect(faults[0]).toContain('at X:head:')
+    })
+  }
+
+  test('a hover fill with a text colour fails; a raw colour, or no fill, passes; the terminal is not checked', () => {
+    const row = (props: Record<string, unknown>) => ({ type: 'Box', props: { key: 'X:row', ...props }, children: [] })
+    expect(rulesIn(surfaceFaults(row({ hover: { backgroundColor: 'inactive' } }), 'desktop'))).toEqual(['no-text-colour-as-fill'])
+    expect(surfaceFaults(row({ backgroundColor: '#f5f5f5' }), 'desktop')).toEqual([])
+    expect(surfaceFaults(row({}), 'vscode')).toEqual([])
+    expect(surfaceFaults(BAND_0_2_5, 'terminal')).toEqual([])
+  })
+})
+
+describe('the dead-press rule (#72, 0.2.5)', () => {
+  /** One option and Other, open, as 0.2.5 drew them on the desktop app (its snapshot). */
+  const column = (key: string, children: unknown[]) => ({ type: 'Box', props: { key, flexDirection: 'column', flexGrow: 1, alignItems: 'stretch' }, children })
+  const control = { type: 'Svg', props: { source: '<svg/>', alt: 'Radio button, not selected', width: 16, height: 16 } }
+  const ROWS_0_2_5 = {
+    type: 'Box',
+    props: { key: 'X:options', flexDirection: 'column' },
+    children: [
+      {
+        type: 'Box',
+        props: { key: 'X:opt:0:row', flexDirection: 'row' },
+        children: [
+          control,
+          column('X:opt:0:text', [
+            { type: 'Button', props: { key: 'X:opt:0', plain: true }, children: ['Squash'] },
+            { type: 'Box', props: { key: 'X:opt:0:about' }, children: [{ type: 'Text', props: { dimColor: true }, children: ['One commit'] }] },
+          ]),
+        ],
+      },
+      {
+        type: 'Box',
+        props: { key: 'X:opt:1:row', flexDirection: 'row' },
+        children: [control, column('X:opt:1:text', [{ type: 'Button', props: { key: 'X:opt:1', plain: true }, children: ['Green'] }])],
+      },
+      {
+        type: 'Box',
+        props: { key: 'X:opt:other:row', flexDirection: 'row' },
+        children: [
+          control,
+          column('X:opt:other:text', [
+            { type: 'Button', props: { key: 'X:opt:other', plain: true }, children: ['Other'] },
+            { type: 'Box', props: { key: 'X:other:field' }, children: [{ type: 'Input', props: { key: 'X:other' } }] },
+          ]),
+        ],
+      },
+    ],
+  }
+
+  for (const surface of APPS) {
+    test(`${surface}: 0.2.5's rows fail it on the option with a description and on Other open, not on the option alone in its column`, () => {
+      const faults = surfaceFaults(ROWS_0_2_5, surface)
+      expect(rulesIn(faults)).toEqual(['button-alone-in-a-stretched-box'])
+      expect(faults.map(fault => fault.split(' at ')[1]?.split(':').slice(0, -1).join(':'))).toEqual(['X:opt:0', 'X:opt:other'])
+    })
+  }
+
+  test('a Button alone in a stretched Box, or beside others in a plain one, passes; the terminal is not checked', () => {
+    const plain = { type: 'Box', props: { key: 'X:line', flexDirection: 'row' }, children: [control, { type: 'Button', props: { key: 'X:b' }, children: ['B'] }] }
+    expect(surfaceFaults(plain, 'desktop')).toEqual([])
+    expect(surfaceFaults(column('X:c', [{ type: 'Button', props: { key: 'X:b' }, children: ['B'] }]), 'desktop')).toEqual([])
+    expect(surfaceFaults(ROWS_0_2_5, 'terminal')).toEqual([])
   })
 })
 
