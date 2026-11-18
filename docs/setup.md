@@ -193,8 +193,9 @@ repository. A `claude -p` run draws nothing, so a session there asks as it
 always did.
 
 **The release check: `/humantray-gallery`.** After a humantray release, run
-`/humantray-gallery` once on each surface you use (the terminal, the desktop
-app, VS Code, a phone). It opens a pane of fixture cards, one of every card
+`/humantray-gallery` once on each surface you use that draws the pane (the
+terminal, the desktop app, VS Code; a phone only where its app draws a pane:
+see "No pane on mobile yet" below). It opens a pane of fixture cards, one of every card
 type and state, drawn by the same code as the real pane: ack, do, approve and
 question; a choice with one answer and with several, each with and without a
 pick; a card with notes, a Markdown body, code blocks and a mermaid block; the
