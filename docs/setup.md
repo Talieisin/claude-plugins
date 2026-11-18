@@ -199,8 +199,10 @@ see "No pane on mobile yet" below). It opens a pane of fixture cards, one of eve
 type and state, drawn by the same code as the real pane: ack, do, approve and
 question; a choice with one answer and with several, each with and without a
 pick; a card with notes, a Markdown body, code blocks and a mermaid block; the
-error line; a card from another session and a bumped one. Each card has a short
-label above it saying what to look for. The cards are fixtures: nothing is
+error line; a card from another session with a title and one with none, and a
+bumped one, each saying who asked and when; and, above them, the pane's header
+(the open count, the Open and History tabs, and the type chips, which filter the
+cards). Each card has a short label above it saying what to look for. The cards are fixtures: nothing is
 stored, sent or written to the page, and no session is told anything. Picks
 and typing change the gallery's own cards, so toggling can be tried; Done,
 Submit and the other answer buttons only note under the card that they were

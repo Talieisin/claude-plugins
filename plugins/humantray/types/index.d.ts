@@ -214,8 +214,13 @@ export type MetaPage = {
   plugin_version: string
 }
 
-/** What the store knows of a session: when it was last seen, and who took over. */
-export type SessionRecord = { seen: number; successor?: string }
+/**
+ * What the store knows of a session: when it was last seen, who took over,
+ * and its title (#75): the `session_title` its own hook inputs carried (the
+ * desktop app's title, or a `/rename`), cleaned and cut. Absent for a session
+ * with no title, or one recorded by humantray before 0.2.8.
+ */
+export type SessionRecord = { seen: number; successor?: string; title?: string }
 
 /** The whole of `items.json`. */
 export type StoreFile = {
@@ -264,6 +269,8 @@ export type HistoryEntry = {
   mark: DeliveryMark
   /** This session's, or inherited from the session it continues. */
   isMine: boolean
+  /** Who asked (#75): the asking session's title, `this session`, or `another session`. */
+  origin: string
 }
 
 /**
@@ -300,11 +307,11 @@ export type HistoryFull = {
 
 /**
  * What the pane and band draw from: the open items, newest first; this
- * session's id; the ids of the items this session owns or inherited; the
- * answered items for History, the current repository's first; and that
- * repository's `repo` value.
+ * session's id; the ids of the items this session owns or inherited; who
+ * asked each open item, by its id (#75, `originOf`); the answered items for
+ * History, the current repository's first; and that repository's `repo` value.
  */
-export type Tray = { items: Item[]; me: string; mine: string[]; history: HistoryEntry[]; repo: string }
+export type Tray = { items: Item[]; me: string; mine: string[]; origins: Record<string, string>; history: HistoryEntry[]; repo: string }
 
 /**
  * The local viewer's setting (#32), in the plugin's `$.store` under
@@ -409,6 +416,12 @@ export type ViewerTray = {
 /** Which list the pane shows. */
 export type TrayView = 'open' | 'history'
 
+/**
+ * Which kinds of item the pane lists (#75), as the page's chips group them:
+ * questions (choice, question), to-dos (do, approve) and FYIs (ack).
+ */
+export type TrayKind = 'all' | 'question' | 'todo' | 'fyi'
+
 /** A card's answer while it is being made. Losing it costs a retype only. */
 export type Draft = {
   selected: string[]
@@ -439,6 +452,8 @@ declare module 'claude-code' {
     humantray: {
       tray: Shaped<Tray | null>
       view: TrayView
+      /** The type filter, on Open and History alike, in the local pane and the viewer (#75). */
+      kind: TrayKind
       /** The History page shown, from 0. */
       page: number
       /** The History entry shown in full, or null for the list. */
@@ -452,6 +467,8 @@ declare module 'claude-code' {
       drafts: StateFamily<Draft>
       /** What was last pressed on each gallery card, by its draft id (#68); '' for nothing. */
       gpressed: StateFamily<string>
+      /** The gallery's own type filter (#75), apart from the pane's. */
+      gkind: TrayKind
     }
   }
 }

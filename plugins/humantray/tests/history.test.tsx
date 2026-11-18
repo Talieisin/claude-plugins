@@ -25,7 +25,10 @@ import {
 import { mount } from './surface-rules'
 
 const OTHER = 'github.com/owner/other'
-const TOGGLE = 'humantray:view'
+const TOGGLE = 'humantray:tab:history'
+const OPEN_TAB = 'humantray:tab:open'
+/** The header's buttons (#75): the two tabs and the four type chips. */
+const HEADER_BUTTONS = [OPEN_TAB, TOGGLE, 'humantray:kind:all', 'humantray:kind:question', 'humantray:kind:todo', 'humantray:kind:fyi']
 
 const OPTIONS = [
   { label: 'Red', description: 'Warm' },
@@ -47,7 +50,7 @@ describe('a ticked item leaves the main list and appears in History', () => {
       const id = answerOf<{ id: string }>(await $.tool.call(call)).id
       await $.tool.call(call)
       const ui = await mount($, { ...PANE, surface })
-      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (0)')
+      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 0')
       expect(await ui.find({ key: `${id}:submit` })).toBeDefined()
 
       await ui.press({ key: `${id}:opt:0` })
@@ -56,7 +59,7 @@ describe('a ticked item leaves the main list and appears in History', () => {
 
       expect(await ui.find({ key: `${id}:submit` })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: 'No open items.' })).toBeDefined()
-      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (1)')
+      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 1')
 
       await ui.press({ key: TOGGLE })
       expect(await ui.find({ type: 'Text', text: '[Colour] Which?' })).toBeDefined()
@@ -67,10 +70,10 @@ describe('a ticked item leaves the main list and appears in History', () => {
       expect(line?.text).toMatch(/bumps: 1 · delivered$/)
       expect(line?.text).not.toMatch(/another session/)
       // Read only: the toggle is the one control; nothing reopens the item.
-      expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual([TOGGLE])
-      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('Open items (0)')
+      expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(HEADER_BUTTONS)
+      expect((await ui.find({ key: TOGGLE }))?.props.variant).toBe('primary')
 
-      await ui.press({ key: TOGGLE })
+      await ui.press({ key: OPEN_TAB })
       expect(await ui.find({ type: 'Text', text: 'No open items.' })).toBeDefined()
       await ui.unmount()
       expect(w.store().items[0]?.status).toBe('answered')
@@ -148,7 +151,7 @@ describe('History', () => {
     w.seed(file([...finishedMany(5, { repo: OTHER }), ...finishedMany(3, {}, 100)]))
     await $.session.start(START_EVENT)
     const ui = await mount($, { ...PANE, surface: 'desktop' })
-    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (8)')
+    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 8')
     await ui.press({ key: TOGGLE })
     const headings = await ui.findAll({ type: 'Text', text: /^github\.com\// })
     expect(headings.map(t => t.text)).toEqual(['github.com/owner/repo (this repository)', OTHER])
@@ -177,7 +180,7 @@ describe('History', () => {
     const ui = await mount($, { ...PANE, surface: 'desktop' })
     await ui.press({ key: `${theirs.id}:approve` })
     expect(await ui.find({ key: `${theirs.id}:approve` })).toBeUndefined()
-    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (1)')
+    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 1')
     await ui.press({ key: TOGGLE })
     expect((await ui.findAll({ type: 'Text', text: /^github\.com\// })).map(t => t.text)).toEqual([OTHER])
     expect(await ui.find({ type: 'Text', text: /^\[Elsewhere\]/ })).toBeDefined()
@@ -192,7 +195,7 @@ describe('History', () => {
     const kept = new Set(w.store().items.map(item => item.id))
     expect(pruned.some(id => kept.has(id))).toBe(false)
     const ui = await mount($, { ...PANE, surface: 'desktop' })
-    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
+    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 200')
     await ui.press({ key: TOGGLE })
     const shown = await allPages(ui)
     expect(shown.flat()).toHaveLength(200)
@@ -216,7 +219,7 @@ describe('History', () => {
       w.seed(file(long))
       await $.session.start(START_EVENT)
       const ui = await mount($, { ...PANE, surface })
-      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (200)')
+      expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 200')
       await ui.press({ key: TOGGLE })
       const id = (await ui.find({ type: 'Text', text: /^HT-/ }))?.text.slice(3, 8) ?? ''
       const entry = long.find(item => item.id.endsWith(id))?.id ?? ''
@@ -273,9 +276,9 @@ describe('a time no Date can hold', () => {
     await ui.press({ key: TOGGLE })
     const lines = (await ui.findAll({ type: 'Text', text: /^HT-/ })).map(t => t.text ?? '')
     expect(lines).toHaveLength(2)
-    expect(lines[0]).toMatch(new RegExp(`^${finished(1).short} · answered at an unknown time · `))
+    expect(lines[0]).toMatch(new RegExp(`^${finished(1).short} · this session · answered at an unknown time · `))
     expect(lines[1]).toMatch(/ · answered \d{4}-\d\d-\d\d \d\d:\d\d UTC · /)
-    await ui.press({ key: TOGGLE })
+    await ui.press({ key: OPEN_TAB })
     expect(await ui.find({ type: 'Text', text: /^\[Open\]/ })).toBeDefined()
     await ui.unmount()
   })
@@ -483,7 +486,7 @@ describe('reload', () => {
     earlier = false
     await $.session.start(START_EVENT)
     const ui = await mount($, { ...PANE, surface: 'desktop' })
-    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History (1)')
+    expect((await ui.find({ key: TOGGLE }))?.props.label).toBe('History 1')
     await ui.unmount()
   })
 })

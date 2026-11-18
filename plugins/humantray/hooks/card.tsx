@@ -7,8 +7,8 @@
 
 import type { BoxProps, EngineInterface, RenderInput } from 'claude-code'
 
-import type { CodeBlock, Draft, Item } from '../types'
-import { type Action, EMPTY_DRAFT, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from './items'
+import type { CodeBlock, Draft, Item, TrayKind, TrayView } from '../types'
+import { type Action, EMPTY_DRAFT, KINDS, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces, when } from './items'
 import { codeBlocksOf } from './code'
 import { choiceGlyph, choiceMark, descriptionIndent, drawsChoiceRows, otherIsOn } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
@@ -354,27 +354,24 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
   }
 
   /**
-   * One open item's card (#68): its heading, its short id, its body and
-   * copy list, its controls and its error line. `suffixes`: the short id is
-   * followed by "another session" (unless `mine`) and the bumps, as the
-   * local pane draws it; the viewer's This session group draws it alone.
+   * One open item's card (#68): its heading, its origin line, its body and
+   * copy list, its controls and its error line. `origin`: who asked
+   * (`originOf`, #75), drawn as the mock-up has it: the asker, when it was
+   * raised, the short id, then any bumps. Left out, the short id alone, as
+   * the viewer's This session group draws it.
    */
-  const openCard = async (card: { item: Item; key: string; draftId: string; draft: Draft; press: Press; mine: boolean; suffixes: boolean }) => {
-    const { item, key, draftId, draft, press } = card
-    const from = card.suffixes && !card.mine ? ' · another session' : ''
-    const bumped = card.suffixes && item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''
+  const openCard = async (card: { item: Item; key: string; draftId: string; draft: Draft; press: Press; origin?: string }) => {
+    const { item, key, draftId, draft, press, origin } = card
+    const line =
+      origin === undefined
+        ? item.short
+        : `${plain(origin)} · ${when(item.created)} · ${item.short}${item.bumps > 0 ? ` · bumped ${item.bumps}×` : ''}`
     const heading = (
       <Text bold>
         [{plain(item.header)}] {plain(item.question)}
       </Text>
     )
-    const short = (
-      <Text dimColor>
-        {item.short}
-        {from}
-        {bumped}
-      </Text>
-    )
+    const short = <Text dimColor>{line}</Text>
     const rest = [
       item.body_md !== '' && drawn(`${key}:body`, forDrawing(item.body_md), true),
       await copyList(key, draftId, item.short, codeBlocksOf(item.body_md)),
@@ -390,5 +387,43 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
     )
   }
 
-  return { native, rows, cardSpacing, fieldSpacing, drawn, copyList, controlsFor, openCard }
+  /**
+   * The pane's header (#75), after the owner's mock-up and the page: the
+   * title and the open count, the Open and History tabs, and the type chips
+   * with their counts. The shown tab and chip are primary. Each row wraps at a
+   * narrow width, and none grows or stretches (#72: a Button in such a Box
+   * took no press on the desktop app). `prefix` leads every key.
+   */
+  const header = (head: {
+    prefix: string
+    title: string
+    open: number
+    history: number
+    view: TrayView
+    kind: TrayKind
+    counts: Record<TrayKind, number>
+    onView: (view: TrayView) => () => Promise<void>
+    onKind: (kind: TrayKind) => () => Promise<void>
+  }) => {
+    const shown = (on: boolean) => (on ? { variant: 'primary' as const } : {})
+    return (
+      <Box key={`${head.prefix}:header`} flexDirection="column">
+        <Box key={`${head.prefix}:title`} flexDirection="row" flexWrap="wrap" gap={1}>
+          <Text bold>{head.title}</Text>
+          <Text bold tabular>{`${String(head.open)} open`}</Text>
+        </Box>
+        <Box key={`${head.prefix}:tabs`} flexDirection="row" flexWrap="wrap" gap={1}>
+          <Button key={`${head.prefix}:tab:open`} label="Open" {...shown(head.view === 'open')} onPress={head.onView('open')} />
+          <Button key={`${head.prefix}:tab:history`} label={`History ${String(head.history)}`} {...shown(head.view === 'history')} onPress={head.onView('history')} />
+        </Box>
+        <Box key={`${head.prefix}:kinds`} flexDirection="row" flexWrap="wrap" gap={1}>
+          {KINDS.map(([kind, label]) => (
+            <Button key={`${head.prefix}:kind:${kind}`} label={`${label} ${String(head.counts[kind])}`} {...shown(head.kind === kind)} onPress={head.onKind(kind)} />
+          ))}
+        </Box>
+      </Box>
+    )
+  }
+
+  return { native, rows, cardSpacing, fieldSpacing, drawn, copyList, controlsFor, openCard, header }
 }

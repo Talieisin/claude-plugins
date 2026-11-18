@@ -213,7 +213,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     await ui.input({ key: `${id}:feedback`, text: feedback, kind: 'change' })
     await ui.press({ key: `${id}:done` })
     await w.drain()
-    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: 'humantray:tab:history' })
     const drawnPart = (await drawnText(ui, `${id}:Feedback`)) as string
     expect(drawnPart).toBe(forDrawing(feedback, false))
     expect(drawnPart).toContain('*Code 1*')
@@ -277,7 +277,7 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     await ui.input({ key: `${id}:feedback`, text: 'word '.repeat(200), kind: 'change' })
     await ui.press({ key: `${id}:done` })
     await w.drain()
-    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: 'humantray:tab:history' })
     await ui.press({ key: `${id}:full` })
     expect(await ui.find({ key: `${id}:full:copy:1` })).toBeUndefined()
     const body = (await drawnText(ui, `${id}:full:body`)) as string
@@ -315,7 +315,7 @@ describe('the card keeps its inner padding on every surface', () => {
       await ui.input({ key: `${id}:feedback`, text: 'word '.repeat(200), kind: 'change' })
       await ui.press({ key: `${id}:done` })
       await w.drain()
-      await ui.press({ key: 'humantray:view' })
+      await ui.press({ key: 'humantray:tab:history' })
       expect(spacing((await ui.find({ key: `${id}:history` }))?.props)).toEqual(card[surface])
       await ui.press({ key: `${id}:full` })
       expect(spacing((await ui.find({ key: `${id}:full` }))?.props)).toEqual(card[surface])
@@ -342,7 +342,7 @@ describe('"Show in full" in History offers the same copies', () => {
     await ui.input({ key: `${id}:feedback`, text: 'word '.repeat(200), kind: 'change' })
     await ui.press({ key: `${id}:done` })
     await w.drain()
-    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: 'humantray:tab:history' })
     // The list draws no body, and so no copies.
     expect(await ui.find({ key: `${id}:full:copy:1` })).toBeUndefined()
     await ui.press({ key: `${id}:full` })
