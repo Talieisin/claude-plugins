@@ -66,6 +66,7 @@ import {
 } from './items'
 import { cardKit, draftOf, hasSurface, setDraft, toast } from './card'
 import { codeBlocksOf } from './code'
+import { registerGallery } from './gallery'
 import { registerConfig, registerConfigTool } from './config-tool'
 import { runPageCommand } from './page-command'
 import { WRITE_LIMIT, type Where, mutate, peek } from './store'
@@ -435,6 +436,8 @@ async function answer($: EngineInterface, id: string, action: Action) {
 export const register: Register = on => {
   // humantray_config's call (#27), kept apart in config-tool.ts.
   registerConfig(on)
+  // The gallery's command and pane (#68), kept apart in gallery.tsx.
+  registerGallery(on)
   on('session.start', async ($, e, next) => {
     armDelivery($)
     // Each in its own try: one the engine refuses must not skip the rest of the
@@ -468,6 +471,11 @@ export const register: Register = on => {
         name: 'humantray-viewer',
         description: 'Show every repository\'s humantray here and answer it (local sessions); "off" to stop',
       })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.command.register({ name: 'humantray-gallery', description: 'Show every humantray card type and state, as fixtures (the release check)' })
     } catch {
       // Refused: the rest of the start still runs.
     }

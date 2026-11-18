@@ -648,7 +648,7 @@ describe('registering at session start', () => {
     // As 2.1.326 does with the plugin's own `humantray` skill installed.
     w.refuseCommand = name => name === 'humantray'
     await $.session.start(START_EVENT)
-    expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-page'])
+    expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-gallery', 'humantray-page'])
   })
 
   test('/humantray-open opens the pane and draws this session\'s items', async ($, on) => {
@@ -669,7 +669,7 @@ describe('registering at session start', () => {
     const w = world(on)
     w.refuseCommand = name => name === 'humantray-open'
     await $.session.start(START_EVENT)
-    expect(w.commands).toEqual(['humantray-viewer', 'humantray-page'])
+    expect(w.commands).toEqual(['humantray-viewer', 'humantray-gallery', 'humantray-page'])
     const added = await $.tool.call({ tool: ADD, type: 'ack', header: 'FYI', question: 'Still works?' })
     expect(answerOf<{ short: string }>(added).short).toMatch(/^HT-/)
     expect(w.store().items).toHaveLength(1)

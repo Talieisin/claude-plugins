@@ -355,7 +355,7 @@ describe('registration', () => {
     await $.session.start(START_EVENT)
     expect(w.tools).toEqual(['humantray_add', 'humantray_list'])
     // The rest of the start still runs: the commands register after it.
-    expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-page'])
+    expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-gallery', 'humantray-page'])
     await add($, 'one')
     expect(answerOf<{ items: unknown[] }>(await $.tool.call({ tool: LIST })).items).toHaveLength(1)
   })
