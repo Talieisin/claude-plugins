@@ -153,6 +153,8 @@ export const RULES: readonly SurfaceRule[] = [
     // #72, on 0.2.5: the header band and the row hover were filled with
     // `subtle`, a theme key meant for text, and the desktop app painted them
     // dark grey. No Box on an app surface is filled with a text colour.
+    // Only the fill is seen on a real drawing: `ui.drawn()` does not carry
+    // `hover`, so a hover fill is caught only in a hand-made tree.
     name: 'no-text-colour-as-fill',
     from: '#72',
     check: ({ node }) => {
