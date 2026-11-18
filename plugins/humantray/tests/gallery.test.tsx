@@ -8,6 +8,7 @@ import type { RenderSurface } from 'claude-code'
 import type { Item } from '../types'
 import { GALLERY, GALLERY_FIXTURES, type GalleryFixture, galleryDraftId } from '../hooks/gallery'
 import { dumpTree } from './card-dump'
+import { mount } from './surface-rules'
 import { SURFACES } from './card-fixtures'
 import { COMMAND, PANE, START_EVENT, stored, world } from './world'
 
@@ -39,7 +40,7 @@ function galleryWorld(on: On, surface: RenderSurface, options: Parameters<typeof
 
 async function openGallery($: Engine, surface: RenderSurface) {
   const ran = (await $.command.run(GALLERY_COMMAND)) as { text?: string }
-  const ui = await $.ui.mount({ ...GALLERY_PANE, surface })
+  const ui = await mount($, { ...GALLERY_PANE, surface })
   return { ran, ui }
 }
 
@@ -124,7 +125,7 @@ describe('the gallery draws every card on each surface with the real card code',
       const real = GALLERY_FIXTURES.map((fixture, n) => ({ fixture, item: asReal(fixture, n + 1) }))
       w.seed({ version: 1, items: real.map(r => r.item), sessions: {} })
       await $.session.start({ ...START_EVENT, surface })
-      const pane = await $.ui.mount({ ...PANE, surface })
+      const pane = await mount($, { ...PANE, surface })
       for (const { fixture, item } of real) for (const key of startSteps(fixture, item.id)) await pane.press({ key })
       const { ui } = await openGallery($, surface)
       for (const { fixture, item } of real) {
@@ -216,7 +217,7 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
       // The real item is untouched, and the real pane still draws it.
       expect(w.store().items).toEqual([REAL])
       await ui.unmount()
-      const pane = await $.ui.mount({ ...PANE, surface })
+      const pane = await mount($, { ...PANE, surface })
       expect(await pane.find({ key: `${REAL.id}:card` })).toBeDefined()
     })
   }
@@ -265,7 +266,7 @@ describe('the labels follow the surface', () => {
     await $.session.start(START_EVENT)
     await $.command.run(GALLERY_COMMAND)
     for (const surface of SURFACES) {
-      const ui = await $.ui.mount({ ...GALLERY_PANE, surface })
+      const ui = await mount($, { ...GALLERY_PANE, surface })
       const looks = ((await ui.findAll({ type: 'Box' })) as FoundLike[]).filter(t => (t.key ?? '').endsWith(':look')).map(t => t.text ?? '')
       expect(looks).toHaveLength(GALLERY_FIXTURES.length)
       const marks = /\[ \]|\[x\]|\( \)|\(•\)/

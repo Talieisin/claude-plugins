@@ -7,6 +7,7 @@ import type { RenderSurface } from 'claude-code'
 
 import type { Item } from '../types'
 import { dumpTree } from './card-dump'
+import { mount } from './surface-rules'
 import { COMMAND, PANE, RICH, START_EVENT, type Step, stored, world } from './world'
 
 /** An open item, seeded on the disk, and the steps on its card that give it its state. */
@@ -58,7 +59,7 @@ export async function drawOpenCards($: Engine, on: Parameters<typeof world>[0], 
   await $.session.start({ ...START_EVENT, surface })
   const local: Record<string, string> = {}
   const viewer: Record<string, string> = {}
-  const ui = await $.ui.mount({ ...PANE, surface })
+  const ui = await mount($, { ...PANE, surface })
   for (const { item, steps } of CARD_FIXTURES) {
     for (const step of steps) {
       if ('press' in step) await ui.press({ key: `${item.id}:${step.press}` })
@@ -70,7 +71,7 @@ export async function drawOpenCards($: Engine, on: Parameters<typeof world>[0], 
   await ui.unmount()
   await $.command.run({ ...COMMAND, command: 'humantray-viewer' })
   await w.clock.settle()
-  const vui = await $.ui.mount({ ...PANE, surface })
+  const vui = await mount($, { ...PANE, surface })
   expect(await vui.find({ type: 'Text', text: 'This session' })).toBeDefined()
   for (const { name, item } of CARD_FIXTURES) viewer[name] = dumpTree(await vui.find({ key: `${item.id}:card` }), item.id)
   await vui.unmount()
