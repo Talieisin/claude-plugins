@@ -100,9 +100,20 @@ const options = ({ rows }: Look, multi: boolean, picked: boolean) => {
     const mark = multi ? (picked ? '[x] on Blue and Red, [ ] on Green' : '[ ] on each') : picked ? '(•) on Green, ( ) on the others' : '( ) on each'
     return `options on one line each, ${mark}, the label then its dim description; Green has none`
   }
-  const mark = multi ? (picked ? '☑ on Blue and Red, ☐ on Green' : '☐ on each') : picked ? '◉ on Green, ○ on the others' : '○ on each'
-  return `options as rows, ${mark}; the description dim under its label, set in to line up with it; Green has none`
+  const control = multi ? 'a checkbox' : 'a radio circle'
+  const state = multi
+    ? picked
+      ? 'Blue and Red blue with a white tick, Green and Other an empty grey square'
+      : 'every one an empty grey square'
+    : picked
+      ? 'Green blue with a white dot, the others an empty grey circle'
+      : 'every one an empty grey circle'
+  return `each option a row, ${control} drawn on the left (${state}), the label beside it and the description dim on its own line under the label, lined up with it; Green has none; pressing a label picks it (the control is not pressable); no shade on the row; Other is the last row, its field closed; on a phone each control is a small web view, so check the card still scrolls smoothly`
 }
+
+/** What the dialog frame looks like on an app surface (#72): said once per card type. */
+const frame = ({ rows }: Look, actions: string) =>
+  rows ? `${actions} at the bottom right` : `${actions}`
 
 export const GALLERY_FIXTURES: GalleryFixture[] = [
   {
@@ -110,35 +121,35 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
     item: fixtureItem(1, { type: 'ack', header: 'FYI', question: 'The deploy finished' }),
     start: {},
     mine: true,
-    look: () => 'ack: the title in bold, the short id dim under it, one Acknowledge button (primary)',
+    look: look => `ack: the title in bold, the short id dim under it; ${frame(look, 'one Acknowledge button (primary)')}`,
   },
   {
     name: 'do',
     item: fixtureItem(2, { type: 'do', header: 'Task', question: 'Rotate the staging key' }),
     start: {},
     mine: true,
-    look: () => 'do: a Feedback field, its label above it and the field the card’s full width; Done (primary) and Not done side by side, clear of the field and of the card’s bottom edge',
+    look: look => `do: a Feedback field, its label above it and the field the card’s full width; ${frame(look, 'Done (primary) and Not done side by side, clear of the field and of the card’s bottom edge')}`,
   },
   {
     name: 'approve',
     item: fixtureItem(3, { type: 'approve', header: 'Approve', question: 'Ship 0.2.3?' }),
     start: {},
     mine: true,
-    look: () => 'approve: Approve (primary) and Reject side by side',
+    look: look => `approve: ${frame(look, 'Approve (primary) and Reject side by side')}`,
   },
   {
     name: 'question',
     item: fixtureItem(4, { type: 'question', header: 'Question', question: 'Which region first?' }),
     start: {},
     mine: true,
-    look: () => 'question: an Answer field, label above, then Submit (primary); Enter in the field submits',
+    look: look => `question: an Answer field, label above; ${frame(look, 'Submit (primary)')}; Enter in the field submits`,
   },
   {
     name: 'choice-single',
     item: fixtureItem(5, { type: 'choice', header: 'Colour', question: 'One colour, nothing picked', options: OPTIONS }),
     start: {},
     mine: true,
-    look: look => `choice, one answer, nothing picked: ${options(look, false, false)}; an Other field; Submit`,
+    look: look => `choice, one answer, nothing picked: ${options(look, false, false)}; ${look.rows ? 'pressing Other opens its field in its row' : 'an Other field'}; Submit`,
   },
   {
     name: 'choice-single-picked',
@@ -160,6 +171,16 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
     start: { selected: ['Blue', 'Red'] },
     mine: true,
     look: look => `choice, several answers, two picked: ${options(look, true, true)}; a press toggles one`,
+  },
+  {
+    name: 'choice-other',
+    item: fixtureItem(16, { type: 'choice', header: 'Colours', question: 'Several colours, Other open', options: OPTIONS, multiSelect: true }),
+    start: { selected: ['Blue'], otherOpen: true, other: 'Teal' },
+    mine: true,
+    look: look =>
+      look.rows
+        ? 'choice, Other open: Blue ticked, Other ticked with its field open under its label holding “Teal”; Blue, Red and Other each still press; pressing Other again closes the field and clears it'
+        : 'choice, Other typed: [x] on Blue, “Teal” in the Other field',
   },
   {
     name: 'notes',

@@ -52,6 +52,7 @@ export const EMPTY_DRAFT: Draft = {
   error: '',
   entered: 0,
   codeAt: 0,
+  otherOpen: false,
 }
 
 /** What `humantray_add` takes, once validated. */

@@ -164,6 +164,26 @@ export const RULES: readonly SurfaceRule[] = [
         .map(colour => `a Box filled with ${JSON.stringify(colour)}, a text colour the app paints dark`)
     },
   },
+  {
+    // #72, on 0.2.5: the desktop app took no press on an option's label
+    // Button whose column grew and stretched (flexGrow 1, alignItems
+    // stretch) and also held its description or Other's field; Other,
+    // alone in that same column while closed, took its presses (the owner's
+    // check). Which of the two props it is, the tree cannot say: a Button
+    // shares a Box that grows or stretches with nothing.
+    name: 'button-alone-in-a-stretched-box',
+    from: '#72',
+    check: ({ node, ancestors }) => {
+      if (node.type !== 'Button') return []
+      const parent = ancestors.at(-1)
+      if (parent === undefined || parent.type !== 'Box') return []
+      const grows = typeof parent.props?.flexGrow === 'number' && parent.props.flexGrow > 0
+      const stretches = parent.props?.alignItems === 'stretch'
+      if (!grows && !stretches) return []
+      const others = (parent.children ?? []).filter(child => child !== node && (isNode(child) || (typeof child === 'string' && child.trim() !== '')))
+      return others.length === 0 ? [] : [`a Button in a Box that ${grows ? 'grows' : 'stretches'} and holds something else, where the desktop app took no press`]
+    },
+  },
 ]
 
 /**
