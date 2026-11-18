@@ -111,7 +111,7 @@ describe('notes', () => {
   test('an approve item raised before 0.2.7 (no notes) gains notes when it is raised again', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
-    const call = { tool: ADD, type: 'approve', header: 'Plan', question: 'Old?' }
+    const call = { tool: ADD, type: 'approve', header: 'Plan', question: 'Old?' } as const
     const id = answerOf<{ id: string }>(await $.tool.call(call)).id
     // As 0.2.6 stored it.
     const file = w.store()
