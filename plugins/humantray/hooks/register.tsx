@@ -722,15 +722,17 @@ export const register: Register = on => {
           }
         }
       }
+      // This session's own open items, drawn at the foot: counted with the rest.
+      const own = shown === null ? [] : shown.items
       // A tab or a chip starts the list again from its first page, the list shown.
       const vheader = header({
         prefix: 'humantray',
         title: 'humantray viewer',
-        open: everyCard.length,
+        open: everyCard.length + own.length,
         history: viewing.history.length,
         view: vshowing,
         kind: kindShown,
-        counts: kindCounts(everyCard.map(each => each.card.row.type)),
+        counts: kindCounts([...everyCard.map(each => each.card.row.type), ...own.map(item => item.type)]),
         onView: (to: TrayView) => async () => {
           await update($, viewerPage, () => 0)
           await update($, viewerExpanded, () => null)
@@ -959,7 +961,7 @@ export const register: Register = on => {
         ) : null
       // This session's own items, if any, at the foot, answered as in the local pane.
       const local = []
-      const ownShown = shown === null ? [] : shown.items.filter(item => inKind(item.type, kindShown))
+      const ownShown = own.filter(item => inKind(item.type, kindShown))
       if (ownShown.length > 0) {
         local.push(
           <Text key="v:local" bold>
@@ -980,7 +982,7 @@ export const register: Register = on => {
           {leaseNote}
           {status}
           {paging}
-          {nodes.length === 0 ? <Text key="v:none" dimColor>{noneOf(kindShown, 'open')}</Text> : nodes}
+          {nodes.length === 0 && ownShown.length === 0 ? <Text key="v:none" dimColor>{noneOf(kindShown, 'open')}</Text> : nodes}
           {local}
         </Box>
       )

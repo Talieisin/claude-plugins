@@ -214,6 +214,19 @@ describe('the lease: one viewer per computer', () => {
     expect(await Promise.all(await cards())).toEqual([true, true, true])
   })
 
+  vtest('the header (#75) counts this session’s own cards too, and the empty text is only for no cards at all', async ($, on) => {
+    const { w } = viewerWorld(on)
+    await turnOn($, w)
+    await $.tool.call({ tool: ADD, type: 'ack', header: 'One', question: 'Own FYI one' })
+    await $.tool.call({ tool: ADD, type: 'ack', header: 'Two', question: 'Own FYI two' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: '2 open' })).toBeDefined()
+    expect((await ui.find({ key: 'humantray:kind:fyi' }))?.props.label).toBe('FYIs 2')
+    expect(await ui.find({ type: 'Text', text: 'No open items.' })).toBeUndefined()
+    await ui.press({ key: 'humantray:kind:todo' })
+    expect(await ui.find({ type: 'Text', text: 'No open to-dos.' })).toBeDefined()
+  })
+
   vtest('a plain session with the setting stored does not become a viewer', async ($, on) => {
     const { w, a } = viewerWorld(on, { store: { 'viewer:config': { session: 'someone-else' } } })
     await $.session.start(START_EVENT)

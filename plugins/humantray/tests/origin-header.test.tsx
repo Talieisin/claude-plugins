@@ -17,10 +17,14 @@ const chip = (kind: string) => `humantray:kind:${kind}`
 
 describe('the origin line: pure rules (#75)', () => {
   test('a title is cleaned: controls, bidi and zero-width characters become spaces, runs collapse, the ends trim, and it is cut', () => {
-    expect(cleanTitle('  Lane\t#23:‮ config​ loader\n ')).toBe('Lane #23: config loader')
+    expect(cleanTitle('  Lane\t#23:\u202e config\u200b loader\n ')).toBe('Lane #23: config loader')
     expect(cleanTitle('x'.repeat(TITLE_MAX + 10))).toBe(`${'x'.repeat(TITLE_MAX - 1)}…`)
-    expect(cleanTitle(' ​\n ')).toBeUndefined()
+    expect(cleanTitle(' \u200b\n ')).toBeUndefined()
     expect(cleanTitle(42)).toBeUndefined()
+    // A lone surrogate is dropped; a cut never splits a character in two; a joiner goes, its emoji stay.
+    expect(cleanTitle('a\ud800b')).toBe('ab')
+    expect(cleanTitle(`${'x'.repeat(TITLE_MAX - 2)}😀😀😀`)).toBe(`${'x'.repeat(TITLE_MAX - 2)}😀…`)
+    expect(cleanTitle('👩\u200d💻 pair')).toBe('👩💻 pair')
     expect(cleanTitle(undefined)).toBeUndefined()
   })
 
@@ -55,7 +59,7 @@ describe('the origin line: pure rules (#75)', () => {
 
   test('noteSession records a title, keeps it when none is heard, and still drops a successor', () => {
     const store = file([])
-    noteSession(store, 'session-a', START, undefined, '  Lane​ #23 ')
+    noteSession(store, 'session-a', START, undefined, '  Lane\u200b #23 ')
     expect(store.sessions['session-a']).toEqual({ seen: START, title: 'Lane #23' })
     store.sessions['session-a'] = { seen: START, successor: 'session-b', title: 'Lane #23' }
     noteSession(store, 'session-a', START + 1)
@@ -84,12 +88,18 @@ describe('the origin line: pure rules (#75)', () => {
 describe('the session title, as the CLI gives it (#75)', () => {
   test('a prompt’s title is recorded at the next write, for its own session only, and the prompt passes untouched', async ($, on) => {
     const w = world(on)
-    // Beneath the plugins, the prompt as the CLI would carry on with it.
-    on('classic.UserPromptSubmit', () => ({}))
+    // Beneath the plugins: what reaches the CLI, to show the prompt is passed on, once and unchanged.
+    const beneath: Array<Record<string, unknown>> = []
+    on('classic.UserPromptSubmit', (_, e) => {
+      beneath.push({ ...e })
+      return {}
+    })
     await $.session.start(START_EVENT)
     const before = JSON.stringify(w.store())
     const ran = await $.classic.UserPromptSubmit({ session_id: 'session-a', session_title: 'Lane #23: loader', prompt: 'go on' })
     expect(JSON.stringify(ran ?? {})).not.toMatch(/block|decision/)
+    expect(beneath).toHaveLength(1)
+    expect(beneath[0]).toMatchObject({ prompt: 'go on', session_title: 'Lane #23: loader', session_id: 'session-a' })
     // Noted only: nothing is written by the hook itself.
     expect(JSON.stringify(w.store())).toBe(before)
     await $.tool.call({ tool: ADD, type: 'ack', header: 'Done', question: 'It ran' })
@@ -196,6 +206,20 @@ describe('the header (#75)', () => {
     expect(await ui.find({ type: 'Text', text: 'No open to-dos.' })).toBeDefined()
     await ui.press({ key: chip('all') })
     expect([await has(question.id), await has(fyi.id)]).toEqual([true, true])
+    await ui.unmount()
+  })
+
+  test('a chip leaves an entry shown in full, back to the list', async ($, on) => {
+    const w = world(on)
+    w.seed(file([finished(1, { response: { selected: ['Approve'], notes: 'x'.repeat(2_000) } })]))
+    await $.session.start(START_EVENT)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    await ui.press({ key: HISTORY_TAB })
+    await ui.press({ key: `${finished(1).id}:full` })
+    expect(await ui.find({ key: 'humantray:history:back' })).toBeDefined()
+    await ui.press({ key: chip('todo') })
+    expect(await ui.find({ key: 'humantray:history:back' })).toBeUndefined()
+    expect(await ui.find({ key: `${finished(1).id}:history` })).toBeDefined()
     await ui.unmount()
   })
 

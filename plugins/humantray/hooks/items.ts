@@ -239,15 +239,23 @@ export const chainsInUse = (file: StoreFile): Set<string> => {
 export const TITLE_MAX = 60
 
 /**
- * A session's title as it is kept and drawn (#75): control, format and line
- * separator characters (bidi controls and zero-width ones among them) become
- * spaces, runs of space become one, the ends are trimmed, and it is cut to
- * TITLE_MAX. Undefined when nothing is left, or for anything not a string.
+ * A session's title as it is kept and drawn (#75): control and line
+ * separator characters become spaces; format characters (bidi controls,
+ * zero-width ones) and lone surrogates are dropped; runs of space become one,
+ * the ends are trimmed, and it is cut to TITLE_MAX characters, never inside
+ * one. Undefined when nothing is left, or for anything not a string.
  */
 export const cleanTitle = (raw: unknown): string | undefined => {
   if (typeof raw !== 'string') return undefined
-  const text = raw.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ').replace(/\s+/g, ' ').trim()
-  return text === '' ? undefined : clip(text, TITLE_MAX)
+  const text = raw
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ')
+    // With the u flag a paired surrogate is one astral character, so this range matches lone ones only.
+    .replace(/\p{Cf}|[\ud800-\udfff]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (text === '') return undefined
+  const chars = Array.from(text)
+  return chars.length <= TITLE_MAX ? text : `${chars.slice(0, TITLE_MAX - 1).join('')}…`
 }
 
 /**

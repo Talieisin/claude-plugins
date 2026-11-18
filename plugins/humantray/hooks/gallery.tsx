@@ -15,7 +15,7 @@ import { type EngineInterface, type On, type RenderSurface } from 'claude-code'
 import { atom, read, update } from 'claude-code'
 
 import type { Draft, Item, TrayKind, TrayView } from '../types'
-import { APPROVE_OPTIONS, type Action, EMPTY_DRAFT, inKind, kindCounts } from './items'
+import { APPROVE_OPTIONS, type Action, EMPTY_DRAFT, inKind, kindCounts, originOf } from './items'
 import { type Press, cardKit, hasSurface } from './card'
 import { drawsChoiceRows } from './choice'
 import { hasNativeCopy } from './copy'
@@ -241,10 +241,10 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
   },
   {
     name: 'other-session-untitled',
-    item: fixtureItem(16, { type: 'question', header: 'Elsewhere', question: 'From a session with no title', session_id: 'gallery-untitled' }),
+    item: fixtureItem(17, { type: 'question', header: 'Elsewhere', question: 'From a session with no title', session_id: 'gallery-untitled' }),
     start: {},
     mine: false,
-    look: () => 'a card from a session with no title: the line reads “another session · 2026-11-18 09:12 UTC · HT-GAL16”',
+    look: () => 'a card from a session with no title: the line reads “another session · 2026-11-18 09:12 UTC · HT-GAL17”',
   },
   {
     name: 'bumped',
@@ -262,8 +262,15 @@ export const galleryDraftId = (name: string) => `g:${name}`
 const pressedLabel = (action: Action): string =>
   action.kind === 'ack' ? 'Acknowledge' : action.kind === 'do' ? (action.outcome === 'done' ? 'Done' : 'Not done') : action.kind === 'approve' ? action.choice : 'Submit'
 
-/** Who asked a fixture, as `originOf` says it for the same record (#75). */
-export const galleryOrigin = (fixture: GalleryFixture): string => (fixture.mine ? 'this session' : (fixture.title ?? 'another session'))
+/**
+ * Who asked a fixture (#75): `originOf` itself, over a store holding only the
+ * fixture's item and, for another session's card, that session's record.
+ */
+export const galleryOrigin = (fixture: GalleryFixture): string => {
+  const asker = fixture.item.session_id
+  const sessions = fixture.mine ? {} : { [asker]: { seen: 0, ...(fixture.title === undefined ? {} : { title: fixture.title }) } }
+  return originOf({ version: 1, items: [fixture.item], sessions }, fixture.item, fixture.mine ? asker : 'gallery-viewer')
+}
 
 /** Every gallery card back to its starting draft, no press noted, and the filter back to All. */
 async function reset($: EngineInterface) {
