@@ -10,7 +10,7 @@ import type { BoxProps, EngineInterface, RenderInput } from 'claude-code'
 import type { CodeBlock, Draft, Item } from '../types'
 import { type Action, EMPTY_DRAFT, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from './items'
 import { codeBlocksOf } from './code'
-import { choiceGlyph, choiceMark, descriptionIndent, drawsChoiceRows, otherIsOn } from './choice'
+import { choiceMark, choiceText, descriptionIndent, drawsChoiceRows, otherIsOn } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 
 export type FieldName = 'other' | 'text' | 'feedback' | 'notes'
@@ -292,7 +292,6 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         )
         const options: ReturnType<typeof h>[] = []
         ;(item.options ?? []).forEach((option, index) => {
-          const glyph = choiceGlyph(isMulti, draft.selected.includes(option.label))
           const description =
             option.description.trim() === '' ? null : (
               <Box key={`${key}:opt:${index}:about`}>
@@ -303,7 +302,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
             row(
               `${key}:opt:${index}`,
               <Button key={`${key}:opt:${index}`} plain onPress={pick(option.label)}>
-                {`${glyph} ${option.label}`}
+                {choiceText(e.surface, isMulti, draft.selected.includes(option.label), option.label)}
               </Button>,
               description,
             ),
@@ -330,7 +329,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
                 if (!otherOn) await $.ui.focus({ requestId: pane, key: fieldKey('other') }).catch(() => undefined)
               }}
             >
-              {`${choiceGlyph(isMulti, otherOn)} Other`}
+              {choiceText(e.surface, isMulti, otherOn, 'Other')}
             </Button>,
             otherOn ? (
               <Box key={`${key}:other:field`} flexDirection="column" alignItems="stretch" flexGrow={1}>
