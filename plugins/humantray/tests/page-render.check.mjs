@@ -268,6 +268,9 @@ try {
   for (const [name, options] of [
     ['desktop, light', { viewport: { width: 1100, height: 1400 }, colorScheme: 'light' }],
     ['phone, dark', { viewport: { width: 390, height: 1600 }, colorScheme: 'dark' }],
+    // The desktop app's side panel (#75), in both themes.
+    ['side panel, light', { viewport: { width: 420, height: 1600 }, colorScheme: 'light' }],
+    ['side panel, dark', { viewport: { width: 420, height: 1600 }, colorScheme: 'dark' }],
   ]) {
     const page = await browser.newPage(options)
     const errors = []
@@ -482,6 +485,42 @@ try {
     await page.click(`#card-${MS} button.btn.primary`)
     await page.waitForTimeout(150)
     assert.deepEqual(await stored(MS), { selected: [], other: 'neither' }, `${name}: Other alone is stored`)
+
+    // #75 (the owner's check of 0.2.6 in the desktop side panel): in each theme and at side-panel width, a click
+    // on a checkbox or radio itself, or on the label text beside it, picks it; a click on the label again unticks
+    // a checkbox; a multi select's Other takes text beside its picks; an approve item takes notes.
+    const CK = '01TESTPAGE000000000000CK75'
+    await addChoice(CK, ['P', 'Q', 'R'], true)
+    await page.click(`#o-${CK}-0`)
+    await page.click(`label[for="o-${CK}-1"] span`)
+    const boxes = () => page.evaluate(id => [0, 1, 2].map(n => document.getElementById(`o-${id}-${n}`).checked), CK)
+    assert.deepEqual(await boxes(), [true, true, false], `${name}: a click on a box, or on its label, ticks it`)
+    await page.click(`label[for="o-${CK}-1"] span`)
+    assert.deepEqual(await boxes(), [true, false, false], `${name}: a second click on the label unticks it`)
+    await page.fill(`#f-${CK}-other`, 'S')
+    await page.click(`#card-${CK} button.btn.primary`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(CK), { selected: ['P'], other: 'S' }, `${name}: a multi select stores its picks and Other`)
+    const RD = '01TESTPAGE000000000000RD75'
+    await addChoice(RD, ['P', 'Q'], false)
+    await page.click(`#o-${RD}-0`)
+    await page.click(`label[for="o-${RD}-1"] span`)
+    const radios = await page.evaluate(id => [0, 1].map(n => document.getElementById(`o-${id}-${n}`).checked), RD)
+    assert.deepEqual(radios, [false, true], `${name}: a click on a radio, then on another's label, moves the pick`)
+    await page.click(`#card-${RD} button.btn.primary`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(RD), { selected: ['Q'] }, `${name}: a single select stores its pick`)
+    const AP = '01TESTPAGE000000000000AP75'
+    await page.evaluate(id => {
+      const row = { ...window.__store.get('items/01TESTPAGE000000000000SING'), id, short: `HT-${id.slice(-5)}`, type: 'approve', question: 'Ship it?', notes: true,
+        options: [{ label: 'Approve', description: '' }, { label: 'Reject', description: '' }] }
+      window.__store.set(`items/${id}`, row)
+      window.__notify()
+    }, AP)
+    await page.fill(`#f-${AP}-notes`, 'Not *yet*')
+    await page.click(`#card-${AP} button.btn:not(.primary)`)
+    await page.waitForTimeout(150)
+    assert.deepEqual(await stored(AP), { selected: ['Reject'], notes: 'Not *yet*' }, `${name}: an approve item's notes are stored with the verdict`)
 
     if (name === 'desktop, light') {
       // Drafts survive a snapshot: the text, the picked option, the focus and the caret.

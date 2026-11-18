@@ -142,7 +142,7 @@ const ADD_SCHEMA = {
       },
     },
     multiSelect: { type: 'boolean', description: 'choice only: allow several options.' },
-    notes: { type: 'boolean', description: 'Add an optional free-text notes box to the answer.' },
+    notes: { type: 'boolean', description: 'Add an optional free-text notes box to the answer. An approve item always has one.' },
     key: {
       type: 'string',
       description:

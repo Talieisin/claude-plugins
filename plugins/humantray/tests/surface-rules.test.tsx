@@ -48,7 +48,7 @@ describe('each rule fails on the faulty #64 tree', () => {
       ['no-terminal-marks', '#64'],
       ['button-label-is-its-text', '#64'],
       ['svg-has-height', '#72'],
-      ['control-beside-its-button', '#72'],
+      ['mark-in-its-button', '#75'],
       ['no-text-colour-as-fill', '#72'],
       ['button-alone-in-a-stretched-box', '#72'],
     ])
@@ -154,18 +154,37 @@ describe('the Svg rules (#72)', () => {
       expect(faults[0]).toContain('at I:card:')
     })
 
-    test(`${surface}: a control alone in its row fails control-beside-its-button; beside its Button, or a Button deeper in the row, it passes`, () => {
+    test(`${surface}: a drawn control fails mark-in-its-button, alone or beside its Button (#75: an Svg cannot be pressed)`, () => {
       const control = svg({ alt: 'Radio button, not selected', height: 16 })
       const alone = card([{ type: 'Box', props: { key: 'I:opt:0:row' }, children: [control] }])
-      expect(rulesIn(surfaceFaults(alone, surface))).toEqual(['control-beside-its-button'])
+      expect(rulesIn(surfaceFaults(alone, surface))).toEqual(['mark-in-its-button'])
+      // 0.2.6's row: the Svg beside the label Button, which the owner could not tick.
       const beside = card([
         {
           type: 'Box',
-          props: { key: 'I:opt:0:row' },
-          children: [control, { type: 'Box', props: { key: 'I:opt:0:text' }, children: [{ type: 'Button', props: { key: 'I:opt:0', label: 'Blue' } }] }],
+          props: { key: 'I:options' },
+          children: [
+            { type: 'Box', props: { key: 'I:opt:0:line' }, children: [control, { type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] }] },
+          ],
         },
       ])
-      expect(surfaceFaults(beside, surface)).toEqual([])
+      const faults = surfaceFaults(beside, surface)
+      expect(rulesIn(faults)).toEqual(['mark-in-its-button'])
+      expect(faults).toHaveLength(2)
+    })
+
+    test(`${surface}: an option's Button passes with its glyph first, and fails without it or with the mark beside it`, () => {
+      const options = (line: unknown[]) => card([{ type: 'Box', props: { key: 'I:options' }, children: [{ type: 'Box', props: { key: 'I:opt:0:line' }, children: line }] }])
+      for (const mark of ['☐', '☑', '○', '◉']) {
+        expect(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: [`${mark} Blue`] }]), surface)).toEqual([])
+      }
+      expect(rulesIn(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] }]), surface))).toEqual(['mark-in-its-button'])
+      // A mark as Text beside the Button is not part of the press.
+      const textBeside = options([
+        { type: 'Text', props: {}, children: ['☐'] },
+        { type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] },
+      ])
+      expect(rulesIn(surfaceFaults(textBeside, surface))).toEqual(['mark-in-its-button'])
     })
   }
 
@@ -238,9 +257,12 @@ describe('the dead-press rule (#72, 0.2.5)', () => {
     ],
   }
 
+  // This rule alone: 0.2.5's Svg controls also fail mark-in-its-button (#75).
+  const stretched = RULES.filter(rule => rule.name === 'button-alone-in-a-stretched-box')
+
   for (const surface of APPS) {
     test(`${surface}: 0.2.5's rows fail it on the option with a description and on Other open, not on the option alone in its column`, () => {
-      const faults = surfaceFaults(ROWS_0_2_5, surface)
+      const faults = surfaceFaults(ROWS_0_2_5, surface, stretched)
       expect(rulesIn(faults)).toEqual(['button-alone-in-a-stretched-box'])
       expect(faults.map(fault => fault.split(' at ')[1]?.split(':').slice(0, -1).join(':'))).toEqual(['X:opt:0', 'X:opt:other'])
     })
@@ -248,8 +270,8 @@ describe('the dead-press rule (#72, 0.2.5)', () => {
 
   test('a Button alone in a stretched Box, or beside others in a plain one, passes; the terminal is not checked', () => {
     const plain = { type: 'Box', props: { key: 'X:line', flexDirection: 'row' }, children: [control, { type: 'Button', props: { key: 'X:b' }, children: ['B'] }] }
-    expect(surfaceFaults(plain, 'desktop')).toEqual([])
-    expect(surfaceFaults(column('X:c', [{ type: 'Button', props: { key: 'X:b' }, children: ['B'] }]), 'desktop')).toEqual([])
+    expect(surfaceFaults(plain, 'desktop', stretched)).toEqual([])
+    expect(surfaceFaults(column('X:c', [{ type: 'Button', props: { key: 'X:b' }, children: ['B'] }]), 'desktop', stretched)).toEqual([])
     expect(surfaceFaults(ROWS_0_2_5, 'terminal')).toEqual([])
   })
 })

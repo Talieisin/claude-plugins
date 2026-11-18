@@ -3,7 +3,7 @@ name: humantray
 description: How to ask a person for something through the humantray instead of in prose - FYIs, choices, questions, tasks and approvals, raised once and referred to by id, with the answer arriving later by itself. Use when you need a decision, an answer, an action or an acknowledgement from a person and can carry on meanwhile, when you hand a person a runbook to carry out, and whenever a line starting `humantray HT-` arrives.
 ---
 
-<!-- humantray-skill-version: 8 (humantray plugin 0.2.6; raise both together) -->
+<!-- humantray-skill-version: 9 (humantray plugin 0.2.7; raise both together) -->
 
 # humantray
 
@@ -35,7 +35,7 @@ The owner's views (the viewer and the page) group a cloud session's items under 
   - `choice` when the options are known: 2 to 6 `{ label, description }`. Do not add an "Other": the card has its own. `multiSelect: true` allows several.
   - `question` for a free-text answer.
   - `do` for something the person must do. The answer is Done or Not done, with optional feedback. Say in the item what "done" means, and on Not done read the feedback before you go on.
-  - `approve` for a proposal. Pass no options: it supplies Approve and Reject.
+  - `approve` for a proposal. Pass no options: it supplies Approve and Reject, and always offers optional notes, so read any notes before you act on the verdict.
 - **One item per ask.** `header` is a chip of 1 to 12 characters; `question` is the ask; put the detail in `body_md`, with the options and the default you will take meanwhile. `notes: true` adds a free-text notes box to any type.
 - **A refused call stores nothing.** Read the error, fix the call, and call again.
 - **Put nothing secret in an item.** Items are kept as plain text.

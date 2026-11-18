@@ -234,20 +234,16 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
     const { w } = galleryWorld(on, 'desktop')
     await $.session.start(START_EVENT)
     const { ui } = await openGallery($, 'desktop')
-    // What an option shows (#72): its drawn control's state, and its label.
-    const label = async (key: string) => {
-      const row = (await ui.find({ key: `${key}:line` })) as { children?: unknown[] } | undefined
-      const control = (row?.children ?? []).find(child => (child as { type?: string }).type === 'Svg') as { props?: { alt?: string } } | undefined
-      return `${control?.props?.alt ?? '(no control)'}: ${((await ui.find({ key })) as FoundLike | undefined)?.text ?? ''}`
-    }
-    expect(await label('g:choice-multi:opt:1')).toBe('Checkbox, not selected: Green')
+    // What an option shows (#75): its mark glyph and its label, in its Button.
+    const label = async (key: string) => ((await ui.find({ key })) as FoundLike | undefined)?.text ?? ''
+    expect(await label('g:choice-multi:opt:1')).toBe('☐ Green')
     await ui.press({ key: 'g:choice-multi:opt:1' })
-    expect(await label('g:choice-multi:opt:1')).toBe('Checkbox, selected: Green')
+    expect(await label('g:choice-multi:opt:1')).toBe('☑ Green')
     // A single choice starts with its pick, and a press moves it.
-    expect(await label('g:choice-single-picked:opt:1')).toBe('Radio button, selected: Green')
+    expect(await label('g:choice-single-picked:opt:1')).toBe('◉ Green')
     await ui.press({ key: 'g:choice-single-picked:opt:0' })
-    expect(await label('g:choice-single-picked:opt:1')).toBe('Radio button, not selected: Green')
-    expect(await label('g:choice-single-picked:opt:0')).toBe('Radio button, selected: Blue')
+    expect(await label('g:choice-single-picked:opt:1')).toBe('○ Green')
+    expect(await label('g:choice-single-picked:opt:0')).toBe('◉ Blue')
 
     const note = async (name: string) => ((await ui.find({ key: `g:${name}:pressed` })) as FoundLike | undefined)?.text
     expect(await note('do')).toBeUndefined()
@@ -266,8 +262,8 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
 
     await ui.press({ key: 'g:reset' })
     expect(await note('do')).toBeUndefined()
-    expect(await label('g:choice-multi:opt:1')).toBe('Checkbox, not selected: Green')
-    expect(await label('g:choice-single-picked:opt:1')).toBe('Radio button, selected: Green')
+    expect(await label('g:choice-multi:opt:1')).toBe('☐ Green')
+    expect(await label('g:choice-single-picked:opt:1')).toBe('◉ Green')
     expect((await ui.find({ key: 'g:error:card' }))?.text).toContain('Type an answer.')
     expect(w.submits).toEqual([])
   })

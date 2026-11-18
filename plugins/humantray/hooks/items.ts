@@ -307,6 +307,8 @@ export const addOrBump = (
     existing.body_md = input.body_md
     if (input.options !== undefined) existing.options = input.options
     else delete existing.options
+    // An approve item raised again by 0.2.7 or later offers notes too (#75).
+    if (existing.type === 'approve') existing.notes = true
     existing.bumps += 1
     existing.updated = Math.max(context.now, existing.updated + 1)
     return { ok: { item: existing, bumped: true } }
@@ -331,6 +333,9 @@ export const addOrBump = (
   if (input.options !== undefined) item.options = input.options
   if (input.multiSelect !== undefined) item.multiSelect = input.multiSelect
   if (input.notes !== undefined) item.notes = input.notes
+  // An approve item always offers notes (#75): Approve or Reject, and why.
+  // Set here, where it is raised, so every view and version draws and keeps them.
+  if (input.type === 'approve') item.notes = true
   if (input.notify_on_done !== undefined) item.notify_on_done = input.notify_on_done
   file.items.push(item)
   return { ok: { item, bumped: false } }

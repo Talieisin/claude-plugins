@@ -286,7 +286,7 @@ describe('finding the artifacts', () => {
 })
 
 describe('reading and drawing', () => {
-  vtest('a choice card on an app surface: checkbox rows and an Other row, pressed by the unchanged keys, answered by envelope (#64, #72)', async ($, on) => {
+  vtest('a choice card on an app surface: checkbox rows and an Other row, pressed by the unchanged keys, answered by envelope (#64, #72, #75)', async ($, on) => {
     const { w, a, sends } = viewerWorld(on)
     const options = [
       { label: 'One', description: 'The first' },
@@ -296,13 +296,13 @@ describe('reading and drawing', () => {
     await turnOn($, w)
     const ui = await mount($, { ...PANE, surface: 'vscode' })
     expect((await ui.find({ key: `v:${ID1}:options` }))?.type).toBe('Box')
-    expect((await ui.find({ key: `v:${ID1}:opt:0` }))?.text).toBe('One')
+    expect((await ui.find({ key: `v:${ID1}:opt:0` }))?.text).toBe('☐ One')
     expect((await ui.find({ key: `v:${ID1}:opt:0:about` }))?.text).toContain('The first')
     expect(await ui.find({ key: `v:${ID1}:opt:1:about` })).toBeUndefined()
     await ui.press({ key: `v:${ID1}:opt:0` })
     await ui.press({ key: `v:${ID1}:opt:1` })
-    expect(JSON.stringify(await ui.find({ key: `v:${ID1}:opt:1:line` }))).toContain('Checkbox, selected')
-    // Other is a row there too (#72): pressed, its field opens in the row.
+    expect((await ui.find({ key: `v:${ID1}:opt:1` }))?.text).toBe('☑ Two')
+    // Other is a row there too (#72): pressed, its field opens under it.
     await ui.press({ key: `v:${ID1}:opt:other` })
     await ui.input({ key: `v:${ID1}:other`, text: 'Three', kind: 'change' })
     await ui.press({ key: `v:${ID1}:submit` })
