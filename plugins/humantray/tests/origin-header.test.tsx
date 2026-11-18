@@ -146,6 +146,21 @@ describe('the origin line, drawn (#75)', () => {
   }
 })
 
+describe('a cached tray from before who-asked (#75)', () => {
+  test('a viewer tray cached as viewer-3 (History entries with no origin) is never drawn', async ($, on) => {
+    world(on)
+    const entry = { id: 'x', short: 'HT-XXXXX', repo: 'r', type: 'question', header: 'Old', question: 'Old?', status: 'answered', answer: 'yes', parts: [], clipped: false, bumps: 0, at: 0, mark: 'delivered', isMine: true }
+    const old = { repos: [], history: [entry], answerable: 0, found: 'ok', leaseFailed: false, at: 0 }
+    on('state.get', { plugin: 'humantray', key: 'viewer' }, () => ({ value: { value: { shape: 'viewer-3', value: old }, version: 1 } }))
+    on('state.get', { plugin: 'humantray', key: 'view' }, () => ({ value: { value: 'history', version: 1 } }))
+    await $.session.start(START_EVENT)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: /\[Old\]/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'humantray viewer' })).toBeUndefined()
+    await ui.unmount()
+  })
+})
+
 describe('the header (#75)', () => {
   test('the title and open count, the tabs, and the chips with their counts; the shown ones primary', async ($, on) => {
     const w = world(on)

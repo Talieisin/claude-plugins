@@ -105,7 +105,7 @@ const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 // The viewer's (#32): its tray (built in viewer.ts, which declares the same
 // atom), its Open page, and a card shown in full.
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-4' })
 const viewerPage = atom({ plugin: 'humantray', key: 'vpage' } as const, 0)
 const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-2' })
 
@@ -973,7 +973,9 @@ export const register: Register = on => {
           const id = item.id
           const draft = await draftOf($, id)
           const press = (action: Action) => () => answer($, id, action)
-          local.push(await openCard({ item, key: id, draftId: id, draft, press }))
+          // Every open item in this repository's store, not only this session's: each says who asked (#75).
+          const origin = shown?.origins[id] ?? (shown?.mine.includes(id) === true ? 'this session' : 'another session')
+          local.push(await openCard({ item, key: id, draftId: id, draft, press, origin }))
         }
       }
       return (

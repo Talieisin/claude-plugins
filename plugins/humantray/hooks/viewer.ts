@@ -58,7 +58,8 @@ import { type RowRead, SESSION_ID, countsAsAnswer, isTitleFor, pickArtifact, row
 import { isCloud } from './store-pass'
 
 /** The viewer's tray in `$.state`; register.tsx declares the same atom to draw it. */
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
+// viewer-4: History entries carry who asked (#75); a tray cached by an earlier version reads as null.
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-4' })
 
 /** How often the viewer reads the store. */
 export const TICK_MS = 20_000
