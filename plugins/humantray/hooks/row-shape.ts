@@ -13,7 +13,7 @@ export const ROW_SCHEMA = 1
  * the version in plugin.json. Only stamped: readers take any string here, so
  * rows an older version wrote stay readable.
  */
-export const WRITER_VERSION = '0.2.2'
+export const WRITER_VERSION = '0.2.3'
 
 /**
  * The response envelope version this mod's receiver takes (#32): a row

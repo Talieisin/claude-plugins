@@ -42,6 +42,9 @@ answer goes back to the session that asked, once.
 
 - **Locally** the tray is a pane beside the chat (`/humantray-open`) and a band
   above the prompt.
+- **After each release,** `/humantray-gallery` shows every card type and state
+  as fixtures, drawn by the real card code, for one look per surface. Nothing
+  there is stored or sent.
 - **In cloud sessions** the items are also copied to a private page on your
   claude.ai account, one per repository, once you have made it. A local session on a computer that
   stays on can show those pages in its pane (`/humantray-viewer`).
