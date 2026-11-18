@@ -8,6 +8,7 @@ import type { On, RenderSurface } from 'claude-code'
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 
 import { codeBlocksOf } from '../hooks/code'
+import { forDrawing } from '../hooks/items'
 import { COPY_PAGE, copyLabel, hasNativeCopy } from '../hooks/copy'
 import { CODE_CASES, RUNBOOK } from './code-fixtures'
 import { ADD, PANE, START_EVENT, answerOf, drawnText, world } from './world'
@@ -200,6 +201,44 @@ describe('the desktop app and VS Code draw their own copy control (decided for t
     const { id } = await addDo($, BODY)
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     expect((await ui.find({ key: `${id}:body` }))?.props.text).toBe(`\`\`\`sh\n${TEXT}\n\`\`\``)
+  })
+
+  test("a person's own `*Code n*` line before a fence in an answer is kept: only labels forDrawing drew are dropped", async ($, on) => {
+    const { w } = copyWorld(on, { surface: 'desktop' })
+    await $.session.start(START_EVENT)
+    const { id } = await addDo($, BODY)
+    const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+    const feedback = 'See below.\n\n*Code 1*\n\n```sh\nls\n```'
+    await ui.input({ key: `${id}:feedback`, text: feedback, kind: 'change' })
+    await ui.press({ key: `${id}:done` })
+    await w.drain()
+    await ui.press({ key: 'humantray:view' })
+    const drawnPart = (await drawnText(ui, `${id}:Feedback`)) as string
+    expect(drawnPart).toBe(forDrawing(feedback, false))
+    expect(drawnPart).toContain('*Code 1*')
+  })
+
+  for (const surface of ['desktop', 'vscode'] as const) {
+    test(`${surface}: a block holding control characters is still named, and the card says the app's copy of it is not exact`, async ($, on) => {
+      copyWorld(on, { surface })
+      await $.session.start(START_EVENT)
+      const { id } = await addDo($, '```\nok\n```\n\n```\na\u0007b\n```')
+      const ui = await $.ui.mount({ ...PANE, surface })
+      expect(await ui.findAll({ type: 'Button', text: 'Copy' })).toEqual([])
+      expect(await ui.find({ key: `${id}:copy:1` })).toBeUndefined()
+      expect(
+        await ui.find({ type: 'Text', text: "Code block 2 holds control characters: the app's copy of it has \ufffd where they were" }),
+      ).toBeDefined()
+      expect(await drawnText(ui, `${id}:body`)).toContain('a\ufffdb')
+    })
+  }
+
+  test('the terminal: a block holding control characters is not offered for copy, as before', async ($, on) => {
+    copyWorld(on, { surface: 'terminal' })
+    await $.session.start(START_EVENT)
+    await addDo($, '```\na\u0007b\n```')
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    expect(await ui.find({ type: 'Text', text: 'Code block 1 holds control characters: not offered for copy' })).toBeDefined()
   })
 
   test('the terminal: the buttons and the labels are drawn', async ($, on) => {

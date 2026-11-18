@@ -693,10 +693,14 @@ export const register: Register = on => {
     // next in any surface's parser. One piece keeps the single element.
     // Where the surface draws its own copy control on a code block (the
     // desktop app, VS Code), no copy buttons and no `Code n` labels (#51).
+    // `labelled`: a body forDrawing labelled. Only there is a label dropped:
+    // an answer's parts are drawn with none, so a `*Code n*` line in them is
+    // the person's own and is kept.
     const native = hasNativeCopy(e.surface)
-    const drawn = (key: string, text: string) => {
-      const pieces = native ? unlabelledPieces(text) : splitDrawn(text)
-      if (pieces.length <= 1) return <Markdown key={key} text={native ? unlabelled(text) : text} />
+    const drawn = (key: string, text: string, labelled = false) => {
+      const unlabel = native && labelled
+      const pieces = unlabel ? unlabelledPieces(text) : splitDrawn(text)
+      if (pieces.length <= 1) return <Markdown key={key} text={unlabel ? unlabelled(text) : text} />
       return (
         <Box key={key} flexDirection="column" gap={1}>
           {pieces.map((piece, n) => (
@@ -709,7 +713,25 @@ export const register: Register = on => {
     // the drawn. At most COPY_PAGE at once, so a card full of fences stays
     // small; a button pages through the rest. `draftId` keeps the page shown.
     const copyList = async (key: string, draftId: string, short: string, blocks: readonly CodeBlock[]) => {
-      if (native) return null
+      if (native) {
+        // No buttons: the app copies each block itself. A block with control
+        // characters is drawn with U+FFFD in their place (forDrawing), so its
+        // copy is not exact: the card says so (decided for the owner on #51).
+        const notes = blocks.flatMap((block, k) =>
+          block.unsafe
+            ? [
+                <Text key={`${key}:copy:${String(k + 1)}`} dimColor>
+                  {`Code block ${String(k + 1)} holds control characters: the app's copy of it has \ufffd where they were`}
+                </Text>,
+              ]
+            : [],
+        )
+        return notes.length === 0 ? null : (
+          <Box key={`${key}:copy`} flexDirection="column">
+            {notes}
+          </Box>
+        )
+      }
       const offered = blocks.flatMap((block, k) => (block.text === '' ? [] : [{ block, n: k + 1 }]))
       if (offered.length === 0) return null
       const held = await $.state.get({ ...drafts, id: draftId })
@@ -908,7 +930,7 @@ export const register: Register = on => {
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
               <Text dimColor>{full.short}</Text>
-              {full.body.text !== '' && drawn(`v:${full.id}:full:body`, full.body.text)}
+              {full.body.text !== '' && drawn(`v:${full.id}:full:body`, full.body.text, true)}
               {full.body.clipped && (
                 <Text key={`v:${full.id}:full:more`} dimColor>
                   {`(… cut short: ${String(full.body.length)} characters in all)`}
@@ -1090,7 +1112,7 @@ export const register: Register = on => {
               {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
               {card.old ? ' · old' : ''}
             </Text>
-            {body.text !== '' && drawn(`${key}:body`, body.text)}
+            {body.text !== '' && drawn(`${key}:body`, body.text, true)}
             {body.clipped && (
               <Button key={`${key}:full`} label="Show in full" onPress={() => update($, viewerExpanded, () => fullOf(item))} />
             )}
@@ -1129,7 +1151,7 @@ export const register: Register = on => {
                 [{plain(item.header)}] {plain(item.question)}
               </Text>
               <Text dimColor>{item.short}</Text>
-              {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md))}
+              {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md), true)}
               {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
               {controlsFor(item, id, id, draft, (action: Action) => () => answer($, id, action))}
               {draft.error !== '' && <Text color="error">{draft.error}</Text>}
@@ -1231,7 +1253,7 @@ export const register: Register = on => {
                 [{plain(full.header)}] {plain(full.question)}
               </Text>
               <Text dimColor>{full.short}</Text>
-              {full.body.text !== '' && drawn(`${full.id}:full:body`, full.body.text)}
+              {full.body.text !== '' && drawn(`${full.id}:full:body`, full.body.text, true)}
               {full.body.clipped && more(`${full.id}:full:body:more`, full.body)}
               {await copyList(`${full.id}:full`, `full:${full.id}`, full.short, full.copy ?? [])}
               {full.answer !== '' && <Text>{plain(full.answer)}</Text>}
@@ -1314,7 +1336,7 @@ export const register: Register = on => {
             {from}
             {bumped}
           </Text>
-          {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md))}
+          {item.body_md !== '' && drawn(`${id}:body`, forDrawing(item.body_md), true)}
           {await copyList(id, id, item.short, codeBlocksOf(item.body_md))}
           {controls}
           {draft.error !== '' && <Text color="error">{draft.error}</Text>}
