@@ -331,6 +331,9 @@ export const addOrBump = (
   if (input.options !== undefined) item.options = input.options
   if (input.multiSelect !== undefined) item.multiSelect = input.multiSelect
   if (input.notes !== undefined) item.notes = input.notes
+  // An approve item always offers notes (#75): Approve or Reject, and why.
+  // Set here, where it is raised, so every view and version draws and keeps them.
+  if (input.type === 'approve') item.notes = true
   if (input.notify_on_done !== undefined) item.notify_on_done = input.notify_on_done
   file.items.push(item)
   return { ok: { item, bumped: false } }

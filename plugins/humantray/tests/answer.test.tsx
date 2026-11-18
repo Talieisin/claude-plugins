@@ -82,6 +82,32 @@ describe('notes', () => {
     })
   }
 
+  // #75: Approve or Reject, with optional notes, always: an approve item is
+  // raised with notes whatever the call says, so every view and version
+  // draws the field and the asker keeps what is typed in it.
+  for (const verdict of ['approve', 'reject'] as const) {
+    for (const surface of SURFACES) {
+      test(`approve, ${verdict}, on ${surface}: notes without notes: true in the call, drawn above the verdicts and kept`, async ($, on) => {
+        const w = world(on, { surfaces: [surface] })
+        await $.session.start(START_EVENT)
+        const id = answerOf<{ id: string }>(await $.tool.call({ tool: ADD, type: 'approve', header: 'Plan', question: 'OK?', notes: false })).id
+        expect(w.store().items.find(item => item.id === id)?.notes).toBe(true)
+        const ui = await mount($, { ...PANE, surface })
+        const card = (await ui.find({ key: `${id}:card` })) as { children?: unknown[] } | undefined
+        const keys = (card?.children ?? []).map(child => (child as { props?: { key?: string } }).props?.key).filter(key => key !== undefined)
+        expect(keys.indexOf(`${id}:notes:field`)).toBeGreaterThan(-1)
+        expect(keys.indexOf(`${id}:notes:field`)).toBeLessThan(keys.indexOf(`${id}:verdicts`))
+        await ui.input({ key: `${id}:notes`, text: 'Because **the tests** pass', kind: 'change' })
+        await ui.press({ key: `${id}:${verdict}` })
+        await ui.unmount()
+        expect(w.store().items.find(item => item.id === id)?.response).toEqual({
+          selected: [verdict === 'approve' ? 'Approve' : 'Reject'],
+          notes: 'Because **the tests** pass',
+        })
+      })
+    }
+  }
+
   test('notes: false draws no notes field', async ($, on) => {
     world(on)
     await $.session.start(START_EVENT)

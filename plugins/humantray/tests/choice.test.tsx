@@ -1,16 +1,17 @@
-// A choice card's options on each surface (#64, #72): on the desktop app, VS
-// Code and a phone, the desktop app's own question dialog as near as the mod
-// API allows (a header band, a row per option with a drawn control, the
-// description dim under the label, Other a row that opens its field, the
-// actions bottom right); the terminal's one-line drawing of 0.2.1 kept.
-// Pressing an option by its key toggles it the same way everywhere.
+// A choice card's options on each surface (#64, #72, #75): on the desktop app,
+// VS Code and a phone, a row per option whose Button holds the checkbox or
+// radio glyph and the label (so a click on the box presses it), the
+// description dim under the label and set in to line up with it, Other a row
+// that opens its field under it, the actions bottom right; the terminal's
+// one-line drawing of 0.2.1 kept. Pressing an option by its key toggles it the
+// same way everywhere.
 
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 
-import { CONTROL_OFF, CONTROL_ON, SPACER_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from '../hooks/choice'
+import { CHOICE_GLYPHS, choiceGlyph, choiceMark, descriptionIndent, drawsChoiceRows, otherIsOn } from '../hooks/choice'
 import { EMPTY_DRAFT } from '../hooks/items'
 import { ADD, PANE, START_EVENT, answerOf, world } from './world'
-import { mount } from './surface-rules'
+import { CHOICE_MARKS, mount } from './surface-rules'
 
 const OPTIONS = [
   { label: 'Plugin validate', description: 'Run claude plugin validate on the repository' },
@@ -53,51 +54,39 @@ describe('the pure rules', () => {
     expect([choiceMark(false, false), choiceMark(false, true)]).toEqual(['( )', '(•)'])
   })
 
-  test('the Svg control: a circle or a square, blue and marked when picked, grey outline when not; its alt names the state', () => {
-    const radioOff = controlSvg(false, false)
-    const radioOn = controlSvg(false, true)
-    const boxOff = controlSvg(true, false)
-    const boxOn = controlSvg(true, true)
-    for (const svg of [radioOff, radioOn, boxOff, boxOn]) {
-      expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">')).toBe(true)
-      expect(svg.endsWith('</svg>')).toBe(true)
-      expect(svg).not.toMatch(/<script|on[a-z]+=/i)
-    }
-    expect(radioOff).toContain('<circle')
-    expect(radioOff).toContain(`stroke="${CONTROL_OFF}"`)
-    expect(radioOff).not.toContain(CONTROL_ON)
-    expect(radioOn).toContain(`fill="${CONTROL_ON}"`)
-    expect(radioOn).toContain('r="3" fill="#ffffff"')
-    expect(boxOff).toContain('<rect')
-    expect(boxOff).not.toContain(CONTROL_ON)
-    expect(boxOn).toContain(`fill="${CONTROL_ON}"`)
-    expect(boxOn).toContain('<polyline')
-    expect(controlAlt(false, true)).toBe('Radio button, selected')
-    expect(controlAlt(true, false)).toBe('Checkbox, not selected')
+  test('app marks: a checkbox or radio glyph, the same set the surface rule names', () => {
+    expect([choiceGlyph(true, false), choiceGlyph(true, true)]).toEqual(['☐', '☑'])
+    expect([choiceGlyph(false, false), choiceGlyph(false, true)]).toEqual(['○', '◉'])
+    expect(CHOICE_GLYPHS).toEqual(CHOICE_MARKS)
   })
 
-  test('the spacer under a label is the control\'s width, one pixel tall, and draws nothing', () => {
-    expect(SPACER_SVG).toBe('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="1" viewBox="0 0 16 1"></svg>')
+  test('the indent under a label: the glyph and its space, and the desktop button\'s inset', () => {
+    expect(descriptionIndent('desktop')).toBe(3)
+    expect(descriptionIndent('vscode')).toBe(2)
+    expect(descriptionIndent('mobile')).toBe(2)
   })
 })
+
+/** What a Button says: its label, which its one string child is drawn as, else its text. */
+const said = (node: Node | undefined): string => String(node?.props.label ?? node?.text ?? '')
 
 /** A drawn node's element children by type. */
 const shape = (node: Node | Child | undefined) => elements(node).map(child => child.type)
 
-describe('the app surfaces draw the desktop dialog look (#72)', () => {
+describe('the app surfaces draw each option as one pressable row (#72, #75)', () => {
   const field = { desktop: { marginBottom: 'sm' }, vscode: { marginBottom: 1 }, mobile: {} }
   for (const surface of APPS) {
     for (const multi of [true, false]) {
-      test(`${surface}, ${multi ? 'multi-select' : 'single choice'}: a row per option, an Svg control beside the label Button alone, the description dim under the label, Other last`, async ($, on) => {
+      test(`${surface}, ${multi ? 'multi-select' : 'single choice'}: a row per option, its glyph and label in one Button alone in its line, the description dim and set in under it, Other last`, async ($, on) => {
         world(on, { surfaces: [surface] })
         await $.session.start(START_EVENT)
         const id = await addChoice($, multi)
         const ui = await mount($, { ...PANE, surface })
+        const indent = descriptionIndent(surface)
 
         const group = (await ui.find({ key: `${id}:options` })) as Node | undefined
         expect(group?.type).toBe('Box')
         expect(spacing(group?.props)).toEqual(field[surface])
-        // No rule between rows (0.2.5's were not drawn), and no fill or hover shade.
         expect(elements(group).map(child => String(child.props.key))).toEqual([
           `${id}:opt:0:row`, `${id}:opt:1:row`, `${id}:opt:2:row`, `${id}:opt:other:row`,
         ])
@@ -105,15 +94,14 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
         for (const [index, option] of OPTIONS.entries()) {
           const row = (await ui.find({ key: `${id}:opt:${String(index)}:row` })) as Node | undefined
           expect(row?.props).toEqual({ key: `${id}:opt:${String(index)}:row`, flexDirection: 'column' })
-          // The line: the control and the Button, and nothing else; no Box around the Button.
+          // The line holds the Button and nothing else: no Svg, nothing that grows or stretches.
           const line = (await ui.find({ key: `${id}:opt:${String(index)}:line` })) as Node | undefined
-          expect(line?.props).toEqual({ key: `${id}:opt:${String(index)}:line`, flexDirection: 'row', gap: 1 })
-          expect(shape(line)).toEqual(['Svg', 'Button'])
-          expect(elements(line)[0]?.props).toMatchObject({ source: controlSvg(multi, false), alt: controlAlt(multi, false), width: 16, height: 16 })
+          expect(line?.props).toEqual({ key: `${id}:opt:${String(index)}:line`, flexDirection: 'row' })
+          expect(shape(line)).toEqual(['Button'])
           const button = (await ui.find({ key: `${id}:opt:${String(index)}` })) as Node | undefined
           expect(button?.props.plain).toBe(true)
-          // The label alone: no mark, no description, nothing but a string.
-          expect(button?.props.label ?? button?.text).toBe(option.label)
+          // The glyph and the label, one string (drawn as the Button's label): a click on the box is a click on the Button (#75).
+          expect(said(button)).toBe(`${choiceGlyph(multi, false)} ${option.label}`)
           expect(elements(button)).toEqual([])
           const under = (await ui.find({ key: `${id}:opt:${String(index)}:under` })) as Node | undefined
           const about = (await ui.find({ key: `${id}:opt:${String(index)}:about` })) as Node | undefined
@@ -122,31 +110,36 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
             expect(about).toBeUndefined()
             expect(shape(row)).toEqual(['Box'])
           } else {
-            // Under the line, in a Box of its own: a spacer the control's width, then the description.
             expect(shape(row)).toEqual(['Box', 'Box'])
-            expect(shape(under)).toEqual(['Svg', 'Box'])
-            expect(elements(under)[0]?.props).toMatchObject({ source: SPACER_SVG, alt: '', width: 16, height: 1 })
-            // The desktop's native button sets its label in by about a cell: the description matches it.
-            expect(about?.props.paddingLeft).toBe(surface === 'desktop' ? 1 : 0)
+            // Set in by the glyph, its space and the button's inset, to line up with the label.
+            expect(under?.props).toEqual({ key: `${id}:opt:${String(index)}:under`, flexDirection: 'row', paddingLeft: indent })
+            expect(shape(under)).toEqual(['Box'])
             const text = elements(about)[0]
             expect(text?.type).toBe('Text')
             expect(text?.props.dimColor).toBe(true)
             expect(own(text)).toBe(option.description)
           }
         }
-        // Other: the same control, closed, with no field.
-        expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Svg', 'Button'])
-        expect(((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)?.props.label).toBe('Other')
+        // Other: the same row, closed, with no field.
+        expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Button'])
+        expect(said((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)).toBe(`${choiceGlyph(multi, false)} Other`)
         expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
+        // No drawn control anywhere on the card.
+        expect(JSON.stringify(await ui.find({ key: `${id}:card` }))).not.toContain('"Svg"')
 
-        // Pressed by the unchanged key, the control follows; an option with a description presses too.
-        const control = async (n: number | 'other') => elements((await ui.find({ key: `${id}:opt:${String(n)}:line` })) as Node | undefined)[0]?.props.alt
+        // Pressed by its key, the glyph follows; an option with a description presses too.
+        const glyph = async (n: number) => said((await ui.find({ key: `${id}:opt:${String(n)}` })) as Node | undefined).slice(0, 1)
         await ui.press({ key: `${id}:opt:1` })
-        expect(await control(1)).toBe(controlAlt(multi, true))
+        expect(await glyph(1)).toBe(choiceGlyph(multi, true))
         await ui.press({ key: `${id}:opt:0` })
-        expect(await control(0)).toBe(controlAlt(multi, true))
+        expect(await glyph(0)).toBe(choiceGlyph(multi, true))
         // A multi-select keeps both; a single choice moves the pick.
-        expect(await control(1)).toBe(controlAlt(multi, multi))
+        expect(await glyph(1)).toBe(choiceGlyph(multi, multi))
+        // A multi-select unticks on a second press.
+        if (multi) {
+          await ui.press({ key: `${id}:opt:1` })
+          expect(await glyph(1)).toBe(choiceGlyph(true, false))
+        }
         await ui.unmount()
       })
     }
@@ -177,31 +170,50 @@ describe('the app surfaces draw the desktop dialog look (#72)', () => {
   }
 })
 
-describe('Other on the app surfaces is a row that opens its field (#72)', () => {
+describe('Other on the app surfaces is a row that opens its field under it (#72, #75)', () => {
   for (const surface of APPS) {
-    test(`${surface}: pressing Other opens the field in its row; pressing it again closes it and clears the text`, async ($, on) => {
-      world(on, { surfaces: [surface] })
-      await $.session.start(START_EVENT)
-      const id = await addChoice($, true)
-      const ui = await mount($, { ...PANE, surface })
-      await ui.press({ key: `${id}:opt:other` })
-      // The field is under the line, not beside the Button: the Button keeps its line to itself.
-      expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Svg', 'Button'])
-      const under = (await ui.find({ key: `${id}:opt:other:under` })) as Node | undefined
-      expect(elements(under).map(child => child.props.key ?? child.type)).toEqual(['Svg', `${id}:other:field`])
-      expect((await ui.find({ key: `${id}:other` }))?.type).toBe('Input')
-      const control = async () => elements((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)[0]?.props.alt
-      expect(await control()).toBe(controlAlt(true, true))
-      await ui.input({ key: `${id}:other`, text: 'Teal', kind: 'change' })
-      await ui.press({ key: `${id}:opt:other` })
-      expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
-      expect(elements((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(true, false))
-      // Opened again, the field is empty.
-      await ui.press({ key: `${id}:opt:other` })
-      expect((await ui.find({ key: `${id}:other` }))?.props.value).toBe('')
-      await ui.unmount()
-    })
+    for (const multi of [true, false]) {
+      test(`${surface}, ${multi ? 'multi-select' : 'single choice'}: pressing Other ticks it and opens its field under it, set in; pressing it again closes it and clears the text`, async ($, on) => {
+        world(on, { surfaces: [surface] })
+        await $.session.start(START_EVENT)
+        const id = await addChoice($, multi)
+        const ui = await mount($, { ...PANE, surface })
+        await ui.press({ key: `${id}:opt:other` })
+        const other = async () => said((await ui.find({ key: `${id}:opt:other` })) as Node | undefined)
+        expect(await other()).toBe(`${choiceGlyph(multi, true)} Other`)
+        // The field is under the line, not beside the Button, and set in like a description: not the card's full width.
+        expect(shape((await ui.find({ key: `${id}:opt:other:line` })) as Node | undefined)).toEqual(['Button'])
+        const under = (await ui.find({ key: `${id}:opt:other:under` })) as Node | undefined
+        expect(under?.props.paddingLeft).toBe(descriptionIndent(surface))
+        expect(elements(under).map(child => child.props.key)).toEqual([`${id}:other:field`])
+        expect((await ui.find({ key: `${id}:other` }))?.type).toBe('Input')
+        await ui.input({ key: `${id}:other`, text: 'Teal', kind: 'change' })
+        await ui.press({ key: `${id}:opt:other` })
+        expect(await ui.find({ key: `${id}:other:field` })).toBeUndefined()
+        expect(await other()).toBe(`${choiceGlyph(multi, false)} Other`)
+        // Opened again, the field is empty.
+        await ui.press({ key: `${id}:opt:other` })
+        expect((await ui.find({ key: `${id}:other` }))?.props.value).toBe('')
+        await ui.unmount()
+      })
+    }
   }
+
+  test('multi-select: options and Other together, then Submit, delivers both', async ($, on) => {
+    const w = world(on, { surfaces: ['desktop'] })
+    await $.session.start(START_EVENT)
+    const id = await addChoice($, true)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    await ui.press({ key: `${id}:opt:0` })
+    await ui.press({ key: `${id}:opt:other` })
+    await ui.input({ key: `${id}:other`, text: 'Teal', kind: 'change' })
+    // Ticking another option keeps Other open on a multi-select.
+    await ui.press({ key: `${id}:opt:2` })
+    expect((await ui.find({ key: `${id}:other` }))?.type).toBe('Input')
+    await ui.press({ key: `${id}:submit` })
+    await ui.unmount()
+    expect(w.store().items.find(item => item.id === id)?.response).toEqual({ selected: ['Plugin validate', 'Bare'], other: 'Teal' })
+  })
 
   test('multi-select: unticking Other that holds text, then Submit, delivers no Other', async ($, on) => {
     const w = world(on, { surfaces: ['desktop'] })
@@ -225,7 +237,7 @@ describe('Other on the app surfaces is a row that opens its field (#72)', () => 
     await ui.press({ key: `${id}:opt:1` })
     // Opening Other clears a single choice's pick.
     await ui.press({ key: `${id}:opt:other` })
-    expect(elements((await ui.find({ key: `${id}:opt:1:line` })) as Node | undefined)[0]?.props.alt).toBe(controlAlt(false, false))
+    expect(said((await ui.find({ key: `${id}:opt:1` })) as Node | undefined)).toBe(`${choiceGlyph(false, false)} Shell syntax`)
     await ui.press({ key: `${id}:submit` })
     expect((await ui.find({ key: `${id}:card` }))?.text).toContain('Pick an option or fill in Other.')
     // Picking an option closes Other and clears its text.

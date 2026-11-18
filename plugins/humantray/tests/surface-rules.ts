@@ -43,6 +43,9 @@ export const IGNORED_IN_BUTTON: readonly string[] = ['dimColor']
 /** Theme keys meant for text, which the app paints dark as a fill (#72). */
 export const TEXT_COLOURS: readonly string[] = ['text', 'subtle', 'inactive', 'inverseText']
 
+/** The marks an option's Button starts with on an app surface (#75; `choiceGlyph` in hooks/choice.ts). */
+export const CHOICE_MARKS: readonly string[] = ['☐', '☑', '○', '◉']
+
 /** A terminal mark at the start of a line: `[ ]`, `[x]`, `( )`, `(•)`. */
 const MARK = /^\s*(?:[-*+]\s+)?(?:\[[ xX]\]|\(\s?\)|\(•\))/
 
@@ -134,19 +137,25 @@ export const RULES: readonly SurfaceRule[] = [
     },
   },
   {
-    // #72: an option's drawn control (an Svg whose alt names its state)
-    // cannot be pressed: a Button holds only strings and Text. So it must
-    // sit beside the Button that is its press, in the same row, never alone.
-    name: 'control-beside-its-button',
-    from: '#72',
-    check: ({ node, ancestors }) => {
-      if (node.type !== 'Svg') return []
-      const alt = node.props?.alt
-      if (typeof alt !== 'string' || !/selected$/.test(alt)) return []
-      const row = ancestors.at(-1)
-      const hasButton = (value: unknown): boolean => isNode(value) && (value.type === 'Button' || (value.children ?? []).some(hasButton))
-      const beside = (row?.children ?? []).some(child => child !== node && hasButton(child))
-      return beside ? [] : [`a control (${JSON.stringify(alt)}) with no Button beside it to press`]
+    // #75, on 0.2.6: an option's checkbox or radio was an Svg beside its label
+    // Button. The engine never makes an Svg pressable (it cannot sit in a
+    // Button, and a Box takes no press), so the owner's clicks on the boxes
+    // did nothing. On an app surface every option's Button, under a choice's
+    // options, starts with its mark glyph, so the box is part of the press;
+    // and no drawn control (an Svg whose alt names a state) is drawn at all.
+    name: 'mark-in-its-button',
+    from: '#75',
+    check: visit => {
+      const { node } = visit
+      if (node.type === 'Svg') {
+        const alt = node.props?.alt
+        return typeof alt === 'string' && /selected$/.test(alt) ? [`a drawn control (${JSON.stringify(alt)}) that cannot be pressed`] : []
+      }
+      if (node.type !== 'Button' || !inside(visit, a => (keyOf(a) ?? '').endsWith(':options'))) return []
+      // A Button's one string child is drawn as its label.
+      const label = node.props?.label
+      const text = textOf(node) || (typeof label === 'string' ? label : '')
+      return CHOICE_MARKS.some(mark => text.startsWith(`${mark} `)) ? [] : [`an option's Button without its mark glyph first: ${JSON.stringify(text)}`]
     },
   },
   {

@@ -100,15 +100,14 @@ const options = ({ rows }: Look, multi: boolean, picked: boolean) => {
     const mark = multi ? (picked ? '[x] on Blue and Red, [ ] on Green' : '[ ] on each') : picked ? '(•) on Green, ( ) on the others' : '( ) on each'
     return `options on one line each, ${mark}, the label then its dim description; Green has none`
   }
-  const control = multi ? 'a checkbox' : 'a radio circle'
   const state = multi
     ? picked
-      ? 'Blue and Red blue with a white tick, Green and Other an empty grey square'
-      : 'every one an empty grey square'
+      ? '☑ on Blue and Red, ☐ on Green and Other'
+      : '☐ on each'
     : picked
-      ? 'Green blue with a white dot, the others an empty grey circle'
-      : 'every one an empty grey circle'
-  return `each option a row, ${control} drawn on the left (${state}), the label beside it and the description dim on its own line under the label, lined up with it; Green has none; pressing a label picks it (the control is not pressable); no shade on the row; Other is the last row, its field closed; on a phone each control is a small web view, so check the card still scrolls smoothly`
+      ? '◉ on Green, ○ on the others'
+      : '○ on each'
+  return `each option a row, its mark and label together (${state}); clicking the mark ticks it as clicking the label does (#75); the description dim on its own line under the label, lined up with the label’s first letter (check by eye); Green has none; no shade on the row; Other is the last row, its field closed`
 }
 
 /** What the dialog frame looks like on an app surface (#72): said once per card type. */
@@ -132,10 +131,11 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
   },
   {
     name: 'approve',
-    item: fixtureItem(3, { type: 'approve', header: 'Approve', question: 'Ship 0.2.3?' }),
+    // An approve item is raised with notes since 0.2.7 (#75).
+    item: fixtureItem(3, { type: 'approve', header: 'Approve', question: 'Ship 0.2.3?', notes: true }),
     start: {},
     mine: true,
-    look: look => `approve: ${frame(look, 'Approve (primary) and Reject side by side')}`,
+    look: look => `approve: a Notes field, its label above it; ${frame(look, 'Approve (primary) and Reject side by side, under the notes')}`,
   },
   {
     name: 'question',
@@ -149,7 +149,7 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
     item: fixtureItem(5, { type: 'choice', header: 'Colour', question: 'One colour, nothing picked', options: OPTIONS }),
     start: {},
     mine: true,
-    look: look => `choice, one answer, nothing picked: ${options(look, false, false)}; ${look.rows ? 'pressing Other opens its field in its row' : 'an Other field'}; Submit`,
+    look: look => `choice, one answer, nothing picked: ${options(look, false, false)}; ${look.rows ? 'pressing Other ticks it and opens its field under its label' : 'an Other field'}; Submit`,
   },
   {
     name: 'choice-single-picked',

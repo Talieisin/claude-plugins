@@ -10,7 +10,7 @@ import type { BoxProps, EngineInterface, RenderInput } from 'claude-code'
 import type { CodeBlock, Draft, Item } from '../types'
 import { type Action, EMPTY_DRAFT, forDrawing, plain, splitDrawn, unlabelled, unlabelledPieces } from './items'
 import { codeBlocksOf } from './code'
-import { CONTROL_SIZE, SPACER_SVG, choiceMark, controlAlt, controlSvg, drawsChoiceRows, otherIsOn } from './choice'
+import { choiceGlyph, choiceMark, descriptionIndent, drawsChoiceRows, otherIsOn } from './choice'
 import { COPY_PAGE, copyBlock, copyLabel, copyToast, hasNativeCopy, unsafeNote } from './copy'
 
 export type FieldName = 'other' | 'text' | 'feedback' | 'notes'
@@ -65,9 +65,6 @@ export type Press = (action: Action) => () => Promise<void>
  */
 export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string) {
   const { Box, Button, Input, Markdown, Text } = $.ui.resolve(e)
-  // Svg for the dialog look (#72), from a table narrowed past the terminal,
-  // which has none.
-  const Svg = e.surface === 'terminal' ? null : $.ui.resolve(e).Svg
   // Drawn Markdown (forDrawing's), one element a piece (#51): each text piece
   // and each fence drawn here apart, so nothing in one can reach into the
   // next in any surface's parser. One piece keeps the single element.
@@ -85,9 +82,9 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
   // the buttons do not touch it. VS Code's table draws a step down as rows:
   // `sm` none, `md` one; so there the gap under a field is `md`.
   const cardSpacing: BoxProps = native ? { paddingX: 'sm', paddingTop: 'sm', paddingBottom: 'md' } : { padding: 'sm' }
-  // Whether a choice's options are checkbox and radio rows (#64), and the
-  // card is drawn as the desktop app's own question dialog (#72): a header
-  // band, rows with a control, and the actions bottom right.
+  // Whether a choice's options are checkbox and radio rows (#64, #75), and
+  // the actions sit bottom right as in the desktop app's own question
+  // dialogue (#72).
   const rows = drawsChoiceRows(e.surface)
   const fieldSpacing: BoxProps = e.surface === 'desktop' ? { marginBottom: 'sm' } : e.surface === 'vscode' ? { marginBottom: 'md' } : {}
   const drawn = (key: string, text: string, labelled = false) => {
@@ -199,7 +196,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
       )
 
     // The actions bottom right on the app surfaces (#72), as the desktop
-    // app's dialog has them; the terminal keeps them where they were.
+    // app's dialogue has them; the terminal keeps them where they were.
     const right: BoxProps = rows ? { justifyContent: 'flex-end' } : {}
     const actions = (button: ReturnType<typeof h>) =>
       rows ? (
@@ -222,6 +219,9 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         </Box>,
       )
     } else if (item.type === 'approve') {
+      // Notes above the verdicts (#75): an approve item raised by 0.2.7 or
+      // later always carries `notes` (items.ts), so the notes say why.
+      if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
       controls.push(
         <Box key={`${key}:verdicts`} flexDirection="row" gap={1} {...right}>
           <Button key={`${key}:approve`} label="Approve" variant="primary" onPress={press({ kind: 'approve', choice: 'Approve' })} />
@@ -255,7 +255,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
               }
             : { selected: [label], other: '', otherOpen: false }),
         }))
-      if (!rows || Svg === null) {
+      if (!rows) {
         ;(item.options ?? []).forEach((option, index) => {
           const mark = choiceMark(isMulti, draft.selected.includes(option.label))
           controls.push(
@@ -266,29 +266,25 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         })
         controls.push(labelled('other', 'Other (Markdown)', otherInput))
       } else {
-        // The desktop app, VS Code and a phone (#72): each option a row with a
-        // drawn radio or checkbox on the left and the label Button beside it;
-        // under it, its description dim, or Other's open field, lined up with
-        // the label. The label Button is the press: a Button holds only
-        // strings and Text, so the Svg beside it cannot be pressed. No `label`
-        // prop on it: the desktop app draws a label in place of the children
-        // (#64, 0.2.3).
-        // The Button shares its Box with the Svg alone, never with what is
-        // under it, and no Box around it grows or stretches: on 0.2.5 the
-        // desktop app took no press on a label Button whose column (flexGrow
-        // 1, alignItems stretch) also held a description or Other's field,
-        // while Other, closed and alone in that column, took its presses (the
-        // owner's check). No fill and no hover shade: `subtle` painted dark
-        // grey over the row and its mark.
-        const row = (rowKey: string, on: boolean, button: ReturnType<typeof h>, under: ReturnType<typeof h> | null) => (
+        // The desktop app, VS Code and a phone: each option a row whose Button
+        // holds the checkbox or radio glyph and the label, one string, so a
+        // click on the box presses it as a click on the label does (#75; the
+        // Svg mark of 0.2.5 and 0.2.6 beside the Button could not be pressed).
+        // Under it, in a Box of its own, its description dim, or Other's open
+        // field, set in to line up with the label. No `label` prop on the
+        // Button: the desktop app draws a label in place of the children (#64).
+        // The rows keep 0.2.6's shape, which took every label press on the
+        // desktop app: the Button alone in its line, nothing that grows or
+        // stretches around it (on 0.2.5 a label Button whose column grew and
+        // stretched took no press), and no fill or hover shade.
+        const indent = descriptionIndent(e.surface)
+        const row = (rowKey: string, button: ReturnType<typeof h>, under: ReturnType<typeof h> | null) => (
           <Box key={`${rowKey}:row`} flexDirection="column">
-            <Box key={`${rowKey}:line`} flexDirection="row" gap={1}>
-              <Svg source={controlSvg(isMulti, on)} alt={controlAlt(isMulti, on)} width={CONTROL_SIZE} height={CONTROL_SIZE} />
+            <Box key={`${rowKey}:line`} flexDirection="row">
               {button}
             </Box>
             {under === null ? null : (
-              <Box key={`${rowKey}:under`} flexDirection="row" gap={1}>
-                <Svg source={SPACER_SVG} alt="" width={CONTROL_SIZE} height={1} />
+              <Box key={`${rowKey}:under`} flexDirection="row" paddingLeft={indent}>
                 {under}
               </Box>
             )}
@@ -296,35 +292,32 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         )
         const options: ReturnType<typeof h>[] = []
         ;(item.options ?? []).forEach((option, index) => {
-          // On the desktop app the native button sets its label in by about a
-          // cell (the owner's check on 0.2.5), so the description is set in to
-          // match.
+          const glyph = choiceGlyph(isMulti, draft.selected.includes(option.label))
           const description =
             option.description.trim() === '' ? null : (
-              <Box key={`${key}:opt:${index}:about`} paddingLeft={e.surface === 'desktop' ? 1 : 0}>
+              <Box key={`${key}:opt:${index}:about`}>
                 <Text dimColor>{option.description}</Text>
               </Box>
             )
           options.push(
             row(
               `${key}:opt:${index}`,
-              draft.selected.includes(option.label),
               <Button key={`${key}:opt:${index}`} plain onPress={pick(option.label)}>
-                {option.label}
+                {`${glyph} ${option.label}`}
               </Button>,
               description,
             ),
           )
         })
-        // Other is the last row, with the same control. It is on while it is
-        // open or holds text; pressing it on opens its field in the row (and
-        // clears a single choice's pick), pressing it off closes the field and
-        // clears the text, so an unticked Other delivers nothing.
+        // Other is the last row, with the same glyph, on a multi-select as on
+        // a single choice. It is on while it is open or holds text; pressing
+        // it on opens its field under it (and clears a single choice's pick),
+        // pressing it off closes the field and clears the text, so an unticked
+        // Other delivers nothing.
         const otherOn = otherIsOn(draft)
         options.push(
           row(
             `${key}:opt:other`,
-            otherOn,
             <Button
               key={`${key}:opt:other`}
               plain
@@ -337,7 +330,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
                 if (!otherOn) await $.ui.focus({ requestId: pane, key: fieldKey('other') }).catch(() => undefined)
               }}
             >
-              Other
+              {`${choiceGlyph(isMulti, otherOn)} Other`}
             </Button>,
             otherOn ? (
               <Box key={`${key}:other:field`} flexDirection="column" alignItems="stretch" flexGrow={1}>
@@ -353,7 +346,7 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
         )
       }
     }
-    if (item.notes === true) controls.push(field('notes', 'Notes (optional, Markdown)'))
+    if (item.notes === true && item.type !== 'approve') controls.push(field('notes', 'Notes (optional, Markdown)'))
     if (item.type === 'choice' || item.type === 'question') {
       controls.push(actions(<Button key={`${key}:submit`} label="Submit" variant="primary" onPress={press({ kind: 'submit' })} />))
     }
