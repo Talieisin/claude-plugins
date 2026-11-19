@@ -19,6 +19,11 @@ export const LOCK = `${DIR}/items.lock`
 export const START = 1_800_000_000_000
 export const HOUR = 60 * 60 * 1000
 
+/** A session title as another writer might send it (#75): a bidi override, a newline, and more than TITLE_MAX characters. */
+export const DIRTY_TITLE = `  Lane\u202e #23\n${'x'.repeat(80)}`
+/** The same, as every view draws it: written out, so a test fails if the cleaning is skipped or changes. */
+export const CLEAN_TITLE = `Lane #23 ${'x'.repeat(50)}…`
+
 export type World = {
   files: Map<string, string>
   dirs: Map<string, number>

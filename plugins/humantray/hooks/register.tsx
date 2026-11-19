@@ -21,7 +21,7 @@
 // (items.ts, `prune`); nothing still owed or in flight is ever pruned.
 //
 // In a cloud session the store pass (store-pass.ts, #33) also mirrors this
-// session's items to the repository's artifact page and brings answers given
+// session's items to the repository's artefact page and brings answers given
 // there back into the file, where the same claim and settle deliver them.
 // `/humantray-page` creates or links that page; no hook ever publishes.
 //
@@ -37,7 +37,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, ViewerCard, ViewerTray } from '../types'
+import type { HistoryEntry, HistoryFull, Item, ResponseEnvelope, StoreFile, TrayKind, TrayView, ViewerCard, ViewerTray } from '../types'
 import {
   type Action,
   type AddOutcome,
@@ -47,22 +47,29 @@ import {
   addOrBump,
   applySettle,
   buildResponse,
+  cleanTitle,
   clipDrawn,
   deliveryText,
   forDrawing,
   fullOf,
   historyOf,
+  inKind,
   isLineDue,
+  kindCounts,
   isMineToDeliver,
   normaliseRepo,
+  noneOf,
   noteSession,
   openItems,
+  originOf,
   plain,
   prune,
+  repoLabel,
   resolveOwner,
   shortOf,
   ulid,
   validateAdd,
+  when,
 } from './items'
 import { cardKit, draftOf, hasSurface, setDraft, toast } from './card'
 import { codeBlocksOf } from './code'
@@ -82,11 +89,13 @@ const TITLE = 'Humantray'
 const ADD = 'mcp__humantray__humantray_add'
 const LIST = 'mcp__humantray__humantray_list'
 
-// tray-4: History entries carry the answer's free-text parts as Markdown. A
+// tray-5: the tray carries who asked each item (#75), History entries too. A
 // tray cached by an earlier version reads as null and is rebuilt from the
 // file at the next pass.
-const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-4' })
+const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-5' })
 const view = atom({ plugin: 'humantray', key: 'view' } as const, 'open')
+/** The type filter (#75), the local pane's and the viewer's alike. */
+const kind = atom({ plugin: 'humantray', key: 'kind' } as const, 'all' as TrayKind)
 const page = atom({ plugin: 'humantray', key: 'page' } as const, 0)
 /** The History entry shown in full: read from the store when "Show in full" is pressed. */
 // full-3: a full entry carries its body's code blocks for copying (#51).
@@ -96,7 +105,7 @@ const expanded = atom({ plugin: 'humantray', key: 'expanded' } as const, null as
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 // The viewer's (#32): its tray (built in viewer.ts, which declares the same
 // atom), its Open page, and a card shown in full.
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-4' })
 const viewerPage = atom({ plugin: 'humantray', key: 'vpage' } as const, 0)
 const viewerExpanded = atom({ plugin: 'humantray', key: 'vexpanded' } as const, null as HistoryFull | null, { shape: 'vfull-2' })
 
@@ -117,6 +126,22 @@ let lastSeen: string | undefined
  * or an add has written the hand-over: a pass that fails does not lose it.
  */
 let pendingHandover: string | undefined
+/**
+ * The title last heard for each session id this process has served (#75),
+ * from the `session_title` of its SessionStart and UserPromptSubmit inputs,
+ * cleaned. Kept by session id, so a /resume into an untitled session never
+ * writes the previous session's title to its record.
+ */
+const heard = new Map<string, string>()
+
+/** Notes a session's title from a hook input; a missing or empty title notes nothing. */
+function hear(session: unknown, title: unknown) {
+  const cleaned = cleanTitle(title)
+  if (typeof session === 'string' && session !== '' && cleaned !== undefined) heard.set(session, cleaned)
+}
+
+/** The title heard for `me`, if any. */
+const titleFor = (me: string): string | undefined => heard.get(me)
 
 const isOwnClaim = (claim: string | undefined): boolean => claim !== undefined && claim.startsWith(`${INSTANCE}/`)
 
@@ -167,15 +192,6 @@ const LIST_DESCRIPTION =
 // refused call is a deny, which the model reads as an error result.
 const fail = (message: string) => ({ deny: message })
 
-/**
- * When an answer was given, as UTC to the minute. A time no Date can hold
- * (another writer's bad value) reads as a placeholder, never throws.
- */
-const when = (at: number): string => {
-  const date = new Date(at)
-  return Number.isFinite(date.getTime()) ? `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'at an unknown time'
-}
-
 async function openPane($: EngineInterface) {
   if (await hasSurface($)) void $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
 }
@@ -194,9 +210,10 @@ async function showTray($: EngineInterface, seen: { file: StoreFile; where: Wher
     const { file, where } = seen
     const items = openItems(file)
     const mine = items.filter(item => resolveOwner(file.sessions, item.session_id) === me).map(item => item.id)
+    const origins = Object.fromEntries(items.map(item => [item.id, originOf(file, item, me)]))
     const repo = normaliseRepo(where.remote, where.root)
     const history = historyOf(file, repo, me, now)
-    return { items, me, mine, history, repo }
+    return { items, me, mine, origins, history, repo }
   })
 }
 
@@ -268,7 +285,7 @@ async function sync($: EngineInterface, deliver: boolean) {
   const handoverFrom = pendingHandover
   const applied: Array<[string, string]> = []
   const done = await mutate<Array<{ item: Item; claim: string }>>($, file => {
-    noteSession(file, me, now, handoverFrom)
+    noteSession(file, me, now, handoverFrom, titleFor(me))
     for (const [id, outcome] of unsettled) {
       applySettle(file, id, outcome.claim, outcome.entered, now)
       applied.push([id, outcome.claim])
@@ -509,6 +526,7 @@ export const register: Register = on => {
   // written with the wrong session as successor. Then this id is the one a
   // later /clear continues, whether or not this start's pass succeeds.
   on('classic.SessionStart', async ($, e, next) => {
+    hear(e.session_id, e.session_title)
     const ran = await next(e)
     const source: unknown = e.source
     if (source === 'clear' || source === 'fork') {
@@ -523,6 +541,14 @@ export const register: Register = on => {
     }
     await sync($, true).catch(() => undefined)
     return ran
+  }).catch(($, e, next) => next(e))
+
+  // The session's title (#75), as the CLI gives it on each prompt: noted for
+  // the next write of this session's record, and nothing else. Never waits,
+  // never changes or stops the prompt.
+  on('classic.UserPromptSubmit', ($, e, next) => {
+    hear(e.session_id, e.session_title)
+    return next(e)
   }).catch(($, e, next) => next(e))
 
   on('session.attach', async ($, e, next) => {
@@ -585,7 +611,7 @@ export const register: Register = on => {
     const id = ulid(now, random)
     const handoverFrom = pendingHandover
     const done = await mutate<AddOutcome>($, (file, where) => {
-      noteSession(file, me, now, handoverFrom)
+      noteSession(file, me, now, handoverFrom, titleFor(me))
       const added = addOrBump(file, checked.ok, {
         repo: normaliseRepo(where.remote, where.root),
         session_id: me,
@@ -665,7 +691,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Link, Text } = $.ui.resolve(e)
     // The card kit (card.tsx, #68): the open card and its parts, shared with the gallery.
-    const { cardSpacing, drawn, copyList, controlsFor, openCard } = cardKit($, e, PANE)
+    const { cardSpacing, drawn, copyList, controlsFor, openCard, header } = cardKit($, e, PANE)
+    const kindShown = await read($, kind)
 
     const shown = await read($, tray)
     const viewing = await read($, viewerTray)
@@ -673,18 +700,51 @@ export const register: Register = on => {
       // The local viewer (#32): every repository's open items, read from the
       // store, answered by envelope. This session's own items keep their group.
       const vshowing = await read($, view)
-      const vtoggle = (
-        <Button
-          key="humantray:view"
-          label={vshowing === 'history' ? `Open items (${viewing.answerable})` : `History (${viewing.history.length})`}
-          onPress={async () => {
-            await update($, viewerPage, () => 0)
-            await update($, viewerExpanded, () => null)
-            await update($, view, current => (current === 'history' ? 'open' : 'history'))
-            if (vshowing !== 'history') await tick($, { history: true })
-          }}
-        />
-      )
+      // Every open card, in group order, before the type filter: the header counts them.
+      type Placed = { repo: string; url: string; lead: string; asker: string; askerTitle: string; link: boolean; lastActive: number; card: ViewerCard }
+      const everyCard: Placed[] = []
+      for (const repo of viewing.repos) {
+        for (const lead of repo.leads) {
+          const leadName = lead.title ?? (lead.lead === null ? 'no lead' : `lead ${lead.lead.slice(-6)}`)
+          for (const asker of lead.askers) {
+            for (const card of asker.cards) {
+              everyCard.push({
+                repo: repo.repo,
+                url: repo.url,
+                lead: leadName,
+                asker: asker.session_id,
+                askerTitle: asker.title ?? asker.session_id,
+                link: asker.link,
+                lastActive: asker.lastActive,
+                card,
+              })
+            }
+          }
+        }
+      }
+      // This session's own open items, drawn at the foot: counted with the rest.
+      const own = shown === null ? [] : shown.items
+      // A tab or a chip starts the list again from its first page, the list shown.
+      const vheader = header({
+        prefix: 'humantray',
+        title: 'humantray viewer',
+        open: everyCard.length + own.length,
+        history: viewing.history.length,
+        view: vshowing,
+        kind: kindShown,
+        counts: kindCounts([...everyCard.map(each => each.card.row.type), ...own.map(item => item.type)]),
+        onView: (to: TrayView) => async () => {
+          await update($, viewerPage, () => 0)
+          await update($, viewerExpanded, () => null)
+          await update($, view, () => to)
+          if (to === 'history' && vshowing !== 'history') await tick($, { history: true })
+        },
+        onKind: (to: TrayKind) => async () => {
+          await update($, viewerPage, () => 0)
+          await update($, viewerExpanded, () => null)
+          await update($, kind, () => to)
+        },
+      })
       const leaseNote = viewing.leaseFailed ? (
         <Text key="v:lease" color="error">
           The viewer lease could not be written; it is tried again every tick.
@@ -727,9 +787,10 @@ export const register: Register = on => {
         )
       }
       if (vshowing === 'history') {
-        const pages = Math.max(1, Math.ceil(viewing.history.length / HISTORY_PAGE))
+        const past = viewing.history.filter(entry => inKind(entry.type, kindShown))
+        const pages = Math.max(1, Math.ceil(past.length / HISTORY_PAGE))
         const at = Math.min(Math.max(0, await read($, viewerPage)), pages - 1)
-        const entries = viewing.history.slice(at * HISTORY_PAGE, (at + 1) * HISTORY_PAGE)
+        const entries = past.slice(at * HISTORY_PAGE, (at + 1) * HISTORY_PAGE)
         const rows = []
         let heading: string | undefined
         for (const entry of entries) {
@@ -747,7 +808,7 @@ export const register: Register = on => {
                 [{plain(entry.header)}] {plain(entry.question)}
               </Text>
               <Text dimColor>
-                {entry.short} · answered {when(entry.at)}
+                {entry.short} · {plain(entry.origin)} · answered {when(entry.at)}
                 {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
               </Text>
               {entry.answer !== '' && <Text>{plain(entry.answer)}</Text>}
@@ -791,36 +852,16 @@ export const register: Register = on => {
         )
         return (
           <Box flexDirection="column" gap={1}>
-            {vtoggle}
+            {vheader}
             {head}
             {historyStatus}
             {paging}
-            {rows.length === 0 ? <Text key="v:history:none" dimColor>No answered items yet.</Text> : rows}
+            {rows.length === 0 ? <Text key="v:history:none" dimColor>{noneOf(kindShown, 'answered')}</Text> : rows}
           </Box>
         )
       }
-      // Open: one list of cards in group order, a page at a time.
-      type Placed = { repo: string; url: string; lead: string; asker: string; askerTitle: string; link: boolean; lastActive: number; card: ViewerCard }
-      const placed: Placed[] = []
-      for (const repo of viewing.repos) {
-        for (const lead of repo.leads) {
-          const leadName = lead.title ?? (lead.lead === null ? 'no lead' : `lead ${lead.lead.slice(-6)}`)
-          for (const asker of lead.askers) {
-            for (const card of asker.cards) {
-              placed.push({
-                repo: repo.repo,
-                url: repo.url,
-                lead: leadName,
-                asker: asker.session_id,
-                askerTitle: asker.title ?? asker.session_id,
-                link: asker.link,
-                lastActive: asker.lastActive,
-                card,
-              })
-            }
-          }
-        }
-      }
+      // Open: one list of the cards the filter keeps, in group order, a page at a time.
+      const placed = everyCard.filter(each => inKind(each.card.row.type, kindShown))
       const pages = Math.max(1, Math.ceil(placed.length / VIEWER_PAGE))
       const at = Math.min(Math.max(0, await read($, viewerPage)), pages - 1)
       const now = viewing.at
@@ -892,8 +933,9 @@ export const register: Register = on => {
             <Text bold>
               [{plain(row.header)}] {plain(row.question)}
             </Text>
+            {/* When it was raised (#75), then the short id: who asked is the asker heading above. */}
             <Text dimColor>
-              {row.short}
+              {`${when(row.created)} · ${plain(row.short)}`}
               {row.bumps > 0 ? ` · bumped ${String(row.bumps)}×` : ''}
               {card.old ? ' · old' : ''}
             </Text>
@@ -920,27 +962,30 @@ export const register: Register = on => {
         ) : null
       // This session's own items, if any, at the foot, answered as in the local pane.
       const local = []
-      if (shown !== null && shown.items.length > 0) {
+      const ownShown = own.filter(item => inKind(item.type, kindShown))
+      if (ownShown.length > 0) {
         local.push(
           <Text key="v:local" bold>
             This session
           </Text>,
         )
-        for (const item of shown.items) {
+        for (const item of ownShown) {
           const id = item.id
           const draft = await draftOf($, id)
           const press = (action: Action) => () => answer($, id, action)
-          local.push(await openCard({ item, key: id, draftId: id, draft, press, mine: true, suffixes: false }))
+          // Every open item in this repository's store, not only this session's: each says who asked (#75).
+          const origin = shown?.origins[id] ?? (shown?.mine.includes(id) === true ? 'this session' : 'another session')
+          local.push(await openCard({ item, key: id, draftId: id, draft, press, origin }))
         }
       }
       return (
         <Box flexDirection="column" gap={1}>
-          {vtoggle}
+          {vheader}
           {head}
           {leaseNote}
           {status}
           {paging}
-          {nodes.length === 0 ? <Text key="v:none" dimColor>No open items.</Text> : nodes}
+          {nodes.length === 0 && ownShown.length === 0 ? <Text key="v:none" dimColor>{noneOf(kindShown, 'open')}</Text> : nodes}
           {local}
         </Box>
       )
@@ -980,8 +1025,7 @@ export const register: Register = on => {
           [{plain(entry.header)}] {plain(entry.question)}
         </Text>
         <Text dimColor>
-          {entry.short}
-          {entry.isMine ? '' : ' · another session'} · answered {when(entry.at)} · bumps: {String(entry.bumps)}
+          {entry.short} · {plain(entry.origin)} · answered {when(entry.at)} · bumps: {String(entry.bumps)}
           {entry.mark === 'none' ? '' : ` · ${entry.mark}`}
         </Text>
         {entry.answer !== '' && <Text>{plain(entry.answer)}</Text>}
@@ -1003,17 +1047,29 @@ export const register: Register = on => {
         )}
       </Box>
     )
-    const toggle = (
-      <Button
-        key="humantray:view"
-        label={showing === 'history' ? `Open items (${shown.items.length})` : `History (${shown.history.length})`}
-        onPress={async () => {
-          await update($, page, () => 0)
-          await update($, expanded, () => null)
-          await update($, view, current => (current === 'history' ? 'open' : 'history'))
-        }}
-      />
-    )
+    // The header (#75): a tab or a chip starts its list again from the first
+    // page, and leaves any entry shown in full.
+    const startOver = async () => {
+      await update($, page, () => 0)
+      await update($, expanded, () => null)
+    }
+    const toggle = header({
+      prefix: 'humantray',
+      title: `humantray · ${plain(repoLabel(shown.repo))}`,
+      open: shown.items.length,
+      history: shown.history.length,
+      view: showing,
+      kind: kindShown,
+      counts: kindCounts(shown.items.map(item => item.type)),
+      onView: (to: TrayView) => async () => {
+        await startOver()
+        await update($, view, () => to)
+      },
+      onKind: (to: TrayKind) => async () => {
+        await startOver()
+        await update($, kind, () => to)
+      },
+    })
     if (showing === 'history') {
       // One entry whole, as the store holds it, until Back.
       const full = await read($, expanded)
@@ -1036,20 +1092,21 @@ export const register: Register = on => {
           </Box>
         )
       }
-      if (shown.history.length === 0) {
+      const past = shown.history.filter(entry => inKind(entry.type, kindShown))
+      if (past.length === 0) {
         return (
           <Box flexDirection="column" gap={1}>
             {toggle}
-            <Text dimColor>No answered items yet.</Text>
+            <Text dimColor>{noneOf(kindShown, 'answered')}</Text>
           </Box>
         )
       }
       // A page at a time: a surface draws only so much of one tree.
-      const pages = Math.ceil(shown.history.length / HISTORY_PAGE)
+      const pages = Math.ceil(past.length / HISTORY_PAGE)
       const at = Math.min(Math.max(0, await read($, page)), pages - 1)
-      const entries = shown.history.slice(at * HISTORY_PAGE, (at + 1) * HISTORY_PAGE)
-      // Headings only when History holds more than one repository.
-      const grouped = shown.history.some(entry => entry.repo !== shown.repo)
+      const entries = past.slice(at * HISTORY_PAGE, (at + 1) * HISTORY_PAGE)
+      // Headings only when the list holds more than one repository.
+      const grouped = past.some(entry => entry.repo !== shown.repo)
       const rows = []
       let heading: string | undefined
       for (const entry of entries) {
@@ -1081,21 +1138,23 @@ export const register: Register = on => {
         </Box>
       )
     }
-    if (shown.items.length === 0) {
+    const listed = shown.items.filter(item => inKind(item.type, kindShown))
+    if (listed.length === 0) {
       return (
         <Box flexDirection="column" gap={1}>
           {toggle}
-          <Text dimColor>No open items.</Text>
+          <Text dimColor>{noneOf(kindShown, 'open')}</Text>
         </Box>
       )
     }
 
     const cards = []
-    for (const item of shown.items) {
+    for (const item of listed) {
       const id = item.id
       const draft = await draftOf($, id)
       const press = (action: Action) => () => answer($, id, action)
-      cards.push(await openCard({ item, key: id, draftId: id, draft, press, mine: shown.mine.includes(id), suffixes: true }))
+      const origin = shown.origins[id] ?? (shown.mine.includes(id) ? 'this session' : 'another session')
+      cards.push(await openCard({ item, key: id, draftId: id, draft, press, origin }))
     }
     return (
       <Box flexDirection="column" gap={1}>

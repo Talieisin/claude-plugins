@@ -192,7 +192,7 @@ describe('the line', () => {
     expect(w.submits).toEqual(['humantray HT-AODD1 (Key): done', 'humantray HT-AGOOD (Plan): Approve'])
     expect(w.store().items.every(item => item.delivered)).toBe(true)
     const ui = await mount($, { ...PANE, surface: 'desktop' })
-    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: 'humantray:tab:history' })
     expect(await ui.find({ type: 'Text', text: /^HT-AODD1 / })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'done' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'Feedback:' })).toBeUndefined()

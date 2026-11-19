@@ -15,7 +15,8 @@ const SURFACES = ['terminal', 'desktop'] as const
 
 /** A body as the pane draws it on `surface`: with no `Code n` labels where the surface has its own copy control (#51). */
 const bodyOn = (surface: string, md: string): string => (hasNativeCopy(surface) ? unlabelledPieces(forDrawing(md)).join('\n\n') : forDrawing(md))
-const TOGGLE = 'humantray:view'
+const TOGGLE = 'humantray:tab:history'
+const OPEN_TAB = 'humantray:tab:open'
 
 const OPTIONS = [
   { label: 'Red', description: 'Warm' },
@@ -141,7 +142,7 @@ describe('show in full', () => {
       expect(await drawnText(ui, `${item.id}:full:Answer`)).toBe(forDrawing(long, false))
       expect(await drawnText(ui, `${item.id}:full:body`)).toBe(bodyOn(surface, RICH))
       // The toggle leaves the full view, and coming back shows the list.
-      await ui.press({ key: TOGGLE })
+      await ui.press({ key: OPEN_TAB })
       await ui.press({ key: TOGGLE })
       expect(await ui.find({ key: `${item.id}:full:Answer` })).toBeUndefined()
       expect(await ui.find({ key: `${item.id}:Answer` })).toBeDefined()

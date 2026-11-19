@@ -5,13 +5,13 @@
 import { type Engine, describe, expect, test } from 'claude-code/testing'
 import type { RenderSurface } from 'claude-code'
 
-import type { Item } from '../types'
-import { GALLERY, GALLERY_FIXTURES, type GalleryFixture, galleryDraftId } from '../hooks/gallery'
+import type { Item, StoreFile } from '../types'
+import { GALLERY, GALLERY_FIXTURES, GALLERY_RAISED, type GalleryFixture, galleryDraftId, galleryOrigin } from '../hooks/gallery'
 import { THIN_SPACE } from '../hooks/choice'
 import { dumpTree } from './card-dump'
 import { mount } from './surface-rules'
 import { SURFACES } from './card-fixtures'
-import { COMMAND, PANE, START_EVENT, openOther, stored, world } from './world'
+import { COMMAND, PANE, START, START_EVENT, openOther, stored, world } from './world'
 
 type On = Parameters<typeof world>[0]
 
@@ -52,13 +52,19 @@ function startSteps(fixture: GalleryFixture, id: string): string[] {
   return [...picks, ...error]
 }
 
-/** A fixture as a real item: a stored id, and this session's unless it is the other session's card. */
+/** A fixture as a real item: a stored id, and this session's unless it is another session's card, each its own. */
 const asReal = (fixture: GalleryFixture, n: number): Item => ({
   ...fixture.item,
   id: `01${'A'.repeat(19)}GAL${String(n).padStart(2, '0')}`,
   repo: 'github.com/owner/repo',
-  session_id: fixture.mine ? 'session-a' : 'session-b',
+  session_id: fixture.mine ? 'session-a' : `session-b${String(n)}`,
 })
+
+/** The records of the other sessions the real items name: each one's title, as the fixture gives it (#75). */
+const sessionsOf = (real: ReadonlyArray<{ fixture: GalleryFixture; item: Item }>): StoreFile['sessions'] =>
+  Object.fromEntries(
+    real.flatMap(({ fixture, item }) => (fixture.mine ? [] : [[item.session_id, { seen: START, ...(fixture.title === undefined ? {} : { title: fixture.title }) }]])),
+  )
 
 describe('/humantray-gallery', () => {
   test('is registered at the start, opens the gallery pane, and needs no repository or store', async ($, on) => {
@@ -98,7 +104,10 @@ describe('/humantray-gallery', () => {
     expect(items.some(i => i.body_md.includes('```sh'))).toBe(true)
     expect(items.some(i => i.body_md.includes('```mermaid'))).toBe(true)
     expect(GALLERY_FIXTURES.some(f => (f.start.error ?? '') !== '')).toBe(true)
-    expect(GALLERY_FIXTURES.some(f => !f.mine)).toBe(true)
+    // Another session's card with a title, and one with none (#75).
+    expect(GALLERY_FIXTURES.some(f => !f.mine && f.title !== undefined)).toBe(true)
+    expect(GALLERY_FIXTURES.some(f => !f.mine && f.title === undefined)).toBe(true)
+    expect(GALLERY_FIXTURES.every(f => f.item.created === GALLERY_RAISED)).toBe(true)
     expect(items.some(i => i.bumps > 0)).toBe(true)
   })
 })
@@ -127,7 +136,7 @@ describe('the gallery draws every card on each surface with the real card code',
     test(`${surface}: each card is the real pane's card for the same item and draft`, async ($, on) => {
       const { w } = galleryWorld(on, surface)
       const real = GALLERY_FIXTURES.map((fixture, n) => ({ fixture, item: asReal(fixture, n + 1) }))
-      w.seed({ version: 1, items: real.map(r => r.item), sessions: {} })
+      w.seed({ version: 1, items: real.map(r => r.item), sessions: sessionsOf(real) })
       await $.session.start({ ...START_EVENT, surface })
       const pane = await mount($, { ...PANE, surface })
       for (const { fixture, item } of real) {
@@ -171,7 +180,8 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
       // page of copy buttons), and every field is drawn afresh after Enter.
       for (let round = 0; round < 2; round++) {
         for (const button of (await ui.findAll({ type: 'Button' })) as FoundLike[]) {
-          if (button.key === undefined || button.key === 'g:reset') continue
+          // The header's chips filter the cards (their own test, below), so they are left out here.
+          if (button.key === undefined || button.key === 'g:reset' || button.key.startsWith('g:header:')) continue
           if ((await ui.find({ key: button.key })) === undefined) continue
           await ui.press({ key: button.key })
           pressedKeys.add(button.key)
@@ -270,6 +280,54 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
   })
 })
 
+describe('the header (#75)', () => {
+  for (const surface of SURFACES) {
+    test(`${surface}: the counts, a chip filters the fixtures, a tab is only noted, Reset puts the filter back`, async ($, on) => {
+      const { w } = galleryWorld(on, surface)
+      await $.session.start({ ...START_EVENT, surface })
+      const kv = JSON.stringify(w.kvAll())
+      const { ui } = await openGallery($, surface)
+      const label = async (key: string) => ((await ui.find({ key })) as FoundLike | undefined)?.props.label
+      const variant = async (key: string) => ((await ui.find({ key })) as FoundLike | undefined)?.props.variant
+      const count = (kinds: string[]) => GALLERY_FIXTURES.filter(f => kinds.includes(f.item.type)).length
+      expect(await label('g:header:tab:open')).toBe('Open')
+      expect(await variant('g:header:tab:open')).toBe('primary')
+      expect(await label('g:header:tab:history')).toBe('History 0')
+      expect(await label('g:header:kind:all')).toBe(`All ${String(GALLERY_FIXTURES.length)}`)
+      expect(await label('g:header:kind:question')).toBe(`Questions ${String(count(['choice', 'question']))}`)
+      expect(await label('g:header:kind:todo')).toBe(`To-dos ${String(count(['do', 'approve']))}`)
+      expect(await label('g:header:kind:fyi')).toBe(`FYIs ${String(count(['ack']))}`)
+      expect(await variant('g:header:kind:all')).toBe('primary')
+
+      await ui.press({ key: 'g:header:kind:fyi' })
+      expect(await variant('g:header:kind:fyi')).toBe('primary')
+      expect(await variant('g:header:kind:all')).toBeUndefined()
+      for (const fixture of GALLERY_FIXTURES) {
+        const drawn = await ui.find({ key: `${galleryDraftId(fixture.name)}:card` })
+        expect(drawn !== undefined, fixture.name).toBe(fixture.item.type === 'ack')
+      }
+
+      await ui.press({ key: 'g:header:tab:history' })
+      expect(((await ui.find({ key: 'g:header:pressed' })) as FoundLike | undefined)?.text).toBe('Pressed: History. Gallery only: nothing was stored or sent.')
+      expect(await variant('g:header:tab:open')).toBe('primary')
+
+      await ui.press({ key: 'g:reset' })
+      expect(await variant('g:header:kind:all')).toBe('primary')
+      expect(await ui.find({ key: 'g:header:pressed' })).toBeUndefined()
+      for (const fixture of GALLERY_FIXTURES) expect(await ui.find({ key: `${galleryDraftId(fixture.name)}:card` }), fixture.name).toBeDefined()
+      // The real pane's filter is its own: the gallery's chip set none of it.
+      expect(JSON.stringify(w.kvAll())).toBe(kv)
+      await ui.unmount()
+    })
+  }
+
+  test('each card says who asked, as the real pane says it', () => {
+    for (const fixture of GALLERY_FIXTURES) {
+      expect(galleryOrigin(fixture)).toBe(fixture.mine ? 'this session' : (fixture.title ?? 'another session'))
+    }
+  })
+})
+
 describe('the labels follow the surface', () => {
   test('no terminal marks on an app surface, and no dim Text inside any Button', async ($, on) => {
     galleryWorld(on, 'desktop', { surfaces: ['terminal', 'desktop', 'vscode', 'mobile'] })
@@ -278,7 +336,8 @@ describe('the labels follow the surface', () => {
     for (const surface of SURFACES) {
       const ui = await mount($, { ...GALLERY_PANE, surface })
       const looks = ((await ui.findAll({ type: 'Box' })) as FoundLike[]).filter(t => (t.key ?? '').endsWith(':look')).map(t => t.text ?? '')
-      expect(looks).toHaveLength(GALLERY_FIXTURES.length)
+      // One a fixture, and the header's (#75).
+      expect(looks).toHaveLength(GALLERY_FIXTURES.length + 1)
       const marks = /\[ \]|\[x\]|\( \)|\(•\)/
       if (surface === 'terminal') expect(looks.some(text => marks.test(text))).toBe(true)
       else for (const text of looks) expect(text, `${surface}: ${text}`).not.toMatch(marks)

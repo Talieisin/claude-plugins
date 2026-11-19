@@ -15,6 +15,7 @@ import type {
   PartLabel,
   SessionRecord,
   StoreFile,
+  TrayKind,
 } from '../types'
 import { owesPush } from './row-shape'
 import { UNSAFE, codeBlocksOf, listedLang, placedBlocksOf, splitLines } from './code'
@@ -234,19 +235,45 @@ export const chainsInUse = (file: StoreFile): Set<string> => {
   return used
 }
 
+/** The most characters of a session's title that are kept and drawn (#75). */
+export const TITLE_MAX = 60
+
+/**
+ * A session's title as it is kept and drawn (#75): control and line
+ * separator characters become spaces; format characters (bidi controls,
+ * zero-width ones) and lone surrogates are dropped; runs of space become one,
+ * the ends are trimmed, and it is cut to TITLE_MAX characters, never inside
+ * one. Undefined when nothing is left, or for anything not a string.
+ */
+export const cleanTitle = (raw: unknown): string | undefined => {
+  if (typeof raw !== 'string') return undefined
+  const text = raw
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, ' ')
+    // With the u flag a paired surrogate is one astral character, so this range matches lone ones only.
+    .replace(/\p{Cf}|[\ud800-\udfff]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (text === '') return undefined
+  const chars = Array.from(text)
+  return chars.length <= TITLE_MAX ? text : `${chars.slice(0, TITLE_MAX - 1).join('')}…`
+}
+
 /**
  * Records that `me` was seen now and, after a /clear or a /branch in this
  * process, that it took over from `handoverFrom`. A record is dropped only
- * when it is old and no item's owner chain runs through it.
+ * when it is old and no item's owner chain runs through it. `title`: the
+ * title heard for `me` itself (#75), cleaned; with none, the record keeps the
+ * title it had.
  */
-export const noteSession = (file: StoreFile, me: string, now: number, handoverFrom?: string): void => {
+export const noteSession = (file: StoreFile, me: string, now: number, handoverFrom?: string, title?: string): void => {
   if (handoverFrom !== undefined && handoverFrom !== me) {
     const old = file.sessions[handoverFrom] ?? { seen: now }
     file.sessions[handoverFrom] = { ...old, successor: me }
   }
   // A session seen again (a resume back to it) answers for itself once more,
   // so any successor it had is dropped: no chain can loop through it.
-  file.sessions[me] = { seen: now }
+  const kept = cleanTitle(title) ?? cleanTitle(file.sessions[me]?.title)
+  file.sessions[me] = kept === undefined ? { seen: now } : { seen: now, title: kept }
   const used = chainsInUse(file)
   for (const [id, record] of Object.entries(file.sessions)) {
     if (id === me || used.has(id)) continue
@@ -260,6 +287,77 @@ export const noteSession = (file: StoreFile, me: string, now: number, handoverFr
  */
 export const isMineToDeliver = (file: StoreFile, item: Item, me: string): boolean =>
   resolveOwner(file.sessions, item.session_id) === me
+
+/**
+ * Who asked an item, as its card's origin line says it (#75): `this session`
+ * for an item this session owns or inherited; otherwise the asking session's
+ * title (from `get_session` for a cloud item, else the title recorded for the
+ * session that now owns it, else for the session that raised it), or
+ * `another session` when no title is known. No role is drawn: the lineage a
+ * cloud item carries is self-declared and for grouping only (lineage.ts), and
+ * a local item carries none.
+ */
+export const originOf = (file: StoreFile, item: Item, me: string): string => {
+  const owner = resolveOwner(file.sessions, item.session_id)
+  if (owner === me) return 'this session'
+  return (
+    cleanTitle(item.remote?.session_title) ??
+    cleanTitle(file.sessions[owner]?.title) ??
+    cleanTitle(file.sessions[item.session_id]?.title) ??
+    'another session'
+  )
+}
+
+/** Which kind each type is listed under (#75), as the page's chips group them (page.ts, KIND_OF). */
+export const KIND_OF: Record<ItemType, Exclude<TrayKind, 'all'>> = {
+  choice: 'question',
+  question: 'question',
+  do: 'todo',
+  approve: 'todo',
+  ack: 'fyi',
+}
+
+/** The type chips, in order, with their labels (#75), as on the page. */
+export const KINDS: ReadonlyArray<readonly [TrayKind, string]> = [
+  ['all', 'All'],
+  ['question', 'Questions'],
+  ['todo', 'To-dos'],
+  ['fyi', 'FYIs'],
+]
+
+/** Whether a type is listed under a chip. */
+export const inKind = (type: ItemType, kind: TrayKind): boolean => kind === 'all' || KIND_OF[type] === kind
+
+/** How many of `types` each chip lists, in KINDS' order. */
+export const kindCounts = (types: readonly ItemType[]): Record<TrayKind, number> => {
+  const counts: Record<TrayKind, number> = { all: types.length, question: 0, todo: 0, fyi: 0 }
+  for (const type of types) counts[KIND_OF[type]] += 1
+  return counts
+}
+
+/** What a filtered empty list says: `No open items.`, `No answered to-dos yet.` and so on. */
+export const noneOf = (kind: TrayKind, list: 'open' | 'answered'): string => {
+  const what = kind === 'all' ? 'items' : kind === 'question' ? 'questions' : kind === 'todo' ? 'to-dos' : 'FYIs'
+  return list === 'open' ? `No open ${what}.` : `No answered ${what} yet.`
+}
+
+/**
+ * The repository as the pane's title names it (#75): `owner/name` for a
+ * hosted remote (`host/owner/name`), else the value as it is (a local root).
+ */
+export const repoLabel = (repo: string): string => {
+  const hosted = /^[^/\s]+\.[^/\s]+\/(.+)$/.exec(repo)
+  return hosted?.[1] ?? repo
+}
+
+/**
+ * A time as UTC to the minute. A time no Date can hold (another writer's bad
+ * value) reads as a placeholder, never throws.
+ */
+export const when = (at: number): string => {
+  const date = new Date(at)
+  return Number.isFinite(date.getTime()) ? `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'at an unknown time'
+}
 
 /** Open items, the most recently added or bumped first. */
 export const openItems = (file: StoreFile): Item[] =>
@@ -929,6 +1027,7 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
         at: orderKey(item),
         mark: deliveryMark(item, now),
         isMine: resolveOwner(file.sessions, item.session_id) === me,
+        origin: originOf(file, item, me),
       }
     })
 
@@ -1096,7 +1195,7 @@ export const checkStoreFile = (parsed: unknown): Checked<StoreFile> => {
   const sessions = parsed.sessions === undefined ? {} : parsed.sessions
   if (!isRecord(sessions)) return { error: 'sessions is not an object' }
   for (const [id, record] of Object.entries(sessions)) {
-    if (!isRecord(record) || typeof record.seen !== 'number' || !isOptional(record.successor, 'string')) {
+    if (!isRecord(record) || typeof record.seen !== 'number' || !isOptional(record.successor, 'string') || !isOptional(record.title, 'string')) {
       return { error: `session ${id}: malformed` }
     }
   }

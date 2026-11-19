@@ -53,12 +53,13 @@ import {
   withDeadline,
 } from './artifact-store'
 import { ARTIFACT_URL, makeEnvelope } from './envelope'
-import { type Action, buildResponse, historyOf, isLineDue, shortOf } from './items'
+import { type Action, buildResponse, cleanTitle, historyOf, isLineDue, shortOf } from './items'
 import { type RowRead, SESSION_ID, countsAsAnswer, isTitleFor, pickArtifact, rowToItem } from './rows'
 import { isCloud } from './store-pass'
 
 /** The viewer's tray in `$.state`; register.tsx declares the same atom to draw it. */
-const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-3' })
+// viewer-4: History entries carry who asked (#75); a tray cached by an earlier version reads as null.
+const viewerTray = atom({ plugin: 'humantray', key: 'viewer' } as const, null as ViewerTray | null, { shape: 'viewer-4' })
 
 /** How often the viewer reads the store. */
 export const TICK_MS = 20_000
@@ -673,12 +674,14 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
       const lead = leads.get(leadKey) ?? { lead: row.lead_session_id, title: null, askers: [] }
       leads.set(leadKey, lead)
       let asker = lead.askers.find(each => each.session_id === row.session_id)
+      // Titles as every view draws them (#75): cleaned and cut (cleanTitle).
+      const title = cleanTitle(row.session_title) ?? null
       if (asker === undefined) {
-        asker = { session_id: row.session_id, title: row.session_title, link: SESSION_ID.test(row.session_id), lastActive: 0, cards: [] }
+        asker = { session_id: row.session_id, title, link: SESSION_ID.test(row.session_id), lastActive: 0, cards: [] }
         lead.askers.push(asker)
       }
       asker.cards.push(card)
-      if (row.session_id === row.lead_session_id && row.session_title !== null) lead.title = row.session_title
+      if (row.session_id === row.lead_session_id && title !== null) lead.title = title
     }
     for (const { row, version } of read?.open ?? []) {
       const key = outboxKey(url, row.id)
@@ -722,12 +725,16 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
       leads: [...leads.values()],
     })
   }
+  // Who asked each answered item (#75), from its row: the asking session's
+  // title as the row carries it, else "another session". The items are made
+  // as this session's (rowToItem) only so that historyOf reads them all.
+  const askedBy = new Map(finished.map(row => [row.id, cleanTitle(row.session_title) ?? 'another session']))
   const history: HistoryEntry[] = historyOf(
     { version: 1, items: finished.map(row => rowToItem(row, me, '', 0)), sessions: {} },
     '',
     me,
     now,
-  ).map(entry => ({ ...entry, isMine: true }))
+  ).map(entry => ({ ...entry, isMine: true, origin: askedBy.get(entry.id) ?? 'another session' }))
   const tray: ViewerTray = { repos, history, answerable, found, leaseFailed, at: now }
   if (!holding) return
   await update($, viewerTray, () => tray)

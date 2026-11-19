@@ -54,13 +54,13 @@ export const EXPECTED: Record<string, string> = {
   'terminal: ack': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Release] humantray 0.2.3 is out"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Button #<id>:ack label="Acknowledge" variant="primary"',
   ].join('\n'),
   'terminal: do': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -71,7 +71,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: approve': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Merge] Merge the pull request?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:notes:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Notes (optional, Markdown)"',
     '    Input #<id>:notes rows=3 value=""',
@@ -82,7 +82,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: question': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Name] What should the command be called?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:text:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Answer (Markdown)"',
     '    Input #<id>:text rows=3 value=""',
@@ -91,7 +91,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: choice single': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Button #<id>:opt:0 label="( ) Plugin validate Run claude plugin validate" plain=true',
     '    "( ) Plugin validate "',
     '    Text dimColor=true "Run claude plugin validate"',
@@ -109,7 +109,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: choice single, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Button #<id>:opt:0 label="( ) Plugin validate Run claude plugin validate" plain=true',
     '    "( ) Plugin validate "',
     '    Text dimColor=true "Run claude plugin validate"',
@@ -127,7 +127,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: choice multi': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Button #<id>:opt:0 label="[ ] Plugin validate Run claude plugin validate" plain=true',
     '    "[ ] Plugin validate "',
     '    Text dimColor=true "Run claude plugin validate"',
@@ -145,7 +145,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: choice multi, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Button #<id>:opt:0 label="[x] Plugin validate Run claude plugin validate" plain=true',
     '    "[x] Plugin validate "',
     '    Text dimColor=true "Run claude plugin validate"',
@@ -163,7 +163,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: with notes': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -177,7 +177,7 @@ export const EXPECTED: Record<string, string> = {
   'terminal: with a code block': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Setup] Run this"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:body flexDirection="column" gap=1',
     '    Markdown #<id>:body:0 text="In the repository:"',
     '    Markdown #<id>:body:1 text="*Code 1*\\n\\n```sh\\nclaude plugin validate .\\n```"',
@@ -193,21 +193,21 @@ export const EXPECTED: Record<string, string> = {
   'terminal: with a Markdown body': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true "[Read] The release notes"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Markdown #<id>:body text="## What changed\\n\\n- **Rules** on every mount\\n- Snapshots, see [the issue](https://example.com/issue)"',
     '  Button #<id>:ack label="Acknowledge" variant="primary"',
   ].join('\n'),
   'desktop: ack': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Release] humantray 0.2.3 is out"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:actions flexDirection="row" justifyContent="flex-end"',
     '    Button #<id>:ack label="Acknowledge" variant="primary"',
   ].join('\n'),
   'desktop: do': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" marginBottom="sm" width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -218,7 +218,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: approve': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Merge] Merge the pull request?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:notes:field alignItems="stretch" flexDirection="column" marginBottom="sm" width="100%"',
     '    Text dimColor=true "Notes (optional, Markdown)"',
     '    Input #<id>:notes rows=3 value=""',
@@ -229,7 +229,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: question': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Name] What should the command be called?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:text:field alignItems="stretch" flexDirection="column" marginBottom="sm" width="100%"',
     '    Text dimColor=true "Answer (Markdown)"',
     '    Input #<id>:text rows=3 value=""',
@@ -239,7 +239,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: choice single': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom="sm"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -265,7 +265,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: choice single, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom="sm"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -291,7 +291,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: choice multi': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom="sm"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -317,7 +317,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: choice multi, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom="sm"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -343,7 +343,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: with notes': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" marginBottom="sm" width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -357,7 +357,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: with a code block': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Setup] Run this"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:body flexDirection="column" gap=1',
     '    Markdown #<id>:body:0 text="In the repository:"',
     '    Markdown #<id>:body:1 text="```sh\\nclaude plugin validate .\\n```"',
@@ -371,7 +371,7 @@ export const EXPECTED: Record<string, string> = {
   'desktop: with a Markdown body': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom="md" paddingTop="sm" paddingX="sm"',
     '  Text bold=true weight="semibold" "[Read] The release notes"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Markdown #<id>:body text="## What changed\\n\\n- **Rules** on every mount\\n- Snapshots, see [the issue](https://example.com/issue)"',
     '  Box #<id>:actions flexDirection="row" justifyContent="flex-end"',
     '    Button #<id>:ack label="Acknowledge" variant="primary"',
@@ -379,14 +379,14 @@ export const EXPECTED: Record<string, string> = {
   'vscode: ack': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Release] humantray 0.2.3 is out"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:actions flexDirection="row" justifyContent="flex-end"',
     '    Button #<id>:ack label="Acknowledge" variant="primary"',
   ].join('\n'),
   'vscode: do': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" marginBottom=1 width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -397,7 +397,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: approve': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Merge] Merge the pull request?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:notes:field alignItems="stretch" flexDirection="column" marginBottom=1 width="100%"',
     '    Text dimColor=true "Notes (optional, Markdown)"',
     '    Input #<id>:notes rows=3 value=""',
@@ -408,7 +408,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: question': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Name] What should the command be called?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:text:field alignItems="stretch" flexDirection="column" marginBottom=1 width="100%"',
     '    Text dimColor=true "Answer (Markdown)"',
     '    Input #<id>:text rows=3 value=""',
@@ -418,7 +418,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: choice single': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom=1',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -444,7 +444,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: choice single, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom=1',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -470,7 +470,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: choice multi': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom=1',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -496,7 +496,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: choice multi, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column" marginBottom=1',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -522,7 +522,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: with notes': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" marginBottom=1 width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -536,7 +536,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: with a code block': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Setup] Run this"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:body flexDirection="column" gap=1',
     '    Markdown #<id>:body:0 text="In the repository:"',
     '    Markdown #<id>:body:1 text="```sh\\nclaude plugin validate .\\n```"',
@@ -550,7 +550,7 @@ export const EXPECTED: Record<string, string> = {
   'vscode: with a Markdown body': [
     'Box #<id>:card borderStyle="round" flexDirection="column" paddingBottom=1 paddingTop=0 paddingX=1',
     '  Text bold=true weight="semibold" "[Read] The release notes"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Markdown #<id>:body text="## What changed\\n\\n- **Rules** on every mount\\n- Snapshots, see [the issue](https://example.com/issue)"',
     '  Box #<id>:actions flexDirection="row" justifyContent="flex-end"',
     '    Button #<id>:ack label="Acknowledge" variant="primary"',
@@ -558,14 +558,14 @@ export const EXPECTED: Record<string, string> = {
   'mobile: ack': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Release] humantray 0.2.3 is out"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:actions flexDirection="row" justifyContent="flex-end"',
     '    Button #<id>:ack label="Acknowledge" variant="primary"',
   ].join('\n'),
   'mobile: do': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -576,7 +576,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: approve': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Merge] Merge the pull request?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:notes:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Notes (optional, Markdown)"',
     '    Input #<id>:notes rows=3 value=""',
@@ -587,7 +587,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: question': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Name] What should the command be called?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:text:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Answer (Markdown)"',
     '    Input #<id>:text rows=3 value=""',
@@ -597,7 +597,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: choice single': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -623,7 +623,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: choice single, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Check] Which one check?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -649,7 +649,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: choice multi': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -675,7 +675,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: choice multi, picked': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Checks] Which checks?"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:options flexDirection="column"',
     '    Box #<id>:opt:0:row flexDirection="column"',
     '      Box #<id>:opt:0:line flexDirection="row"',
@@ -701,7 +701,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: with notes': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Setup] Re-save the environment"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:feedback:field alignItems="stretch" flexDirection="column" width="100%"',
     '    Text dimColor=true "Feedback (optional, Markdown)"',
     '    Input #<id>:feedback rows=3 value=""',
@@ -715,7 +715,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: with a code block': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Setup] Run this"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Box #<id>:body flexDirection="column" gap=1',
     '    Markdown #<id>:body:0 text="In the repository:"',
     '    Markdown #<id>:body:1 text="*Code 1*\\n\\n```sh\\nclaude plugin validate .\\n```"',
@@ -731,7 +731,7 @@ export const EXPECTED: Record<string, string> = {
   'mobile: with a Markdown body': [
     'Box #<id>:card borderStyle="round" flexDirection="column" padding="sm"',
     '  Text bold=true weight="semibold" "[Read] The release notes"',
-    '  Text dimColor=true "HT-<short>"',
+    '  Text dimColor=true "this session · 2027-01-15 08:00 UTC · HT-<short>"',
     '  Markdown #<id>:body text="## What changed\\n\\n- **Rules** on every mount\\n- Snapshots, see [the issue](https://example.com/issue)"',
     '  Box #<id>:actions flexDirection="row" justifyContent="flex-end"',
     '    Button #<id>:ack label="Acknowledge" variant="primary"',

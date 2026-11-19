@@ -12,8 +12,10 @@
 
 import { type EngineInterface, type On, type RenderSurface } from 'claude-code'
 
-import type { Draft, Item } from '../types'
-import { APPROVE_OPTIONS, type Action, EMPTY_DRAFT } from './items'
+import { atom, read, update } from 'claude-code'
+
+import type { Draft, Item, TrayKind, TrayView } from '../types'
+import { APPROVE_OPTIONS, type Action, EMPTY_DRAFT, inKind, kindCounts, originOf } from './items'
 import { type Press, cardKit, hasSurface } from './card'
 import { drawsChoiceRows } from './choice'
 import { hasNativeCopy } from './copy'
@@ -30,6 +32,12 @@ const TITLE = 'Humantray gallery'
 const drafts = { plugin: 'humantray', key: 'drafts' } as const
 /** What was last pressed on each gallery card, by its draft id: drawn under the card, never in its draft. */
 const pressed = { plugin: 'humantray', key: 'gpressed' } as const
+/** The gallery's type filter (#75): its own, so a chip pressed here never filters the real pane. */
+const galleryKind = atom({ plugin: 'humantray', key: 'gkind' } as const, 'all' as TrayKind)
+/** The header's key prefix, and its draft id for the note of a tab pressed. */
+const HEADER = 'g:header'
+/** When every fixture was raised: a fixed time, so the origin line reads the same on every look. */
+export const GALLERY_RAISED = Date.UTC(2026, 10, 18, 9, 12)
 
 /** What the label above a card is written for: the terminal, or an app surface. */
 type Look = { rows: boolean; native: boolean }
@@ -40,8 +48,10 @@ export type GalleryFixture = {
   item: Item
   /** The draft it starts with, and is reset to: a pick or an error. */
   start: Partial<Draft>
-  /** False for the card from another session. */
+  /** False for a card from another session. */
   mine: boolean
+  /** That other session's title (#75), as its record holds it; none for an untitled one. */
+  title?: string
   /** What to look for on this card, on this kind of surface. */
   look: (look: Look) => string
 }
@@ -85,8 +95,8 @@ const fixtureItem = (n: number, fields: Partial<Item> & Pick<Item, 'type' | 'hea
   session_id: 'gallery',
   body_md: '',
   key: `gallery ${String(n)}`,
-  created: 0,
-  updated: 0,
+  created: GALLERY_RAISED,
+  updated: GALLERY_RAISED,
   bumps: 0,
   status: 'open',
   delivered: false,
@@ -225,14 +235,23 @@ export const GALLERY_FIXTURES: GalleryFixture[] = [
     item: fixtureItem(14, { type: 'approve', header: 'Elsewhere', question: 'From another session', session_id: 'gallery-other' }),
     start: {},
     mine: false,
-    look: () => 'a card from another session: “· another session” after the short id',
+    title: 'Lane #23: config loader',
+    look: () =>
+      'a card from another session (#75): the line under the heading reads “Lane #23: config loader · 2026-11-18 09:12 UTC · HT-GAL14”, the asking session’s title, when it was raised, the short id',
+  },
+  {
+    name: 'other-session-untitled',
+    item: fixtureItem(17, { type: 'question', header: 'Elsewhere', question: 'From a session with no title', session_id: 'gallery-untitled' }),
+    start: {},
+    mine: false,
+    look: () => 'a card from a session with no title: the line reads “another session · 2026-11-18 09:12 UTC · HT-GAL17”',
   },
   {
     name: 'bumped',
     item: fixtureItem(15, { type: 'ack', header: 'Again', question: 'Asked three more times', bumps: 3 }),
     start: {},
     mine: true,
-    look: () => 'a bumped card: “· bumped 3×” after the short id',
+    look: () => 'a bumped card: “· bumped 3×” after the short id; like every card of this session, its line starts “this session · 2026-11-18 09:12 UTC”',
   },
 ]
 
@@ -243,13 +262,25 @@ export const galleryDraftId = (name: string) => `g:${name}`
 const pressedLabel = (action: Action): string =>
   action.kind === 'ack' ? 'Acknowledge' : action.kind === 'do' ? (action.outcome === 'done' ? 'Done' : 'Not done') : action.kind === 'approve' ? action.choice : 'Submit'
 
-/** Every gallery card back to its starting draft, and no press noted. */
+/**
+ * Who asked a fixture (#75): `originOf` itself, over a store holding only the
+ * fixture's item and, for another session's card, that session's record.
+ */
+export const galleryOrigin = (fixture: GalleryFixture): string => {
+  const asker = fixture.item.session_id
+  const sessions = fixture.mine ? {} : { [asker]: { seen: 0, ...(fixture.title === undefined ? {} : { title: fixture.title }) } }
+  return originOf({ version: 1, items: [fixture.item], sessions }, fixture.item, fixture.mine ? asker : 'gallery-viewer')
+}
+
+/** Every gallery card back to its starting draft, no press noted, and the filter back to All. */
 async function reset($: EngineInterface) {
   for (const fixture of GALLERY_FIXTURES) {
     const id = galleryDraftId(fixture.name)
     await $.state.set({ ...drafts, id }, { ...EMPTY_DRAFT, ...fixture.start })
     await $.state.set({ ...pressed, id }, '')
   }
+  await $.state.set({ ...pressed, id: HEADER }, '')
+  await update($, galleryKind, () => 'all')
 }
 
 export function registerGallery(on: On): void {
@@ -270,7 +301,45 @@ export function registerGallery(on: On): void {
       </Text>,
       <Button key="g:reset" label="Reset gallery" onPress={() => reset($)} />,
     ]
+    // The pane's header (#75), over the fixtures: a chip filters them, as on
+    // the pane; a tab press is only noted, since the gallery has no History.
+    const shownKind = await read($, galleryKind)
+    const tabNote = (await $.state.get({ ...pressed, id: HEADER })).value ?? ''
+    nodes.push(
+      <Box key={`${HEADER}:look`}>
+        <Text italic>
+          {
+            `Look for: the header (#75): “humantray · gallery” and “${String(GALLERY_FIXTURES.length)} open” in bold; the Open and History tabs, Open primary; the chips All, Questions, To-dos and FYIs with their counts, the chosen one primary; each row wraps at a narrow width. A chip filters the cards below; a tab press is only noted.`
+          }
+        </Text>
+      </Box>,
+    )
+    nodes.push(
+      kit.header({
+        prefix: HEADER,
+        title: 'humantray · gallery',
+        open: GALLERY_FIXTURES.length,
+        history: 0,
+        view: 'open',
+        kind: shownKind,
+        counts: kindCounts(GALLERY_FIXTURES.map(fixture => fixture.item.type)),
+        onView: (to: TrayView) => async () => {
+          await $.state.set({ ...pressed, id: HEADER }, `Pressed: ${to === 'open' ? 'Open' : 'History'}. Gallery only: nothing was stored or sent.`)
+        },
+        onKind: (to: TrayKind) => async () => {
+          await update($, galleryKind, () => to)
+        },
+      }),
+    )
+    if (tabNote !== '') {
+      nodes.push(
+        <Box key={`${HEADER}:pressed`}>
+          <Text dimColor>{tabNote}</Text>
+        </Box>,
+      )
+    }
     for (const fixture of GALLERY_FIXTURES) {
+      if (!inKind(fixture.item.type, shownKind)) continue
       const id = galleryDraftId(fixture.name)
       const held = await $.state.get({ ...drafts, id })
       // Before any reset (a pane left open across a reload), its starting draft.
@@ -285,7 +354,7 @@ export function registerGallery(on: On): void {
           <Text italic>{`Look for: ${fixture.look(look)}`}</Text>
         </Box>,
       )
-      nodes.push(await kit.openCard({ item: fixture.item, key: id, draftId: id, draft, press, mine: fixture.mine, suffixes: true }))
+      nodes.push(await kit.openCard({ item: fixture.item, key: id, draftId: id, draft, press, origin: galleryOrigin(fixture) }))
       if (note !== '') {
         nodes.push(
           <Box key={`${id}:pressed`}>

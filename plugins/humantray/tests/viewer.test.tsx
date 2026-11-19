@@ -12,7 +12,8 @@ import { FIND_MS, GIVE_UP_MS, LEASE_MS, MAX_LISTED, TICK_MS, isGivenUp, lastActi
 import { LEAD, ME, URL_A, URL_B, artifactWorld, meta, response } from './artifact-world'
 import { codeBlocksOf } from '../hooks/code'
 import { RUNBOOK } from './code-fixtures'
-import { ADD, COMMAND, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
+import { ADD, CLEAN_TITLE, COMMAND, DIRTY_TITLE, HOUR, LIST, PANE, START, START_EVENT, answerOf, drawnText, stored, world } from './world'
+import { when } from '../hooks/items'
 import { mount } from './surface-rules'
 
 type On = Parameters<typeof world>[0]
@@ -184,6 +185,82 @@ describe('the lease: one viewer per computer', () => {
     expect(text).toContain('github.com/owner/repo')
     expect(text).not.toContain(MARK)
     expect(w.opened).toContain('humantray')
+  })
+
+  vtest('the header (#75): the open count, the tabs and the chips; a chip filters the cards across repositories', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'ack' }))
+    put(a, URL_B, rowOf({ id: ID3, type: 'question', repo: REPO2 }))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    const label = async (key: string) => (await ui.find({ key }))?.props.label
+    expect(await ui.find({ type: 'Text', text: 'humantray viewer' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '3 open' })).toBeDefined()
+    expect(await label('humantray:tab:open')).toBe('Open')
+    expect(await label('humantray:kind:all')).toBe('All 3')
+    expect(await label('humantray:kind:question')).toBe('Questions 1')
+    expect(await label('humantray:kind:todo')).toBe('To-dos 1')
+    expect(await label('humantray:kind:fyi')).toBe('FYIs 1')
+    await ui.press({ key: 'humantray:kind:todo' })
+    const cards = async () => [ID1, ID2, ID3].map(async id => (await ui.find({ key: `v:${id}:card` })) !== undefined)
+    expect(await Promise.all(await cards())).toEqual([true, false, false])
+    await ui.press({ key: 'humantray:kind:fyi' })
+    expect(await Promise.all(await cards())).toEqual([false, true, false])
+    await ui.press({ key: 'humantray:tab:history' })
+    await w.clock.settle()
+    expect(await shownText(ui)).toContain('No answered FYIs yet.')
+    await ui.press({ key: 'humantray:tab:open' })
+    await ui.press({ key: 'humantray:kind:all' })
+    expect(await Promise.all(await cards())).toEqual([true, true, true])
+  })
+
+  vtest('the header (#75) counts this session’s own cards too, and the empty text is only for no cards at all', async ($, on) => {
+    const { w } = viewerWorld(on)
+    await turnOn($, w)
+    await $.tool.call({ tool: ADD, type: 'ack', header: 'One', question: 'Own FYI one' })
+    await $.tool.call({ tool: ADD, type: 'ack', header: 'Two', question: 'Own FYI two' })
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: '2 open' })).toBeDefined()
+    expect((await ui.find({ key: 'humantray:kind:fyi' }))?.props.label).toBe('FYIs 2')
+    expect(await ui.find({ type: 'Text', text: 'No open items.' })).toBeUndefined()
+    await ui.press({ key: 'humantray:kind:todo' })
+    expect(await ui.find({ type: 'Text', text: 'No open to-dos.' })).toBeDefined()
+  })
+
+  vtest('who asked and when (#75): a card says when it was raised; History says who asked, from the row', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', status: 'answered', response: { selected: ['Approve'] }, delivered: true }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'ack' }))
+    put(a, URL_A, rowOf({ id: ID3, type: 'ack', status: 'acknowledged', response: { acknowledged: true }, delivered: true }, { session_title: null }))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    expect(await shownText(ui)).toContain(`${when(START - HOUR)} · HT-${ID2.slice(-5)}`)
+    await ui.press({ key: 'humantray:tab:history' })
+    await w.clock.settle()
+    const text = await shownText(ui)
+    expect(text).toContain(`HT-${ID1.slice(-5)} · worker for #1 · answered `)
+    expect(text).toContain(`HT-${ID3.slice(-5)} · another session · answered `)
+    expect(text).not.toContain('this session')
+  })
+
+  vtest('a dirty row title (#75) is drawn cleaned in the asker heading, the Lead line and History', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    const dirty = { session_id: LEAD, session_title: DIRTY_TITLE, parent_session_id: null, lead_session_id: LEAD }
+    put(a, URL_A, rowOf({ id: ID1, type: 'ack' }, dirty))
+    put(a, URL_A, rowOf({ id: ID2, type: 'ack', status: 'acknowledged', response: { acknowledged: true }, delivered: true }, dirty))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    const open = await shownText(ui)
+    expect(open).toContain(`Lead: ${CLEAN_TITLE}`)
+    expect(open.split('\n')).toContain(CLEAN_TITLE)
+    expect(open).not.toContain('x'.repeat(51))
+    expect(open).not.toContain('\u202e')
+    await ui.press({ key: 'humantray:tab:history' })
+    await w.clock.settle()
+    const history = await shownText(ui)
+    expect(history).toContain(`HT-${ID2.slice(-5)} · ${CLEAN_TITLE} · answered `)
+    expect(history).not.toContain('x'.repeat(51))
   })
 
   vtest('a plain session with the setting stored does not become a viewer', async ($, on) => {
@@ -574,7 +651,7 @@ describe('answering', () => {
     await tickOnce(w, 30 * 60_000)
     expect(sends).toHaveLength(2)
     ui = await mount($, { ...PANE, surface: 'desktop' })
-    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: 'humantray:tab:history' })
     await w.clock.settle()
     expect(await shownText(ui)).toContain(`HT-${ID1.slice(-5)}`)
   })
@@ -771,7 +848,7 @@ describe('one tick at a time, and nothing written after off', () => {
     await w.clock.advance(TICK_MS)
     const before = a.calls.length
     const ui = await mount($, { ...PANE, surface: 'desktop' })
-    const pressed = ui.press({ key: 'humantray:view' })
+    const pressed = ui.press({ key: 'humantray:tab:history' })
     const ran = $.command.run({ ...VIEWER_COMMAND, args: '' })
     await w.clock.settle()
     expect(a.calls.length).toBe(before)
@@ -810,7 +887,7 @@ describe('one tick at a time, and nothing written after off', () => {
     await tickOnce(w)
     const ui = await mount($, { ...PANE, surface: 'desktop' })
     const before = a.calls.length
-    const pressed = ui.press({ key: 'humantray:view' })
+    const pressed = ui.press({ key: 'humantray:tab:history' })
     await w.clock.settle()
     release()
     await pressed
@@ -908,7 +985,7 @@ describe('History freshness', () => {
     await turnOn($, w)
     const ui = await mount($, { ...PANE, surface: 'desktop' })
     expect(await shownText(ui)).not.toContain('last read')
-    await ui.press({ key: 'humantray:view' })
+    await ui.press({ key: 'humantray:tab:history' })
     await w.clock.settle()
     expect(await shownText(ui)).toContain('History not read yet')
   })
