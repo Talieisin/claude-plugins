@@ -42,7 +42,8 @@ export const descriptionIndent = (surface: string | undefined): number => (surfa
 
 /**
  * U+2009, a thin space: on the desktop app it moves the label right onto the
- * line its description starts on. The owner's check of 0.2.7 found each
+ * line its description starts on, for the text marks (☐ ○ ◉; a ticked ✅ is
+ * wider, see choiceGlyph). The owner's check of 0.2.7 found each
  * description about 3 CSS pixels right of its label's first letter; a cell is
  * too coarse to move the description back, and a thin space is about that
  * width. It is not collapsed as a run of plain spaces would be.
@@ -52,7 +53,7 @@ export const THIN_SPACE = '\u2009'
 /**
  * An option's Button text on an app surface (#75): its mark, a space and its
  * label, with a thin space more on the desktop app to line the label up with
- * the description under it.
+ * the description under it (all but a ticked ✅, which is wider).
  */
 export const choiceText = (surface: string | undefined, multi: boolean, on: boolean, label: string): string =>
   `${choiceGlyph(multi, on)} ${surface === 'desktop' ? THIN_SPACE : ''}${label}`

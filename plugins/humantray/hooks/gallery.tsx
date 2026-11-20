@@ -117,7 +117,7 @@ const options = ({ rows }: Look, multi: boolean, picked: boolean) => {
     : picked
       ? '◉ on Green, ○ on the others'
       : '○ on each'
-  return `each option a row, its mark and label together (${state}); clicking the mark ticks it as clicking the label does (#75); the description dim on its own line under the label, lined up with the label’s first letter (check by eye); Green has none; no shade on the row; Other is the last row, its field closed`
+  return `each option a row, its mark and label together (${state}); clicking the mark ticks it as clicking the label does (#75); the description dim on its own line under the label, lined up with the first letter of an unticked label (check by eye; a ticked ✅ label sits a little right of it); Green has none; no shade on the row; Other is the last row, its field closed`
 }
 
 /** What the dialog frame looks like on an app surface (#72): said once per card type. */

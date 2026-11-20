@@ -163,7 +163,9 @@ export const RULES: readonly SurfaceRule[] = [
     // about 3 CSS pixels right of its label (the owner's check). A cell is
     // too coarse to move the description, so the label is moved: a thin
     // space (U+2009) after the mark's space. On the desktop app an option's
-    // Button under a choice's options carries it.
+    // Button under a choice's options carries it, ticked or not (a ticked
+    // ✅ is wider, so its label sits a little right: the owner's choice,
+    // 0.2.10).
     name: 'label-meets-its-description',
     from: '#75',
     check: visit => {

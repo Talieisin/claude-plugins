@@ -1,4 +1,4 @@
-// Generated from the drawing at 87d8c2f (humantray 0.2.2), before the move to card.tsx (#68); the app surfaces redrawn for the dialog look (#72, 0.2.6) and for marks inside their Buttons (#75, 0.2.7; the desktop thin space, 0.2.8); every surface's origin line redrawn to say who asked and when (#75, 0.2.9).
+// Generated from the drawing at 87d8c2f (humantray 0.2.2), before the move to card.tsx (#68); the app surfaces redrawn for the dialog look (#72, 0.2.6) and for marks inside their Buttons (#75, 0.2.7; the desktop thin space, 0.2.8); every surface's origin line redrawn to say who asked and when (#75, 0.2.9); a ticked checkbox drawn ✅ (#75, 0.2.10).
 // One dump per surface and card (card-dump.ts). A change here is a change to what a card draws.
 
 import type { RenderSurface } from 'claude-code'
