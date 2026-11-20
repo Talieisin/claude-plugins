@@ -249,7 +249,7 @@ describe('nothing in the gallery reaches the store, the page or a session', () =
     const label = async (key: string) => ((await ui.find({ key })) as FoundLike | undefined)?.text ?? ''
     expect(await label('g:choice-multi:opt:1')).toBe(`☐ ${THIN_SPACE}Green`)
     await ui.press({ key: 'g:choice-multi:opt:1' })
-    expect(await label('g:choice-multi:opt:1')).toBe(`☑ ${THIN_SPACE}Green`)
+    expect(await label('g:choice-multi:opt:1')).toBe(`✅ ${THIN_SPACE}Green`)
     // A single choice starts with its pick, and a press moves it.
     expect(await label('g:choice-single-picked:opt:1')).toBe(`◉ ${THIN_SPACE}Green`)
     await ui.press({ key: 'g:choice-single-picked:opt:0' })
