@@ -55,13 +55,13 @@ describe('the pure rules', () => {
   })
 
   test('app marks: a checkbox or radio glyph, the same set the surface rule names', () => {
-    expect([choiceGlyph(true, false), choiceGlyph(true, true)]).toEqual(['☐', '☑'])
+    expect([choiceGlyph(true, false), choiceGlyph(true, true)]).toEqual(['☐', '✅'])
     expect([choiceGlyph(false, false), choiceGlyph(false, true)]).toEqual(['○', '◉'])
     expect(CHOICE_GLYPHS).toEqual(CHOICE_MARKS)
   })
 
   test('the option text: mark, space, label; on the desktop app a thin space more, to meet the description (#75, 0.2.7 check)', () => {
-    expect(choiceText('desktop', true, true, 'Blue')).toBe(`☑ ${THIN_SPACE}Blue`)
+    expect(choiceText('desktop', true, true, 'Blue')).toBe(`✅ ${THIN_SPACE}Blue`)
     expect(THIN_SPACE).toBe('\u2009')
     for (const surface of ['vscode', 'mobile']) expect(choiceText(surface, false, false, 'Blue')).toBe('○ Blue')
   })

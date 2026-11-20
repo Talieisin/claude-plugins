@@ -18,14 +18,18 @@ export const choiceMark = (multi: boolean, on: boolean): string => (multi ? (on 
 /**
  * An option's mark on the app surfaces: a checkbox or radio glyph, drawn
  * inside the option's Button with its label, so a click on the box presses
- * it (#75). 0.2.5 and 0.2.6 drew the mark as an Svg beside the Button, which
- * the engine never makes pressable (an Svg cannot sit in a Button, and a Box
- * takes no press): the owner's clicks on the boxes did nothing.
+ * it (#75). A ticked box is ✅ (U+2705), an emoji, since 0.2.10 (the owner's
+ * choice on #75): it draws in its own colour, which a Button's text cannot.
+ * It is wider than ☐, so a ticked option's label sits a little further right
+ * than an unticked one's. 0.2.5 and 0.2.6 drew the mark as an Svg beside
+ * the Button, which the engine never makes pressable (an Svg cannot sit in a
+ * Button, and a Box takes no press): the owner's clicks on the boxes did
+ * nothing.
  */
-export const choiceGlyph = (multi: boolean, on: boolean): string => (multi ? (on ? '☑' : '☐') : on ? '◉' : '○')
+export const choiceGlyph = (multi: boolean, on: boolean): string => (multi ? (on ? '✅' : '☐') : on ? '◉' : '○')
 
 /** Every mark `choiceGlyph` draws: an option's Button on an app surface starts with one (a surface rule, #75). */
-export const CHOICE_GLYPHS: readonly string[] = ['☐', '☑', '○', '◉']
+export const CHOICE_GLYPHS: readonly string[] = ['☐', '✅', '○', '◉']
 
 /**
  * Cells a description, or Other's open field, is set in by under its

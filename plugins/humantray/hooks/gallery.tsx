@@ -112,7 +112,7 @@ const options = ({ rows }: Look, multi: boolean, picked: boolean) => {
   }
   const state = multi
     ? picked
-      ? '☑ on Blue and Red, ☐ on Green and Other'
+      ? '✅ (a green box with a white tick) on Blue and Red, ☐ on Green and Other; a ticked label sits a little right of an unticked one'
       : '☐ on each'
     : picked
       ? '◉ on Green, ○ on the others'
