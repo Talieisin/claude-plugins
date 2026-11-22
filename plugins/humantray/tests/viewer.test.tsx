@@ -378,7 +378,7 @@ describe('reading and drawing', () => {
     expect(await ui.find({ key: `v:${ID1}:opt:1:about` })).toBeUndefined()
     await ui.press({ key: `v:${ID1}:opt:0` })
     await ui.press({ key: `v:${ID1}:opt:1` })
-    expect((await ui.find({ key: `v:${ID1}:opt:1` }))?.text).toBe('☑ Two')
+    expect((await ui.find({ key: `v:${ID1}:opt:1` }))?.text).toBe('✅ Two')
     // Other is a row there too (#72): pressed, its field opens under it.
     await ui.press({ key: `v:${ID1}:opt:other` })
     await ui.input({ key: `v:${ID1}:other`, text: 'Three', kind: 'change' })

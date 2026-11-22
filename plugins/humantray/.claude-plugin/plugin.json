@@ -1,6 +1,6 @@
 {
   "name": "humantray",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "A tray of things a session needs from a person: FYIs, choices, questions, to-dos and approvals. Items are kept per repository under .git/humantray/, shown in a pane (/humantray-open) and a band above the prompt where the session draws, and each answer is delivered to the session that asked, with any text the person typed kept as written. In a cloud session the items are also mirrored to a private artifact page per repository (/humantray-page), where they can be answered when no tray is open. On a computer that stays on, /humantray-viewer turns one local session into a viewer of every repository's page, answering by message to the session that asked.",
   "author": {
     "name": "Talieisin"

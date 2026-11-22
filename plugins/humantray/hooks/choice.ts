@@ -18,14 +18,18 @@ export const choiceMark = (multi: boolean, on: boolean): string => (multi ? (on 
 /**
  * An option's mark on the app surfaces: a checkbox or radio glyph, drawn
  * inside the option's Button with its label, so a click on the box presses
- * it (#75). 0.2.5 and 0.2.6 drew the mark as an Svg beside the Button, which
- * the engine never makes pressable (an Svg cannot sit in a Button, and a Box
- * takes no press): the owner's clicks on the boxes did nothing.
+ * it (#75). A ticked box is ✅ (U+2705), an emoji, since 0.2.10 (the owner's
+ * choice on #75): it draws in its own colour, which a Button's text cannot.
+ * It is wider than ☐, so a ticked option's label sits a little further right
+ * than an unticked one's. 0.2.5 and 0.2.6 drew the mark as an Svg beside
+ * the Button, which the engine never makes pressable (an Svg cannot sit in a
+ * Button, and a Box takes no press): the owner's clicks on the boxes did
+ * nothing.
  */
-export const choiceGlyph = (multi: boolean, on: boolean): string => (multi ? (on ? '☑' : '☐') : on ? '◉' : '○')
+export const choiceGlyph = (multi: boolean, on: boolean): string => (multi ? (on ? '✅' : '☐') : on ? '◉' : '○')
 
 /** Every mark `choiceGlyph` draws: an option's Button on an app surface starts with one (a surface rule, #75). */
-export const CHOICE_GLYPHS: readonly string[] = ['☐', '☑', '○', '◉']
+export const CHOICE_GLYPHS: readonly string[] = ['☐', '✅', '○', '◉']
 
 /**
  * Cells a description, or Other's open field, is set in by under its
@@ -38,7 +42,8 @@ export const descriptionIndent = (surface: string | undefined): number => (surfa
 
 /**
  * U+2009, a thin space: on the desktop app it moves the label right onto the
- * line its description starts on. The owner's check of 0.2.7 found each
+ * line its description starts on, for the text marks (☐ ○ ◉; a ticked ✅ is
+ * wider, see choiceGlyph). The owner's check of 0.2.7 found each
  * description about 3 CSS pixels right of its label's first letter; a cell is
  * too coarse to move the description back, and a thin space is about that
  * width. It is not collapsed as a run of plain spaces would be.
@@ -48,7 +53,7 @@ export const THIN_SPACE = '\u2009'
 /**
  * An option's Button text on an app surface (#75): its mark, a space and its
  * label, with a thin space more on the desktop app to line the label up with
- * the description under it.
+ * the description under it (all but a ticked ✅, which is wider).
  */
 export const choiceText = (surface: string | undefined, multi: boolean, on: boolean, label: string): string =>
   `${choiceGlyph(multi, on)} ${surface === 'desktop' ? THIN_SPACE : ''}${label}`

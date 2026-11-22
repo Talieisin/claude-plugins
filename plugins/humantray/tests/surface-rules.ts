@@ -44,7 +44,7 @@ export const IGNORED_IN_BUTTON: readonly string[] = ['dimColor']
 export const TEXT_COLOURS: readonly string[] = ['text', 'subtle', 'inactive', 'inverseText']
 
 /** The marks an option's Button starts with on an app surface (#75; `choiceGlyph` in hooks/choice.ts). */
-export const CHOICE_MARKS: readonly string[] = ['☐', '☑', '○', '◉']
+export const CHOICE_MARKS: readonly string[] = ['☐', '✅', '○', '◉']
 
 /** A terminal mark at the start of a line: `[ ]`, `[x]`, `( )`, `(•)`. */
 const MARK = /^\s*(?:[-*+]\s+)?(?:\[[ xX]\]|\(\s?\)|\(•\))/
@@ -81,7 +81,7 @@ export const RULES: readonly SurfaceRule[] = [
   },
   {
     // #64: the terminal's `[ ]`, `[x]`, `( )` and `(•)` marks drawn on an app
-    // surface, which has its own glyphs (☐ ☑ ○ ◉). Controls only: a Button's
+    // surface, which has its own glyphs (☐ ✅ ○ ◉). Controls only: a Button's
     // text and label, a Text inside a Button or a choice's options, and any
     // Markdown that is not item content.
     name: 'no-terminal-marks',
@@ -163,7 +163,9 @@ export const RULES: readonly SurfaceRule[] = [
     // about 3 CSS pixels right of its label (the owner's check). A cell is
     // too coarse to move the description, so the label is moved: a thin
     // space (U+2009) after the mark's space. On the desktop app an option's
-    // Button under a choice's options carries it.
+    // Button under a choice's options carries it, ticked or not (a ticked
+    // ✅ is wider, so its label sits a little right: the owner's choice,
+    // 0.2.10).
     name: 'label-meets-its-description',
     from: '#75',
     check: visit => {

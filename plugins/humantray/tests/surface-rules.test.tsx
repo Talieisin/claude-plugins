@@ -179,7 +179,7 @@ describe('the Svg rules (#72)', () => {
 
     test(`${surface}: an option's Button passes with its glyph first, and fails without it or with the mark beside it`, () => {
       const options = (line: unknown[]) => card([{ type: 'Box', props: { key: 'I:options' }, children: [{ type: 'Box', props: { key: 'I:opt:0:line' }, children: line }] }])
-      for (const mark of ['☐', '☑', '○', '◉']) {
+      for (const mark of ['☐', '✅', '○', '◉']) {
         expect(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: [`${mark} Blue`] }]), surface, markRule)).toEqual([])
       }
       expect(rulesIn(surfaceFaults(options([{ type: 'Button', props: { key: 'I:opt:0', plain: true }, children: ['Blue'] }]), surface, markRule))).toEqual(['mark-in-its-button'])

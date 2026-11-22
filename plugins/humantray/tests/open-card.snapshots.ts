@@ -1,4 +1,4 @@
-// Generated from the drawing at 87d8c2f (humantray 0.2.2), before the move to card.tsx (#68); the app surfaces redrawn for the dialog look (#72, 0.2.6) and for marks inside their Buttons (#75, 0.2.7; the desktop thin space, 0.2.8); every surface's origin line redrawn to say who asked and when (#75, 0.2.9).
+// Generated from the drawing at 87d8c2f (humantray 0.2.2), before the move to card.tsx (#68); the app surfaces redrawn for the dialog look (#72, 0.2.6) and for marks inside their Buttons (#75, 0.2.7; the desktop thin space, 0.2.8); every surface's origin line redrawn to say who asked and when (#75, 0.2.9); a ticked checkbox drawn ✅ (#75, 0.2.10).
 // One dump per surface and card (card-dump.ts). A change here is a change to what a card draws.
 
 import type { RenderSurface } from 'claude-code'
@@ -391,7 +391,7 @@ export const OPEN_CARDS: Record<RenderSurface, Record<string, string>> = {
       "  Box flexDirection=\"column\" key=\"<id>:options\" marginBottom=\"sm\"",
       "    Box flexDirection=\"column\" key=\"<id>:opt:0:row\"",
       "      Box flexDirection=\"row\" key=\"<id>:opt:0:line\"",
-      "        Button key=\"<id>:opt:0\" label=\"☑ \u2009Blue\" plain=true",
+      "        Button key=\"<id>:opt:0\" label=\"✅ \u2009Blue\" plain=true",
       "      Box flexDirection=\"row\" key=\"<id>:opt:0:under\" paddingLeft=3",
       "        Box key=\"<id>:opt:0:about\"",
       "          Text dimColor=true",
@@ -401,7 +401,7 @@ export const OPEN_CARDS: Record<RenderSurface, Record<string, string>> = {
       "        Button key=\"<id>:opt:1\" label=\"☐ \u2009Green\" plain=true",
       "    Box flexDirection=\"column\" key=\"<id>:opt:2:row\"",
       "      Box flexDirection=\"row\" key=\"<id>:opt:2:line\"",
-      "        Button key=\"<id>:opt:2\" label=\"☑ \u2009Red\" plain=true",
+      "        Button key=\"<id>:opt:2\" label=\"✅ \u2009Red\" plain=true",
       "      Box flexDirection=\"row\" key=\"<id>:opt:2:under\" paddingLeft=3",
       "        Box key=\"<id>:opt:2:about\"",
       "          Text dimColor=true",
@@ -655,7 +655,7 @@ export const OPEN_CARDS: Record<RenderSurface, Record<string, string>> = {
       "  Box flexDirection=\"column\" key=\"<id>:options\" marginBottom=1",
       "    Box flexDirection=\"column\" key=\"<id>:opt:0:row\"",
       "      Box flexDirection=\"row\" key=\"<id>:opt:0:line\"",
-      "        Button key=\"<id>:opt:0\" label=\"☑ Blue\" plain=true",
+      "        Button key=\"<id>:opt:0\" label=\"✅ Blue\" plain=true",
       "      Box flexDirection=\"row\" key=\"<id>:opt:0:under\" paddingLeft=2",
       "        Box key=\"<id>:opt:0:about\"",
       "          Text dimColor=true",
@@ -665,7 +665,7 @@ export const OPEN_CARDS: Record<RenderSurface, Record<string, string>> = {
       "        Button key=\"<id>:opt:1\" label=\"☐ Green\" plain=true",
       "    Box flexDirection=\"column\" key=\"<id>:opt:2:row\"",
       "      Box flexDirection=\"row\" key=\"<id>:opt:2:line\"",
-      "        Button key=\"<id>:opt:2\" label=\"☑ Red\" plain=true",
+      "        Button key=\"<id>:opt:2\" label=\"✅ Red\" plain=true",
       "      Box flexDirection=\"row\" key=\"<id>:opt:2:under\" paddingLeft=2",
       "        Box key=\"<id>:opt:2:about\"",
       "          Text dimColor=true",
@@ -919,7 +919,7 @@ export const OPEN_CARDS: Record<RenderSurface, Record<string, string>> = {
       "  Box flexDirection=\"column\" key=\"<id>:options\"",
       "    Box flexDirection=\"column\" key=\"<id>:opt:0:row\"",
       "      Box flexDirection=\"row\" key=\"<id>:opt:0:line\"",
-      "        Button key=\"<id>:opt:0\" label=\"☑ Blue\" plain=true",
+      "        Button key=\"<id>:opt:0\" label=\"✅ Blue\" plain=true",
       "      Box flexDirection=\"row\" key=\"<id>:opt:0:under\" paddingLeft=2",
       "        Box key=\"<id>:opt:0:about\"",
       "          Text dimColor=true",
@@ -929,7 +929,7 @@ export const OPEN_CARDS: Record<RenderSurface, Record<string, string>> = {
       "        Button key=\"<id>:opt:1\" label=\"☐ Green\" plain=true",
       "    Box flexDirection=\"column\" key=\"<id>:opt:2:row\"",
       "      Box flexDirection=\"row\" key=\"<id>:opt:2:line\"",
-      "        Button key=\"<id>:opt:2\" label=\"☑ Red\" plain=true",
+      "        Button key=\"<id>:opt:2\" label=\"✅ Red\" plain=true",
       "      Box flexDirection=\"row\" key=\"<id>:opt:2:under\" paddingLeft=2",
       "        Box key=\"<id>:opt:2:about\"",
       "          Text dimColor=true",
