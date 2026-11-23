@@ -876,8 +876,9 @@ export const isLineDue = (item: Item): boolean =>
  * The one test of whether an item may be pruned. It may when it is finished:
  * answered, carrying no claim, either delivered or owing no line, and owing
  * the store no push. Such an
- * item stays prunable and its order key never moves: no code path makes it
- * open, owed or claimed again (`reopenRefused` reopens an answer still owed
+ * item stays prunable, and its order key moves only when `reopenRefused`
+ * takes an answer back off a withdrawn item (to `withdrawn.at`): no code
+ * path makes it open, owed or claimed again (`reopenRefused` reopens an answer still owed
  * its line, which is not prunable, or takes one back off a withdrawn item,
  * which leaves it finished and prunable). One write still reaches it: the owner's pass
  * flags an acknowledged `ack` that owes no line as `delivered`, which leaves
@@ -1346,7 +1347,7 @@ export const fullOf = (item: Item): HistoryFull => {
     header: item.header,
     question: item.question,
     body,
-    answer: item.type === 'question' ? '' : choiceOf(item),
+    answer: item.withdrawn !== undefined ? withdrawnText(item.withdrawn) : item.type === 'question' ? '' : choiceOf(item),
     parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text, false) })),
     copy: codeBlocksOf(item.body_md),
   }

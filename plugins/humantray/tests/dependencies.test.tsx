@@ -11,6 +11,7 @@ import {
   answerLock,
   checkStoreFile,
   dependencyState,
+  fullOf,
   historyOf,
   isLive,
   mirroredLock,
@@ -193,6 +194,7 @@ describe('withdrawing', () => {
     expect(openItems(file)).toEqual([])
     const [entry] = historyOf(file, REPO, ME, START)
     expect(entry).toMatchObject({ answer: 'withdrawn: superseded by HT-12345', mark: 'none' })
+    expect(fullOf(file.items[0] as Item).answer).toBe('withdrawn: superseded by HT-12345')
   })
 })
 
