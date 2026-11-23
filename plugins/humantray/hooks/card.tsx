@@ -357,10 +357,20 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
    * copy list, its controls and its error line. `origin`: who asked
    * (`originOf`, #75), drawn as the mock-up has it: the asker, when it was
    * raised, the short id, then any bumps. Left out, the short id alone, as
-   * the viewer's This session group draws it.
+   * the viewer's This session group draws it. `lock`: why it cannot be
+   * answered now (#82, `answerLock`); its controls are not drawn, and the
+   * card is still read whole.
    */
-  const openCard = async (card: { item: Item; key: string; draftId: string; draft: Draft; press: Press; origin?: string }) => {
-    const { item, key, draftId, draft, press, origin } = card
+  const openCard = async (card: {
+    item: Item
+    key: string
+    draftId: string
+    draft: Draft
+    press: Press
+    origin?: string
+    lock?: string
+  }) => {
+    const { item, key, draftId, draft, press, origin, lock } = card
     const line =
       origin === undefined
         ? item.short
@@ -374,7 +384,11 @@ export function cardKit($: EngineInterface, e: RenderInput<'Pane'>, pane: string
     const rest = [
       item.body_md !== '' && drawn(`${key}:body`, forDrawing(item.body_md), true),
       await copyList(key, draftId, item.short, codeBlocksOf(item.body_md)),
-      ...controlsFor(item, key, draftId, draft, press),
+      // An answer refused by the asker (#33, #82): why, so it can be given again.
+      item.response_refused !== undefined && (
+        <Text key={`${key}:refused`} color="error">{`The last answer was not taken: ${plain(item.response_refused.reason)}`}</Text>
+      ),
+      ...(lock === undefined ? controlsFor(item, key, draftId, draft, press) : [<Text key={`${key}:lock`} dimColor>{plain(lock)}</Text>]),
       draft.error !== '' && <Text color="error">{draft.error}</Text>,
     ]
     return (

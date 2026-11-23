@@ -3,11 +3,11 @@ name: humantray
 description: How to ask a person for something through the humantray instead of in prose - FYIs, choices, questions, tasks and approvals, raised once and referred to by id, with the answer arriving later by itself. Use when you need a decision, an answer, an action or an acknowledgement from a person and can carry on meanwhile, when you hand a person a runbook to carry out, and whenever a line starting `humantray HT-` arrives.
 ---
 
-<!-- humantray-skill-version: 12 (humantray plugin 0.2.10; raise both together) -->
+<!-- humantray-skill-version: 13 (humantray plugin 0.3.0; raise both together) -->
 
 # humantray
 
-Three tools: `humantray_add`, `humantray_list` and `humantray_config` (model-facing `mcp__humantray__humantray_add`, `mcp__humantray__humantray_list` and `mcp__humantray__humantray_config`). All work only inside a git repository. Items are kept in `<git common dir>/humantray/items.json`, shared by all the repository's worktrees.
+Four tools: `humantray_add`, `humantray_list`, `humantray_withdraw` and `humantray_config` (model-facing `mcp__humantray__humantray_add`, `mcp__humantray__humantray_list`, `mcp__humantray__humantray_withdraw` and `mcp__humantray__humantray_config`). All work only inside a git repository. Items are kept in `<git common dir>/humantray/items.json`, shared by all the repository's worktrees.
 
 ## When it applies
 
@@ -37,6 +37,8 @@ The owner's views (the viewer and the page) group a cloud session's items under 
   - `do` for something the person must do. The answer is Done or Not done, with optional feedback. Say in the item what "done" means, and on Not done read the feedback before you go on.
   - `approve` for a proposal. Pass no options: it supplies Approve and Reject, and always offers optional notes, so read any notes before you act on the verdict.
 - **One item per ask.** `header` is a chip of 1 to 12 characters; `question` is the ask; put the detail in `body_md`, with the options and the default you will take meanwhile. `notes: true` adds a free-text notes box to any type.
+- **`holding: true`** (not on an `ack`) when there is no safe default and you have parked a piece of work until the answer comes: say in `body_md` what is held. Otherwise give your default and carry on with it.
+- **`after`: the items this one comes after** (your own `HT-` ids, at most six). It cannot be answered until each is answered, and a `do` must be answered Done. Use it when steps must happen in order and each needs its own Done and feedback, such as "create the directory" before "run the build in it". Steps that only make sense together and need one verdict go in one `do` item, numbered in `body_md`.
 - **A refused call stores nothing.** Read the error, fix the call, and call again.
 - **Put nothing secret in an item.** Items are kept as plain text.
 
@@ -44,7 +46,7 @@ The owner's views (the viewer and the page) group a cloud session's items under 
 
 A runbook is a sequence of steps for a person to carry out, often in lettered parts, each step a command to run and the output to expect.
 
-- **One `do` item per part.** Its `body_md` holds the whole part, so that nothing of it is needed from chat:
+- **One `do` item per part,** each part `after` the one before it, so the parts are answered in order. Its `body_md` holds the whole part, so that nothing of it is needed from chat:
   - the steps, in order, each command in a fenced code block of its own, so that it can be copied whole and exactly: each code block has a copy button on the page and in the terminal's pane and viewer, and the desktop app and VS Code their own;
   - the output to expect, fenced where it must match exactly;
   - each placeholder to fill in (`<DIGEST>`) and the step whose output gives it;
@@ -55,7 +57,9 @@ A runbook is a sequence of steps for a person to carry out, often in lettered pa
 
 ## Raising it again, and referring to it
 
-- To raise an open item again, call `humantray_add` with the same `key` and `type`: it bumps that item (same id, `bumped: true`). A bump replaces only `body_md` and `options`; the question, header and flags stay as first added, so put a changed ask in `body_md`. `key` defaults to the question. The same key with another type is refused.
+- To raise an open item again, call `humantray_add` with the same `key` and `type`: it bumps that item (same id, `bumped: true`). A bump replaces `body_md` and `options`, and `after` and `holding` when you pass them (`after: []` clears it; pass `holding: false` once you have taken a default); the question, header and other flags stay as first added, so put a changed ask in `body_md`. `key` defaults to the question. The same key with another type is refused, and so is an `after` that would make an item come after itself.
+- **Withdraw what you no longer need** with `humantray_withdraw({ ids, reason })`, rather than leave a dead card. It moves the items to History with your reason, and no answer comes for them. It is refused for an item already answered (its answer is on its way) and while another open item comes after one of them: withdraw that in the same call, or raise it again with another `after`.
+- **A blocked item.** When an item it comes after is answered Not done or withdrawn, an item is blocked: the person cannot answer it. `humantray_list` shows `blocked` and `waiting_on`. Read the Not done feedback, then raise the blocked item again with another `after` (a fix-up step, say), or withdraw it.
 - Never restate an item in prose. Refer to it as its `short` id, `HT-xxxxx`.
 - Do not call `humantray_list` every turn: answers arrive by themselves. Call it when you need to know which of your items are still open or not yet delivered.
 

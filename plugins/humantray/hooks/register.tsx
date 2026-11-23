@@ -47,15 +47,21 @@ import {
   addOrBump,
   applySettle,
   buildResponse,
+  REASON_MAX,
+  answerLock,
+  blockedText,
   cleanTitle,
   clipDrawn,
   deliveryText,
+  dependencyState,
   forDrawing,
   fullOf,
   historyOf,
   inKind,
   isLineDue,
+  isLive,
   kindCounts,
+  mirroredLock,
   isMineToDeliver,
   normaliseRepo,
   noneOf,
@@ -64,12 +70,15 @@ import {
   originOf,
   plain,
   prune,
+  refreshDependencies,
+  reopenRefused,
   repoLabel,
   resolveOwner,
   shortOf,
   ulid,
   validateAdd,
   when,
+  withdrawItems,
 } from './items'
 import { cardKit, draftOf, hasSurface, setDraft, toast } from './card'
 import { codeBlocksOf } from './code'
@@ -88,11 +97,12 @@ const PANE = 'humantray'
 const TITLE = 'Humantray'
 const ADD = 'mcp__humantray__humantray_add'
 const LIST = 'mcp__humantray__humantray_list'
+const WITHDRAW = 'mcp__humantray__humantray_withdraw'
 
-// tray-5: the tray carries who asked each item (#75), History entries too. A
-// tray cached by an earlier version reads as null and is rebuilt from the
-// file at the next pass.
-const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-5' })
+// tray-6: the tray carries who asked each item (#75), History entries too,
+// and why an item cannot be answered now (#82). A tray cached by an earlier
+// version reads as null and is rebuilt from the file at the next pass.
+const tray = atom({ plugin: 'humantray', key: 'tray' } as const, null, { shape: 'tray-6' })
 const view = atom({ plugin: 'humantray', key: 'view' } as const, 'open')
 /** The type filter (#75), the local pane's and the viewer's alike. */
 const kind = atom({ plugin: 'humantray', key: 'kind' } as const, 'all' as TrayKind)
@@ -114,6 +124,9 @@ const token = (): string => {
   crypto.getRandomValues(bytes)
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 }
+
+/** An answer id for a refusal that no response row named (#82): `r` and 16 hex digits. */
+const freshAnswerId = (): string => `r${token()}`
 
 /** This module instance: a claim it makes names it, so a reload's claims are known dead. */
 const INSTANCE = token()
@@ -174,9 +187,33 @@ const ADD_SCHEMA = {
         'Your key for this item. Adding again with the same key while it is open bumps it instead of adding a new one. Defaults to the question.',
     },
     notify_on_done: { type: 'boolean', description: 'ack only: tell this session when it is acknowledged.' },
+    after: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'The items this one comes after (HT-xxxxx ids of your own, at most 6). It cannot be answered until each is answered (a do item: Done). On a bump, replaces the list; [] clears it; leave it out to keep it.',
+    },
+    holding: {
+      type: 'boolean',
+      description:
+        'Not for ack. You have parked a piece of work until this is answered; say in body_md what is held. On a bump, leave it out to keep it, false to clear it.',
+    },
   },
   required: ['type', 'header', 'question'],
 } as const
+
+const WITHDRAW_SCHEMA = {
+  type: 'object',
+  properties: {
+    ids: { type: 'array', items: { type: 'string' }, description: 'The open items to withdraw: HT-xxxxx ids of your own.' },
+    reason: { type: 'string', description: 'Why, in a line: shown in History.' },
+  },
+  required: ['ids', 'reason'],
+} as const
+
+const WITHDRAW_DESCRIPTION =
+  'Withdraw open humantray items you no longer need, all or none. A withdrawn item leaves the tray for History with your reason, and no answer comes for it. ' +
+  'Refused for an item already answered (its answer is on its way), and while another open item comes after one of them: withdraw that too in the same call, or raise it again with another after.'
 
 const ADD_DESCRIPTION =
   'Put an item in the humantray for the person to answer later, without blocking. Returns { id, short, bumped } at once. ' +
@@ -185,7 +222,8 @@ const ADD_DESCRIPTION =
   'For a decision that must block before a risky action, use AskUserQuestion instead.'
 
 const LIST_DESCRIPTION =
-  "List this session's humantray items that are open, or answered and not yet delivered: { items: [{ id, short, type, header, status }] }, newest first."
+  "List this session's humantray items that are open, or answered and not yet delivered: { items: [{ id, short, type, header, status, waiting_on?, blocked? }] }, newest first. " +
+  'waiting_on: the items one still comes after. blocked: one it comes after was answered Not done, withdrawn or is gone; raise it again with another after, or withdraw it.'
 
 // A tool's result reaches the model as text: the engine takes a string (or a
 // list of blocks) and refuses an object, so the object goes as JSON text. A
@@ -211,9 +249,14 @@ async function showTray($: EngineInterface, seen: { file: StoreFile; where: Wher
     const items = openItems(file)
     const mine = items.filter(item => resolveOwner(file.sessions, item.session_id) === me).map(item => item.id)
     const origins = Object.fromEntries(items.map(item => [item.id, originOf(file, item, me)]))
+    const locks: Record<string, string> = {}
+    for (const item of items) {
+      const lock = answerLock(file, item)
+      if (lock !== undefined) locks[item.id] = lock
+    }
     const repo = normaliseRepo(where.remote, where.root)
     const history = historyOf(file, repo, me, now)
-    return { items, me, mine, origins, history, repo }
+    return { items, me, mine, origins, locks, history, repo }
   })
 }
 
@@ -295,6 +338,15 @@ async function sync($: EngineInterface, deliver: boolean) {
       for (const item of file.items) {
         if (item.status === 'open' || item.delivered) continue
         if (!isMineToDeliver(file, item, me)) continue
+        // An answer this version would not have taken (#82): written straight
+        // into the file by an older pane, to an item that came after one still
+        // open or was blocked. Not delivered: the item opens again, refused.
+        const claimHeld =
+          item.delivering_at !== undefined &&
+          (isOwnClaim(item.delivering_by)
+            ? inFlight.get(item.id) === item.delivering_by
+            : now - item.delivering_at <= CLAIM_STALE_MS)
+        if (!claimHeld && reopenRefused(file, item, now, freshAnswerId())) continue
         if (item.type === 'ack' && item.notify_on_done !== true) {
           item.delivered = true
           continue
@@ -317,6 +369,8 @@ async function sync($: EngineInterface, deliver: boolean) {
     }
     // After the claims: an item claimed here is not finished, so it is kept.
     prune(file)
+    // What each item's `after` comes to now (#82), for the next push.
+    refreshDependencies(file)
     return { result: sends, write: true }
   })
   if (done.error !== undefined) {
@@ -414,9 +468,12 @@ async function answer($: EngineInterface, id: string, action: Action) {
   const now = await $.clock.now()
   const done = await mutate<AnswerOutcome>($, file => {
     const item = file.items.find(one => one.id === id)
-    if (item === undefined || item.status !== 'open') {
+    if (item === undefined || !isLive(item)) {
       return { result: { kind: 'stale' }, write: false }
     }
+    // An item that comes after one still open, or is blocked, is not answered (#82).
+    const lock = answerLock(file, item)
+    if (lock !== undefined) return { result: { kind: 'invalid', message: lock }, write: false }
     const built = buildResponse(item, draft, action)
     if (built.error !== undefined) {
       return { result: { kind: 'invalid', message: built.error }, write: false }
@@ -473,6 +530,11 @@ export const register: Register = on => {
         inputSchema: { type: 'object', properties: {} },
         isDeferred: false,
       })
+    } catch {
+      // Refused: the rest of the start still runs.
+    }
+    try {
+      await $.tool.register({ name: 'humantray_withdraw', description: WITHDRAW_DESCRIPTION, inputSchema: WITHDRAW_SCHEMA, isDeferred: false })
     } catch {
       // Refused: the rest of the start still runs.
     }
@@ -622,6 +684,7 @@ export const register: Register = on => {
       // The added or bumped item is open, so never pruned. Pruning before the
       // size check also leaves room under the add's limit.
       prune(file)
+      refreshDependencies(file)
       return { result: added.ok, write: true }
     }, { limit: WRITE_LIMIT })
     if (done.error !== undefined) return fail(done.error)
@@ -650,12 +713,51 @@ export const register: Register = on => {
     const { file } = seen.ok
     const items = file.items
       .filter(item => resolveOwner(file.sessions, item.session_id) === me)
-      .filter(item => item.status === 'open' || (!item.delivered && isLineDue(item)))
+      .filter(item => isLive(item) || (!item.delivered && isLineDue(item)))
       .sort((a, b) => b.updated - a.updated)
-      .map(item => ({ id: item.id, short: item.short, type: item.type, header: item.header, status: item.status }))
+      .map(item => {
+        const listed: Record<string, unknown> = { id: item.id, short: item.short, type: item.type, header: item.header, status: item.status }
+        if (isLive(item)) {
+          const state = dependencyState(file, item)
+          if (state.waiting_on.length > 0) listed.waiting_on = state.waiting_on.map(shortOf)
+          if (state.blocked !== undefined) listed.blocked = blockedText(state.blocked)
+        }
+        return listed
+      })
     await showTray($, seen.ok, me)
     return { result: JSON.stringify({ items }) }
   }).catch(() => fail('humantray: humantray_list failed unexpectedly'))
+
+  on('tool.call', { tool: WITHDRAW }, async ($, e) => {
+    const raw = e as unknown as Record<string, unknown>
+    const ids = raw.ids
+    const reason = raw.reason
+    if (!Array.isArray(ids) || ids.length === 0 || ids.some(id => typeof id !== 'string' || id.trim() === '')) {
+      return fail('humantray: ids must be a list of one or more item ids (HT-xxxxx); nothing was withdrawn')
+    }
+    if (typeof reason !== 'string' || reason.trim() === '') return fail('humantray: give a reason; nothing was withdrawn')
+    if (reason.length > REASON_MAX) return fail(`humantray: reason must be at most ${REASON_MAX} characters; nothing was withdrawn`)
+    const me = await $.session.id()
+    const now = await $.clock.now()
+    const done = await mutate<Item[]>($, (file, where) => {
+      const withdrawn = withdrawItems(file, (ids as string[]).map(id => id.trim()), reason, {
+        repo: normaliseRepo(where.remote, where.root),
+        session_id: me,
+        now,
+      })
+      if (withdrawn.error !== undefined) return { error: `humantray: ${withdrawn.error}; nothing was withdrawn` }
+      refreshDependencies(file)
+      return { result: withdrawn.ok.map(item => ({ ...item })), write: true }
+    })
+    if (done.error !== undefined) return fail(done.error)
+    try {
+      await showTray($, done.ok, me)
+    } catch {
+      // Drawing is best effort.
+    }
+    void requestPass($, 'push')
+    return { result: JSON.stringify({ withdrawn: done.ok.result.map(item => item.short) }) }
+  }).catch(() => fail('humantray: humantray_withdraw failed before writing; nothing was withdrawn'))
 
   on('command.run', { command: 'humantray-open' }, async $ => {
     const seen = await peek($)
@@ -905,7 +1007,15 @@ export const register: Register = on => {
               </Text>,
             )
           }
-          lines.push(...controlsFor(item, key, viewerDraftId(row.id), draft, (action: Action) => () => viewerPress($, card, action)))
+          // Coming after an item still open, or blocked (#82): as its asker mirrored it.
+          const lock = mirroredLock(row)
+          if (lock !== undefined) {
+            lines.push(
+              <Text key={`${key}:lock`} dimColor>
+                {plain(lock)}
+              </Text>,
+            )
+          } else lines.push(...controlsFor(item, key, viewerDraftId(row.id), draft, (action: Action) => () => viewerPress($, card, action)))
         } else {
           const said: Record<string, string> = {
             sent: 'Sent; waiting for the session to take it.',
@@ -975,7 +1085,7 @@ export const register: Register = on => {
           const press = (action: Action) => () => answer($, id, action)
           // Every open item in this repository's store, not only this session's: each says who asked (#75).
           const origin = shown?.origins[id] ?? (shown?.mine.includes(id) === true ? 'this session' : 'another session')
-          local.push(await openCard({ item, key: id, draftId: id, draft, press, origin }))
+          local.push(await openCard({ item, key: id, draftId: id, draft, press, origin, lock: shown?.locks[id] }))
         }
       }
       return (
@@ -1154,7 +1264,7 @@ export const register: Register = on => {
       const draft = await draftOf($, id)
       const press = (action: Action) => () => answer($, id, action)
       const origin = shown.origins[id] ?? (shown.mine.includes(id) ? 'this session' : 'another session')
-      cards.push(await openCard({ item, key: id, draftId: id, draft, press, origin }))
+      cards.push(await openCard({ item, key: id, draftId: id, draft, press, origin, lock: shown.locks[id] }))
     }
     return (
       <Box flexDirection="column" gap={1}>

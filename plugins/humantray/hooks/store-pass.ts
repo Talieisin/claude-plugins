@@ -37,12 +37,13 @@ import {
   queryDocs,
   readFinishedRows,
   readMeta,
+  readOpenRows,
   readResponses,
   readSessionRows,
   saveLink,
   withDeadline,
 } from './artifact-store'
-import { normaliseRepo, prune, resolveOwner } from './items'
+import { isLive, normaliseRepo, prune, refreshDependencies, resolveOwner } from './items'
 import { type ShownFrom, isLeadRecord, leadKey, restoredSelf, shownUnder } from './lineage'
 import { owesPush } from './row-shape'
 import {
@@ -361,6 +362,8 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
       if (file.items.some(item => adopted.includes(item.id) && item.status !== 'open')) deliveryDue = true
       changed = adopted.length > 0 || changed
     }
+    // What each item's `after` comes to now (#82), so the rows pushed below say what the file says.
+    changed = refreshDependencies(file) || changed
     return { result: { items: file.items.map(item => ({ ...item })), changed }, write: changed }
   })
   if (recorded.error !== undefined) return 'failed'
@@ -395,7 +398,7 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
     const versions = new Map(pushed.map(p => [p.id, p.version]))
     const open = mine.filter(
       item =>
-        item.status === 'open' &&
+        isLive(item) &&
         (versions.has(item.id) || (item.row?.artifact === target.url && item.row.version !== undefined)),
     )
     if (open.length > 0) {
@@ -433,10 +436,10 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
       }
       for (const [id, row] of answers) {
         const item = file.items.find(one => one.id === id)
-        if (item === undefined || item.status !== 'open') continue
+        if (item === undefined || !isLive(item)) continue
         if (resolveOwner(file.sessions, item.session_id) !== me) continue
         if (item.response_refused?.answer_id === row.answer_id) continue
-        const verdict = refusalOf(item, row)
+        const verdict = refusalOf(item, row, file)
         if ('apply' in verdict) {
           applyStoreAnswer(item, verdict.apply, row, now)
           applied += 1
@@ -448,7 +451,7 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
       }
       for (const [id, answerId] of newer) {
         const item = file.items.find(one => one.id === id)
-        if (item === undefined || item.status !== 'open') continue
+        if (item === undefined || !isLive(item)) continue
         if (resolveOwner(file.sessions, item.session_id) !== me) continue
         refuseStoreAnswer(item, { answer_id: answerId }, NEWER_ANSWER, now)
         refused += 1
@@ -474,7 +477,12 @@ async function pruneRows($: EngineInterface, url: string): Promise<void> {
   // A row that could not be read (or a newer one) may hold a slot among the
   // newest; pruning around it could delete a row that should be kept.
   if (read.kind !== 'ok' || read.skipped > 0) return
-  const doomed = prunableRows(read.rows).slice(0, 25)
+  // The open rows too (#82): a row an open one comes after is kept, and a
+  // withdrawn row (still `open`) is pruned as a finished one. A read that
+  // reaches its limit may have left out a row that needs another: prune nothing.
+  const open = await readOpenRows($, url)
+  if (open.kind !== 'ok' || open.skipped > 0 || open.rows.length >= 1000) return
+  const doomed = prunableRows([...read.rows, ...open.rows]).slice(0, 25)
   if (doomed.length === 0) return
   const responses = await queryDocs($, url, 'responses', { where: [['id', 'in', doomed.map(d => d.id)]], limit: 100 })
   const versions = new Map<string, number>()

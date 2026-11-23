@@ -307,9 +307,15 @@ describe('the lease: one viewer per computer', () => {
     a.session = { id: ME, title: null, parent: null }
     const text = await turnOn($, w)
     expect(text).toContain('only in a local session')
-    const reads = a.calls.filter(c => c.tool === 'ArtifactData' && c.input.collection === 'items' && c.input.action === 'query' && JSON.stringify(c.input.query).includes('"open"'))
+    // The session's own start pass reads the open rows once, to prune its
+    // finished ones around them (#82); the viewer reads none, then or later.
+    const openReads = () =>
+      a.calls.filter(c => c.tool === 'ArtifactData' && c.input.collection === 'items' && c.input.action === 'query' && JSON.stringify(c.input.query).includes('"open"')).length
+    expect(openReads()).toBeLessThanOrEqual(1)
+    const before = openReads()
     await tickOnce(w)
-    expect(reads).toEqual([])
+    await tickOnce(w)
+    expect(openReads()).toBe(before)
   })
 
   vtest('off stops it', async ($, on) => {
