@@ -333,6 +333,15 @@ describe('refusals never wedge an item', () => {
     expect(item?.status).toBe('open')
     expect(item?.response_refused?.reason).toMatch(new RegExp(`comes after ${first.short}`))
     expect(w.submits).toEqual([])
+    // The first answered on the page: the next one's row is pushed again, free, in the passes that follow.
+    a.put(URL_A, `responses/${first.id}`, response(first.id))
+    await $.turn.start(TURN_START)
+    await settle(w)
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(w.submits).toEqual([`humantray ${first.short} (Merge): Approve`])
+    expect(a.doc(URL_A, `items/${next}`)?.data.waiting_on).toBeUndefined()
+    expect(a.doc(URL_A, `items/${first.id}`)?.data.blocks).toBeUndefined()
   })
 
   test('an answer to a withdrawn item is refused where the page shows it, and never delivered (#82)', async ($, on) => {

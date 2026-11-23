@@ -258,8 +258,11 @@ describe('the answer checks on every route', () => {
   })
 
   test('a store answer is refused while the item waits, is blocked, or was withdrawn', () => {
-    const file = fileOf([open(1), open(2, { after: [id(1)] }), open(3, { withdrawn: { at: START, reason: 'r' } })])
+    const file = fileOf([open(1), open(2, { after: [id(1)] }), open(3, { withdrawn: { at: START, reason: 'r' } }), done(4, 'not_done'), open(5, { after: [id(4)] })])
     expect(refusalOf(file.items[1] as Item, response(2), file)).toEqual({ refuse: `${short(2)} comes after ${short(1)}: answer that first.` })
+    expect('refuse' in refusalOf(file.items[4] as Item, response(5), file) && refusalOf(file.items[4] as Item, response(5), file)).toMatchObject({
+      refuse: expect.stringMatching(new RegExp(`^Blocked: ${short(4)} was answered Not done`)),
+    })
     expect(refusalOf(file.items[2] as Item, response(3))).toEqual({ refuse: `${short(3)} was withdrawn by its session.` })
     expect('apply' in refusalOf(file.items[0] as Item, response(1), file)).toBe(true)
   })
@@ -275,7 +278,7 @@ describe('the answer checks on every route', () => {
     expect(reopenRefused(free, free.items[1] as Item, START, 'rfresh0123456789ab')).toBe(false)
   })
 
-  test('the pane draws a waiting card without its controls, and refuses it; the next step is free once the first is done', async ($, on) => {
+  test('the pane draws a waiting card without its controls; the next step is free once the first is done', async ($, on) => {
     const w = world(on)
     await $.session.start(START_EVENT)
     const first = answerOf<{ id: string; short: string }>(await $.tool.call({ tool: ADD, type: 'do', header: 'Dir', question: 'Make the directory' }))
@@ -363,6 +366,11 @@ describe('what a version older than 0.3.0 reads', () => {
         typeof item.response_refused.reason === 'string' &&
         typeof item.response_refused.at === 'number'))
 
+  test('the shared file does not hold the mirrored fields to a shape: a later value never makes it unreadable', () => {
+    const file = fileOf([open(1, { blocked: { by: id(9), reason: 'superseded' } as never, waiting_on: 'x' as never, blocks: -1 })])
+    expect(checkStoreFile(JSON.parse(JSON.stringify(file))).error).toBeUndefined()
+  })
+
   test('a withdrawn item, and an answer reopened as refused, use only what 0.2.10 reads', () => {
     const file = fileOf([open(1), done(2, 'done', { after: [id(1)], delivered: false }), open(3)])
     reopenRefused(file, file.items[1] as Item, START, 'rfresh0123456789ab')
@@ -378,7 +386,10 @@ describe('what a version older than 0.3.0 reads', () => {
       remote: { session_id: 'session_0123456789abcdefghijABCD', session_title: null, parent_session_id: null, lead_session_id: null },
     })
     expect('ok' in checkItemRow(row)).toBe(true)
-    expect(checkItemRow({ ...row, blocked: { by: id(1), reason: 'bored' } })).toEqual({ bad: 'blocked is malformed' })
+    expect(checkItemRow({ ...row, blocked: { by: id(1) } })).toEqual({ bad: 'blocked is malformed' })
+    // A block reason a later version adds still reads, as a block.
+    const later = checkItemRow({ ...row, blocked: { by: id(1), reason: 'superseded' } })
+    expect('ok' in later && mirroredLock(later.ok)).toMatch(/^Blocked: HT-\w{5} cannot go ahead\./)
     expect(checkItemRow({ ...row, after: [1] })).toEqual({ bad: 'after is not a list of ids' })
   })
 })

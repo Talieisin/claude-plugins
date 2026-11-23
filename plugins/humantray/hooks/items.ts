@@ -459,7 +459,13 @@ export const mirroredLock = (row: { short: string; waiting_on?: string[]; blocke
 export const blockedText = (blocked: Blocked): string => {
   const by = shortIn(blocked.by)
   const why =
-    blocked.reason === 'not_done' ? `${by} was answered Not done` : blocked.reason === 'withdrawn' ? `${by} was withdrawn` : `${by} is no longer in the tray`
+    blocked.reason === 'not_done'
+      ? `${by} was answered Not done`
+      : blocked.reason === 'withdrawn'
+        ? `${by} was withdrawn`
+        : blocked.reason === 'missing'
+          ? `${by} is no longer in the tray`
+          : `${by} cannot go ahead`
   return `Blocked: ${why}. The session that asked will raise this again or withdraw it.`
 }
 
@@ -1389,23 +1395,32 @@ const isNullableString = (v: unknown): boolean => v === null || typeof v === 'st
 const isIdList = (v: unknown): boolean => Array.isArray(v) && v.every(id => typeof id === 'string')
 
 /**
- * Why an item's or row's #82 fields are malformed, or undefined when they are
- * fine or absent: `after`, `holding`, `withdrawn` and the mirrored
- * `waiting_on`, `blocked` and `blocks`. A reader older than 0.3.0 keeps them
- * as unknown fields.
+ * Why an item's #82 fields are malformed, or undefined when they are fine or
+ * absent: `after`, `holding` and `withdrawn`, which this version acts on. The
+ * mirrored `waiting_on`, `blocked` and `blocks` are not checked here: nothing
+ * local reads them, and holding the shared file to their shape would let a
+ * later version's new value (another block reason, say) make this one refuse
+ * the whole file. A reader older than 0.3.0 keeps all of them as unknown fields.
  */
 export const dependencyProblem = (data: Record<string, unknown>): string | undefined => {
-  const { after, holding, withdrawn, waiting_on, blocked, blocks } = data
+  const { after, holding, withdrawn } = data
   if (after !== undefined && !isIdList(after)) return 'after is not a list of ids'
-  if (waiting_on !== undefined && !isIdList(waiting_on)) return 'waiting_on is not a list of ids'
   if (holding !== undefined && typeof holding !== 'boolean') return 'holding is not true or false'
   if (withdrawn !== undefined && (!isRecord(withdrawn) || typeof withdrawn.at !== 'number' || typeof withdrawn.reason !== 'string')) {
     return 'withdrawn is malformed'
   }
-  if (
-    blocked !== undefined &&
-    (!isRecord(blocked) || typeof blocked.by !== 'string' || !['not_done', 'withdrawn', 'missing'].includes(blocked.reason as string))
-  ) {
+  return undefined
+}
+
+/**
+ * Why a row's mirrored #82 fields are unusable to the page and viewer, or
+ * undefined. Loose on purpose: a block reason this version does not know
+ * still reads, drawn as a block (`blockedText`).
+ */
+export const mirroredProblem = (data: Record<string, unknown>): string | undefined => {
+  const { waiting_on, blocked, blocks } = data
+  if (waiting_on !== undefined && !isIdList(waiting_on)) return 'waiting_on is not a list of ids'
+  if (blocked !== undefined && (!isRecord(blocked) || typeof blocked.by !== 'string' || typeof blocked.reason !== 'string')) {
     return 'blocked is malformed'
   }
   if (blocks !== undefined && (typeof blocks !== 'number' || !Number.isFinite(blocks))) return 'blocks is not a number'

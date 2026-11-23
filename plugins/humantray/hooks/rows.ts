@@ -24,6 +24,7 @@ import {
   buildResponse,
   dependencyProblem,
   isLineDue,
+  mirroredProblem,
   isLive,
   resolveOwner,
   shortOf,
@@ -122,7 +123,7 @@ export function checkItemRow(data: unknown): RowRead<ItemRow> {
   ) {
     return { bad: 'response_refused is malformed' }
   }
-  const dependency = dependencyProblem(data)
+  const dependency = dependencyProblem(data) ?? mirroredProblem(data)
   if (dependency !== undefined) return { bad: dependency }
   return { ok: data as unknown as ItemRow }
 }

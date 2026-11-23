@@ -212,7 +212,7 @@ details.card[open] summary { margin-bottom: 10px; }
     if (rec(item.withdrawn)) return item.short + " was withdrawn by its session.";
     if (rec(item.blocked) && str(item.blocked.by)) {
       var by = shortOf(item.blocked.by);
-      var why = item.blocked.reason === "not_done" ? by + " was answered Not done" : item.blocked.reason === "withdrawn" ? by + " was withdrawn" : by + " is no longer in the tray";
+      var why = item.blocked.reason === "not_done" ? by + " was answered Not done" : item.blocked.reason === "withdrawn" ? by + " was withdrawn" : item.blocked.reason === "missing" ? by + " is no longer in the tray" : by + " cannot go ahead";
       return "Blocked: " + why + ". The session that asked will raise this again or withdraw it.";
     }
     var waiting = Array.isArray(item.waiting_on) ? item.waiting_on.filter(str) : [];
