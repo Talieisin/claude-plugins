@@ -397,8 +397,10 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
   if (step.pull && outcome === 'done') {
     const versions = new Map(pushed.map(p => [p.id, p.version]))
     const open = mine.filter(
+      // Withdrawn items too (#82): an older page may still answer one, and
+      // `refusalOf` refuses it where that page shows it.
       item =>
-        isLive(item) &&
+        item.status === 'open' &&
         (versions.has(item.id) || (item.row?.artifact === target.url && item.row.version !== undefined)),
     )
     if (open.length > 0) {
@@ -436,7 +438,7 @@ async function once($: EngineInterface, kind: PassKind): Promise<Outcome> {
       }
       for (const [id, row] of answers) {
         const item = file.items.find(one => one.id === id)
-        if (item === undefined || !isLive(item)) continue
+        if (item === undefined || item.status !== 'open') continue
         if (resolveOwner(file.sessions, item.session_id) !== me) continue
         if (item.response_refused?.answer_id === row.answer_id) continue
         const verdict = refusalOf(item, row, file)

@@ -335,18 +335,24 @@ async function sync($: EngineInterface, deliver: boolean) {
     }
     const sends: Array<{ item: Item; claim: string }> = []
     if (deliver) {
+      // First, every answer this version would not have taken (#82), written
+      // straight into the file by an older pane: to a withdrawn item, or one
+      // that came after an item still open or was blocked. Not delivered: the
+      // item opens again, refused. All before any claim, so an item after
+      // another is never sent ahead of the check on the one before it.
       for (const item of file.items) {
         if (item.status === 'open' || item.delivered) continue
         if (!isMineToDeliver(file, item, me)) continue
-        // An answer this version would not have taken (#82): written straight
-        // into the file by an older pane, to an item that came after one still
-        // open or was blocked. Not delivered: the item opens again, refused.
         const claimHeld =
           item.delivering_at !== undefined &&
           (isOwnClaim(item.delivering_by)
             ? inFlight.get(item.id) === item.delivering_by
             : now - item.delivering_at <= CLAIM_STALE_MS)
-        if (!claimHeld && reopenRefused(file, item, now, freshAnswerId())) continue
+        if (!claimHeld) reopenRefused(file, item, now, freshAnswerId())
+      }
+      for (const item of file.items) {
+        if (item.status === 'open' || item.delivered) continue
+        if (!isMineToDeliver(file, item, me)) continue
         if (item.type === 'ack' && item.notify_on_done !== true) {
           item.delivered = true
           continue

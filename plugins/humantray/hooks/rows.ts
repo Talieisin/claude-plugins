@@ -409,7 +409,8 @@ export function pickArtifact(candidates: Array<{ url: string; meta: MetaPage }>)
 /** Whether a finished (or withdrawn) row may be pruned: delivered or owing no line, and with no refusal standing. */
 export const isPrunableRow = (row: ItemRow): boolean =>
   !isLive(row) &&
-  row.response_refused === undefined &&
+  // A refusal on a withdrawn row stands for nothing: no answer will be taken (#82).
+  (row.withdrawn !== undefined || row.response_refused === undefined) &&
   (row.delivered || !isLineDue({ status: row.status, type: row.type, notify_on_done: row.notify_on_done } as Item))
 
 /**

@@ -318,6 +318,38 @@ describe('refusals never wedge an item', () => {
     expect(w.submits).toEqual([])
   })
 
+  test('an answer to an item that comes after one still open is refused, and the row says why (#82)', async ($, on) => {
+    const { w, a } = linked(on)
+    await $.session.start(START_EVENT)
+    const first = answerOf<{ id: string; short: string }>(await $.tool.call(approve))
+    const next = answerOf<{ id: string }>(await $.tool.call({ ...approve, question: 'And then?', after: [first.short] })).id
+    await settle(w)
+    expect(a.doc(URL_A, `items/${next}`)?.data).toMatchObject({ waiting_on: [first.id] })
+    expect(a.doc(URL_A, `items/${first.id}`)?.data).toMatchObject({ blocks: 1 })
+    a.put(URL_A, `responses/${next}`, response(next))
+    await $.turn.start(TURN_START)
+    await settle(w)
+    const item = w.store().items.find(one => one.id === next)
+    expect(item?.status).toBe('open')
+    expect(item?.response_refused?.reason).toMatch(new RegExp(`comes after ${first.short}`))
+    expect(w.submits).toEqual([])
+  })
+
+  test('an answer to a withdrawn item is refused where the page shows it, and never delivered (#82)', async ($, on) => {
+    const { w, a } = linked(on)
+    await $.session.start(START_EVENT)
+    const added = answerOf<{ id: string; short: string }>(await $.tool.call(approve))
+    await settle(w)
+    await $.tool.call({ tool: 'mcp__humantray__humantray_withdraw', ids: [added.short], reason: 'plan changed' })
+    await settle(w)
+    expect(a.doc(URL_A, `items/${added.id}`)?.data).toMatchObject({ status: 'open', withdrawn: { reason: 'plan changed' } })
+    a.put(URL_A, `responses/${added.id}`, response(added.id))
+    await $.turn.start(TURN_START)
+    await settle(w)
+    expect(w.submits).toEqual([])
+    expect(w.store().items[0]?.response_refused?.reason).toMatch(/withdrawn/)
+  })
+
   test("a newer page's answer is refused with a reason the page shows", async ($, on) => {
     const { w, a } = linked(on)
     await $.session.start(START_EVENT)

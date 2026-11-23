@@ -646,7 +646,7 @@ export const withdrawItems = (
     if (found.length > 1) return { error: `${ref} matches more than one item; give the full id` }
     const [item] = found as [Item]
     if (item.withdrawn !== undefined) return { error: `${item.short} is already withdrawn` }
-    if (item.status !== 'open') return { error: `${item.short} is already answered: its answer is on its way to you` }
+    if (item.status !== 'open') return { error: `${item.short} is already answered: its answer comes to you (or has)` }
     if (!chosen.includes(item)) chosen.push(item)
   }
   const ids = new Set(chosen.map(item => item.id))
@@ -675,22 +675,36 @@ export const withdrawItems = (
  * 0.2.10 included, needs one there. True when it reopened the item.
  */
 export const reopenRefused = (file: StoreFile, item: Item, now: number, answerId: string): boolean => {
+  if (item.status === 'open' || item.delivered) return false
+  // Withdrawn, then answered on an older pane (it still draws the card as
+  // open): never delivered, whatever it comes after. Back to withdrawn as it
+  // was, finished and owing nothing.
+  if (item.withdrawn !== undefined) {
+    clearAnswer(item, now, answerId, `${item.short} was withdrawn by its session.`)
+    item.delivered = true
+    return true
+  }
   // Only an answer that owes a line, and so is not prunable until delivered:
   // a silent ack's answer tells the session nothing, and is left as it is.
-  if (item.status === 'open' || item.delivered || !isLineDue(item)) return false
+  if (!isLineDue(item)) return false
   const state = dependencyState(file, item)
   let reason: string
   if (state.blocked !== undefined) reason = blockedText(state.blocked)
   else if (state.waiting_on.length > 0) {
     reason = `This was answered before ${state.waiting_on.map(shortOf).join(', ')}, which it comes after: answer ${state.waiting_on.length === 1 ? 'that' : 'those'} first, then this again.`
   } else return false
+  clearAnswer(item, now, answerId, reason)
+  item.delivered = false
+  return true
+}
+
+/** Takes an answer back off an item, leaving it open with the refusal recorded (`reopenRefused`). */
+const clearAnswer = (item: Item, now: number, answerId: string, reason: string): void => {
   item.response_refused = { answer_id: item.answer_id ?? answerId, reason, at: now }
   item.status = 'open'
-  item.delivered = false
   for (const field of ['response', 'response_at', 'response_by', 'answer_id', 'delivering_at', 'delivering_by', 'delivered_at'] as const) {
     delete item[field]
   }
-  return true
 }
 
 /** What a card's control asks for. */

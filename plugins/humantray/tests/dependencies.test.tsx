@@ -221,10 +221,16 @@ describe('pruning and adoption keep what an item comes after', () => {
     version: 1,
   })
 
-  test('rows: a needed prerequisite is kept; a withdrawn row is pruned', () => {
+  test('rows: a needed prerequisite is kept; a withdrawn row is pruned, a refusal on it or not', () => {
     const rows = [
       rowOf(done(1, 'done', { response_at: START - 2 * HOUR })),
-      rowOf(open(2, { withdrawn: { at: START - HOUR, reason: 'r' }, delivered: true })),
+      rowOf(
+        open(2, {
+          withdrawn: { at: START - HOUR, reason: 'r' },
+          delivered: true,
+          response_refused: { answer_id: 'answer_0123456789abcd', reason: 'withdrawn', at: START },
+        }),
+      ),
       rowOf(open(3, { after: [id(1)] })),
       rowOf(finished(1, { response_at: START })),
     ]
@@ -283,6 +289,30 @@ describe('the answer checks on every route', () => {
     expect(await ui.find({ key: `${second.id}:done` })).toBeDefined()
     await ui.unmount()
     expect(w.store().items.find(item => item.id === second.id)?.waiting_on).toBeUndefined()
+  })
+
+  test('a withdrawn item answered on an older pane: reopened as withdrawn, never delivered', () => {
+    const file = fileOf([
+      done(1, 'done', { withdrawn: { at: START - 5, reason: 'gone' }, delivered: false }),
+      stored({ id: id(2), type: 'ack', status: 'acknowledged', response: { acknowledged: true }, withdrawn: { at: START - 5, reason: 'gone' }, delivered: false }),
+    ])
+    for (const item of file.items) {
+      expect(reopenRefused(file, item, START, 'rfresh0123456789ab')).toBe(true)
+      expect(item).toMatchObject({ status: 'open', delivered: true, response_refused: { reason: `${item.short} was withdrawn by its session.` } })
+      expect(item.response).toBeUndefined()
+      expect(isLive(item)).toBe(false)
+    }
+  })
+
+  test('an older pane wrote an answer to a withdrawn item: the session never receives it', async ($, on) => {
+    const w = world(on)
+    w.seed(fileOf([done(1, 'done', { withdrawn: { at: START - 5, reason: 'gone' }, delivered: false, response_at: START - 1 })]))
+    await $.session.start(START_EVENT)
+    await w.drain()
+    await $.turn.complete(TURN)
+    await w.drain()
+    expect(w.submits).toEqual([])
+    expect(w.store().items[0]).toMatchObject({ status: 'open', delivered: true, withdrawn: { reason: 'gone' } })
   })
 
   test('an older pane wrote an answer to a waiting item: the session never receives it, and the card says why', async ($, on) => {

@@ -150,6 +150,7 @@ describe('the pure rules', () => {
     ['open, our own response row: kept, stored', { kind: 'row', row: open, response: { ok: response(ID1, { answer_id: entry.answer_id, by: 'viewer' }) as never } }, { keep: true, state: 'stored' }],
     ['open, another answer counting: settled', { kind: 'row', row: open, response: { ok: response(ID1) as never } }, { keep: false }],
     ['open, nothing yet: kept, sent', { kind: 'row', row: open }, { keep: true, state: 'sent' }],
+    ['withdrawn by its session (#82): settled, with a toast', { kind: 'row', row: rowOf({ id: ID1, type: 'approve', withdrawn: { at: START, reason: 'gone' }, delivered: true }) }, { keep: false, toast: 'HT-IEW01: withdrawn by its session' }],
     ['the store says no such document: settled', { kind: 'missing' }, { keep: false }],
     ['a read that failed or a row unreadable: unchanged', { kind: 'unknown' }, { keep: true, state: 'sent' }],
   ]
