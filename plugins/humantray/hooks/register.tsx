@@ -338,17 +338,22 @@ async function sync($: EngineInterface, deliver: boolean) {
       // First, every answer this version would not have taken (#82), written
       // straight into the file by an older pane: to a withdrawn item, or one
       // that came after an item still open or was blocked. Not delivered: the
-      // item opens again, refused. All before any claim, so an item after
-      // another is never sent ahead of the check on the one before it.
-      for (const item of file.items) {
-        if (item.status === 'open' || item.delivered) continue
-        if (!isMineToDeliver(file, item, me)) continue
-        const claimHeld =
-          item.delivering_at !== undefined &&
-          (isOwnClaim(item.delivering_by)
-            ? inFlight.get(item.id) === item.delivering_by
-            : now - item.delivering_at <= CLAIM_STALE_MS)
-        if (!claimHeld) reopenRefused(file, item, now, freshAnswerId())
+      // item opens again, refused. All before any claim, and again until a
+      // pass reopens nothing: reopening one item can lock another that comes
+      // after it, wherever it sits in the file (a bump or an adoption puts a
+      // prerequisite after its dependants).
+      for (let pass = 0, reopened = true; reopened && pass <= file.items.length; pass++) {
+        reopened = false
+        for (const item of file.items) {
+          if (item.status === 'open' || item.delivered) continue
+          if (!isMineToDeliver(file, item, me)) continue
+          const claimHeld =
+            item.delivering_at !== undefined &&
+            (isOwnClaim(item.delivering_by)
+              ? inFlight.get(item.id) === item.delivering_by
+              : now - item.delivering_at <= CLAIM_STALE_MS)
+          if (!claimHeld && reopenRefused(file, item, now, freshAnswerId())) reopened = true
+        }
       }
       for (const item of file.items) {
         if (item.status === 'open' || item.delivered) continue

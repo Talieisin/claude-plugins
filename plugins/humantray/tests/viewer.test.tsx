@@ -413,6 +413,23 @@ describe('reading and drawing', () => {
     expect(text).toContain('last active')
   })
 
+  vtest('a row that comes after one still open is drawn without controls; a withdrawn row goes to History (#82)', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', after: [ID3], waiting_on: [ID3] }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'approve', withdrawn: { at: START - 5, reason: 'plan changed' }, delivered: true }))
+    put(a, URL_A, rowOf({ id: ID3, type: 'do', blocks: 1 }))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    const text = await shownText(ui)
+    expect(text).toContain(`HT-${ID1.slice(-5)} comes after HT-${ID3.slice(-5)}: answer that first.`)
+    expect(await ui.find({ key: `v:${ID1}:approve` })).toBeUndefined()
+    expect(await ui.find({ key: `v:${ID3}:done` })).toBeDefined()
+    expect(text).not.toContain(`Question ${ID2.slice(-2)}`)
+    await ui.press({ key: 'humantray:tab:history' })
+    expect(await shownText(ui)).toContain('withdrawn: plan changed')
+    await ui.unmount()
+  })
+
   vtest('a failed read keeps the last data, marked stale', async ($, on) => {
     const { w, a } = viewerWorld(on)
     put(a, URL_A, rowOf({ id: ID1, type: 'approve' }))

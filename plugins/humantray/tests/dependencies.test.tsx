@@ -307,6 +307,17 @@ describe('the answer checks on every route', () => {
     }
   })
 
+  test('older-pane answers out of turn: a later item reopened makes one before it in the file wait too, and neither is sent', async ($, on) => {
+    const w = world(on)
+    // C (first in the file) comes after B (last), which comes after A, still open.
+    const answered = { status: 'done' as const, response: { outcome: 'done' as const }, response_at: START - 1, delivered: false }
+    w.seed(fileOf([open(3, { after: [id(2)], ...answered }), open(1), open(2, { after: [id(1)], ...answered })]))
+    await $.session.start(START_EVENT)
+    await w.drain()
+    expect(w.submits).toEqual([])
+    expect(w.store().items.filter(item => item.status === 'open').map(item => item.id).sort()).toEqual([id(1), id(2), id(3)])
+  })
+
   test('an older pane wrote an answer to a withdrawn item: the session never receives it', async ($, on) => {
     const w = world(on)
     w.seed(fileOf([done(1, 'done', { withdrawn: { at: START - 5, reason: 'gone' }, delivered: false, response_at: START - 1 })]))

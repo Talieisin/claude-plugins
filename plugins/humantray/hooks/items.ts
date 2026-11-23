@@ -877,8 +877,9 @@ export const isLineDue = (item: Item): boolean =>
  * answered, carrying no claim, either delivered or owing no line, and owing
  * the store no push. Such an
  * item stays prunable and its order key never moves: no code path makes it
- * open, owed or claimed again (`reopenRefused` reopens only an answer still
- * owed its line, which is not prunable). One write still reaches it: the owner's pass
+ * open, owed or claimed again (`reopenRefused` reopens an answer still owed
+ * its line, which is not prunable, or takes one back off a withdrawn item,
+ * which leaves it finished and prunable). One write still reaches it: the owner's pass
  * flags an acknowledged `ack` that owes no line as `delivered`, which leaves
  * it prunable. So a prune decided on any read is still right when written.
  */
