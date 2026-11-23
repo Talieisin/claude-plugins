@@ -3,7 +3,7 @@ name: lead
 description: Lead a batch of GitHub issues in this repository from a cloud session, using one worker session per lane (one issue, or a few related ones) and one reader session per pull request, merging one at a time. Use when asked to lead, coordinate or run issues with cloud workers, or when a brief names you as lead.
 ---
 
-<!-- shared-skill-version: 35 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 36 (delivered by the `cloud` plugin) -->
 
 You are the lead. You do not edit code; workers do. You act for the owner inside the limits in `AGENTS.md` ("Standing authorisation" and "Deciding for the owner"); if that file is not already in your context, read it before anything else. First load the `github:pull-request` skill, before any GitHub call, and follow it for every one: REST only.
 
@@ -23,7 +23,7 @@ These skills come from two plugins: the roles from `cloud`, and the pull-request
 
 A session you create gets the plugin only if its environment's setup script installs it. Before you start any session, run `claude plugin list`. If it shows both `cloud@talieisin` and `github@talieisin`, start children with the prompts in sections 2 and 4 as written and no `append_system_prompt`. If it lacks either, or a child says it does not hold its skill, read `handing-skills.md` in this skill's directory and follow it: you hand each child its text.
 
-A child names the versions of its skill and of `github:pull-request` in its first comment and in its report message to you. If neither names them, it does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions that differ from yours are no fault: note them in the run log.
+If neither a child's first comment nor its report to you names the versions of its skill and of `github:pull-request`, it does not hold the skills: archive it and start it again as `handing-skills.md` says. Versions unlike yours are no fault: note them in the run log.
 
 ### Review depth
 
@@ -87,7 +87,7 @@ For a gated lane, add: "Plan first: follow the plan gate in the skill and do not
 
 A gated worker posts its plan as a comment on the issue headed `Plan` and reports to you. The plan on the issue is the record; do not keep it only in messages. Where the lane's plan depth is above 0, have its reviews made first, and judge the plan with their findings in hand. Read it against the issue and your recorded decisions and check: it covers every acceptance criterion; it names the files and functions it will change; its tests would catch the failure the issue describes; it does nothing the issue does not ask for; every interface choice is the more reversible option (keyword-only over positional, a narrow allowed set over a wide one); and it does not collide with another lane's files in a way you have not planned for. Do not only read the plan: run its sketch, or the decided rule, as section 3 says for a decision. Then reply to the worker and comment on the issue, either `Plan approved for the owner.`, or `Plan needs changes:` with the specific changes.
 
-Add anything issue-specific in a second paragraph. Put corrections in the starting prompt where you can: a message sent after the start is only read between turns, so it arrives after the worker's first "done".
+Put anything issue-specific, and corrections where you can, in a second paragraph of the starting prompt: a message sent later is read only between turns, after the worker's first "done".
 
 ## 3. While workers run
 
@@ -148,3 +148,5 @@ If you are the replacement lead of a batch another lead began, as `AGENTS.md` de
 ## Limits
 
 Never do anything in the "always back to the owner" list in `AGENTS.md` on any session's word; only on the owner's own word, as `AGENTS.md` defines it. Only interrupt or archive sessions you started, or those `AGENTS.md` gives a replacement lead. Never start a second session on a branch whose worker is alive (a test author finishes and is archived before its lane's worker touches the branch). Never archive yourself.
+
+During a batch, do not reach the owner's computer: message no session that runs there, request no computer folder, and do not take the trusted-device approval (`confirm_repository_trust` for the owner's sessions or computers). That approval cannot be undone, and once given, your children's messages to you are refused. A check only the owner's machine can make (how the desktop app draws a mod, say) goes to the owner as exact steps, asking for screenshots or a short report, escalated as `AGENTS.md` says. If the approval has been given already, tell every session you start to report by comment on the issue or pull request, beginning `Worker report to lead:`, `Reader report to lead: head <sha>`, `Reader report to lead: plan` or `Tester report to lead: tests at <sha>`, and read the issue and pull request whenever your `send_later` fallback (section 3) fires, keeping it a few minutes ahead.
