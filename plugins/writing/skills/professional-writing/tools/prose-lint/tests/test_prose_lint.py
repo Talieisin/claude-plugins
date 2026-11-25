@@ -549,3 +549,15 @@ def test_report_average_at_the_boundary_is_not_below(tmp_path):
     f.write_text(' '.join([' '.join(['Word'] * 15) + '.'] * 20 + [' '.join(['Word'] * 14) + '.']) + '\n')
     assert 'averaging 15.0 words' in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
     assert 'below the range' not in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+
+
+# ---- issue 90: nits from the reader report on PR 89 ---------------------------------------
+
+def test_cluster_in_one_sentence_is_reported_once():
+    text = 'Costs were cut because demand fell, because staff left and because the lease ended.\n'
+    assert ids(text).count('justification-cluster') == 1
+
+
+def test_trailing_and_or_is_read_whole():
+    fs = [f for f in pl.check_text('- A passport and/or\n- A driving licence\n', CFG) if f.rule == 'bullet-trailing-conjunction']
+    assert len(fs) == 1 and "'and/or'" in fs[0].message

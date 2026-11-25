@@ -3,7 +3,7 @@ name: professional-writing
 description: Standards and a working method for formal British professional writing (reports, proposals, technical and policy documents, briefings and correspondence). Covers establishing the substance before drafting, drafting craft, register and diction, structure, punctuation, commercial framing, preserving meaning through revision, and comparative review. Use when drafting, rewriting, editing or reviewing formal documents (reports, proposals, policy documents, briefings, letters), unless a client or house style says otherwise; not for commit messages, pull requests, issue comments or code comments, unless asked.
 ---
 
-<!-- professional-writing-skill-version: 2 -->
+<!-- professional-writing-skill-version: 3 -->
 
 # Professional writing
 
@@ -43,15 +43,15 @@ From the brief and the source material, identify the substance the text must con
 - The numbers, dates and facts
 - The members of every list, each of which must appear.
 
-Do not supply an actor, a number or a condition that the source leaves unstated. Record it as a question for the author instead. Mark any position you are proposing rather than recording, so that the author can accept or reject it.
+Do not supply an actor, a number or a condition that the source leaves unstated: put it to the author as a question. Where the brief asks you to recommend or propose, write the proposal in the text. Mark it as proposed ("we propose", "the recommended option") so that the author can accept or reject it. Questions for the author go in your reply beside the document, never inside it: the document goes to its readers.
 
 ### 3. Draft
 
-- Elaborate where the reader needs it: explanation, connection and context are welcome.
-- Never add a commitment, a party, a condition, a number or a fact that the source does not give. Where the text seems to need one, list it as a question after the draft for the author to answer.
-- Keep to a length ceiling where one is set. A first draft usually improves by losing a third of its length.
+- Elaborate where the reader needs it: explanation, connection and context are welcome. Arithmetic on figures the source gives (a total, an annual cost) and general explanation of how something works are elaboration.
+- Never add a commitment, a party, a condition, a number or a fact about the matter in hand that the source does not give. Where the text seems to need one, put it to the author as a question.
+- Keep to a length ceiling where one is set. A first draft usually improves by losing a third of its length. Where the source cannot fill a set length, stop short and tell the author. Reaching it would take padding or invention.
 
-If you can, write two drafts independently and keep the better one (see Review, below). The second draft costs little and often finds a better structure.
+Two drafts of the same brief often find a better structure than one, but only if they are independent. Where another writer or agent is available, have it write the second draft from the brief alone and a third compare the two blind (see Review, below). Keep the better one. One writer cannot draft independently of itself, so without that help, skip this step.
 
 ### 4. Check meaning, then readability
 
@@ -59,7 +59,7 @@ Every rewrite loses some meaning, and condensing loses most. Whenever you revise
 
 - **Contradictions first:** any statement that conflicts with the previous version, with the source, or with another statement in the revision
 - **Each point of substance:** kept (meaning, modal and conditions intact), weakened (a qualifier, actor, modal, condition or list member lost or changed) or dropped
-- **Each addition:** an *elaboration* (adds no commitment, party, condition, number or fact) or a *new claim*.
+- **Each addition:** an *elaboration* (adds no commitment, party, condition, number or fact about the matter in hand; arithmetic on given figures and general explanation count as elaboration) or a *new claim*.
 
 Fix contradictions, restore anything weakened or dropped unintentionally, and keep elaborations unless they contradict or weaken a point. Put every new claim to the author as a question. Then turn to readability and the checklist at the end of this skill.
 
@@ -74,7 +74,7 @@ These are the positive rules. Applying them makes most of the prohibitions later
 - **Choose the literal verb for the relationship, and do not let one verb do several jobs.** A report *includes* a summary; a contract *requires* approval; a cellar *contains* the wine; a timetable *lists* the departures. All-purpose verbs (*carry*, *hold*, *sit*, *rest on*) are the commonest failure.
 - **Give each sentence one governing claim.** When the actor, condition or stage changes, start a new sentence rather than repunctuating an overloaded one.
 - **Express actions as finite verbs, not abstract nouns.** "We will interview the applicants", not "the interviewing of the applicants will be undertaken". Words ending in *-ion* and *-ment* are a warning sign, not a prohibition: *approval*, *payment* and *agreement* are correct where they name a thing rather than disguise an action.
-- **Vary sentence length deliberately.** Aim for an average of 15 to 20 words. Treat 25 words as a prompt to check the structure, not as a limit: a long sentence with one clear subject and one claim is better than two clipped ones. A run of short, flat sentences reads as abrupt and staccato to a professional reader.
+- **Vary sentence length deliberately.** Aim for an average of 15 to 20 words. Treat 25 words as a prompt to check the structure, not as a limit: a long sentence with one clear subject and one claim is better than two clipped ones. Do not split sentences only to clear a length warning. A run of short, flat sentences reads as abrupt and staccato to a professional reader.
 - **Write connected prose.** Each sentence should follow from the last. Reasoning set out as a series of separate assertions reads worse than the same reasoning with its connections stated.
 - **Attach each qualification to the commitment it limits**, using *if*, *until*, *may* or *subject to*, rather than stating it separately and leaving the reader to connect them.
 - **Choose diction that is plain but professionally precise.** The correction for abstraction is the exact word, not the simplest one: *define*, *specify*, *assess*, *establish* and *populate* are right where *say*, *check*, *fill in* and *sort out* are too casual. Replacing a tortuous phrase with a conversational one is a different failure, not a fix.
@@ -97,12 +97,13 @@ These are the positive rules. Applying them makes most of the prohibitions later
 ## Structure and layout
 
 - **Put the point first.** Open each section with what its subject is, why the reader needs it and who is responsible. Do not open with a list's lead-in, a term not yet defined, a cross-reference, an exclusion, a restatement of the heading or "this section describes".
+- **A document that asks for a decision opens with the decision sought.** Set out what is requested as a list, with each item's amount where it has one and any totals worked out from the figures given. Put a matter that is still undecided under its own heading, and say that it is open.
 - **A paragraph develops one idea.** Avoid a one-line paragraph left dangling after a longer one, unless the sentence does a job of its own, such as a closing request. More than five or six sentences usually means two ideas.
 - **Use lists for genuine enumerations**: three or more substantial parallel items, tests, stages or requirements. A short series that reads naturally in the sentence ("cost, time and quality") stays in the sentence. A verbless chain of clauses separated by semicolons is a list in disguise and should be bulleted.
 - **Do not over-fragment.** Structure helps up to a point and then hurts. Too many bullets, headings or very short paragraphs break an argument that needs connected prose. Fragmented text can look easy to scan while reading worse. When in doubt, write the paragraph.
 - **Introduce a list without counting it**, unless the number is itself a defined thing (the four seasons, the two halves of a match). "The price depends on:" rather than "Three factors determine the price:".
 - **Headings** are in sentence case, short and descriptive. Do not add subheadings for a few paragraphs, and never use an abbreviation in a heading.
-- **Tables** suit comparisons and attribute lists; prose suits reasoning. Give tables and figures numbered captions and refer to each in the text.
+- **Tables** suit comparisons and attribute lists; prose suits reasoning. Give tables and figures numbered captions and refer to each in the text. A comparison table may repeat figures the text gives, so that the reader can set them side by side; the reasoning stays in the text.
 - **Figures illustrate what the text explains.** A figure has labels and short annotations only; it never restates the body text, and the text never relies on the figure alone to make a point.
 - **Cross-references** are built into the sentence that makes the point ("The appendix gives each recipe"), not appended as pointers ("…, as described in Section 4").
 
@@ -194,7 +195,7 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 - Intermediate fragment items take no terminal punctuation; the final item ends with a full stop.
 - Items that are full sentences keep their full stops.
 - Items in a list are grammatically parallel and each completes the lead-in.
-- No "and" or "or" at the end of the penultimate item: say in the lead-in how the items combine ("all of the following", "one of the following"). Where the conjunction carries a condition the lead-in does not express, as in an eligibility list, keep it.
+- No "and" or "or" at the end of the penultimate item. Where the way the items combine changes the meaning (alternatives, conditions, eligibility), say so in the lead-in ("all of the following", "one of the following"). Where the conjunction carries a condition the lead-in does not express, keep it.
 
 ### Abbreviations and capitals
 
@@ -204,7 +205,7 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 
 ### Numbers and dates
 
-- One to ten in words, 11 and above in figures; figures throughout for money, measurements and percentages with a symbol. Commas in numbers above 999.
+- One to ten in words, 11 and above in figures; figures throughout for money, measurements (durations and effort included: 5 minutes, 3 days) and percentages with a symbol. Commas in numbers above 999.
 - "Per cent" in prose; % beside a figure in tables.
 - Never begin a sentence with a figure.
 - Dates as 24 April 2026; spans written out ("1 April 2026 to 31 March 2027"); the 24-hour clock where precision is needed.
@@ -260,7 +261,8 @@ Before issuing any text, re-read it against this list. Style drifts over a long 
 
 **Meaning**
 - Every mandatory point present, with its modal verbs and conditions intact
-- No commitment, party, condition, number or fact the source did not give; each such gap listed as a question
+- No commitment, party, condition, number or fact the source did not give; each such gap put to the author as a question, beside the document
+- No length reached by padding: short of a set length the source cannot fill, with the author told
 - No contradictions within the text or with the source.
 
 **Sentences**
@@ -280,5 +282,5 @@ Before issuing any text, re-read it against this list. Style drifts over a long 
 - The point first in each section and paragraph
 - Lists only for genuine enumerations; no verbless semicolon chains; no announced counts unless the number is itself a defined thing
 - Not over-fragmented: no dangling one-line paragraphs, no needless subheadings
-- Bullets capitalised; fragment items unpunctuated until the final full stop; full-sentence items keep their full stops; how the items combine stated in the lead-in
-- Tables and figures captioned, referred to in the text, and not restating it.
+- Bullets capitalised; fragment items unpunctuated until the final full stop; full-sentence items keep their full stops; how the items combine stated in the lead-in where it changes the meaning
+- Tables and figures captioned, referred to in the text, and not restating its reasoning (a comparison table may repeat its figures).

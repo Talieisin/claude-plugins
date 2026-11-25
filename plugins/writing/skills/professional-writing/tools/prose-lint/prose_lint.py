@@ -442,7 +442,7 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             if enabled(cfg, 'bullet-trailing-punctuation') and re.search(r'[;,]$', raw):
                 add(len(t), 'bullet-trailing-punctuation', 'rule', excerpt(t, 50),
                     'Bullet items take no trailing semicolon or comma; only the final item ends with a full stop.')
-            tail = re.search(r'([;,]?)\s*\b(and|or)$', t.rstrip())
+            tail = re.search(r'([;,]?)\s*\b(and/or|and|or)$', t.rstrip())
             if enabled(cfg, 'bullet-trailing-conjunction') and tail and not u.last_item:
                 punct = f" and the {'semicolon' if tail.group(1) == ';' else 'comma'}" if tail.group(1) else ''
                 add(len(t), 'bullet-trailing-conjunction', 'warn', excerpt(t, 50),
@@ -470,12 +470,16 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             if enabled(cfg, 'long-paragraph') and len(ss) > rd['paragraph_max_sentences']:
                 add(0, 'long-paragraph', 'warn', excerpt(t[ss[0][0]:ss[0][1]]),
                     f'{len(ss)} sentences: check whether the paragraph develops more than one idea.', True)
+            def spread(ms: list) -> bool:
+                """Whether the matches fall in more than one sentence; if not, the
+                sentence-level finding already names them."""
+                return len({next((a for a, b in ss if a <= m.start() < b), -1) for m in ms}) > 1
             passives = list(pp.finditer(t)) if enabled(cfg, 'passive-cluster') else []
-            if len(passives) >= rd['passives_per_paragraph']:
+            if len(passives) >= rd['passives_per_paragraph'] and spread(passives):
                 add(passives[0].start(), 'passive-cluster', 'warn', first_hit(passives[0]),
                     f'{len(passives)} passives in this paragraph, the first here: name who acts.', True)
             reasons = list(jp.finditer(t)) if enabled(cfg, 'justification-cluster') else []
-            if len(reasons) >= rd['justification_per_paragraph']:
+            if len(reasons) >= rd['justification_per_paragraph'] and spread(reasons):
                 add(reasons[0].start(), 'justification-cluster', 'warn', first_hit(reasons[0]),
                     f"{len(reasons)} 'so that' or 'because' clauses in this paragraph, the first here: "
                     "keep only the reasons the reader needs.", True)
