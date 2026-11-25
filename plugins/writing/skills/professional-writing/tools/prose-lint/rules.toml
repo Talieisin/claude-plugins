@@ -1,0 +1,364 @@
+# Built-in rules for prose-lint.
+#
+# Every rule reports; none rewrites. "rule" severity marks a convention that is absolute
+# in formal British professional writing; "warn" marks a pattern that is usually, but not
+# always, wrong. Judge each warning in context.
+#
+# A project can change any of this with its own rules file (prose_lint.py --rules FILE):
+# see README.md. Patterns are Python regular expressions, case-sensitive unless they
+# begin with (?i).
+
+# Off by default: too often right in commercial prose ("two suppliers hold licences"). A
+# project that wants it lists it under enable = [...] in its rules file.
+disable = ["all-purpose-verb"]
+
+[files]
+extensions = [".md", ".markdown", ".txt"]
+
+[hook]
+max_findings = 10
+
+[readability]
+sentence_max_words = 25
+paragraph_max_sentences = 5
+passives_per_sentence = 3      # the skill allows two in a sentence
+passives_per_paragraph = 4
+justification_per_sentence = 2
+justification_per_paragraph = 3
+justification_pattern = '\b(?:so that|because|in order to)\b'
+passive_pattern = '\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?\w+(?:ed|en)\b'
+
+# ---- Dashes -----------------------------------------------------------------------------
+
+[[rule]]
+id = "em-dash"
+severity = "rule"
+pattern = '—'
+message = "Em dash: never used. Prefer a full stop; otherwise a comma, colon or parentheses."
+
+[[rule]]
+id = "en-dash-spaced"
+severity = "rule"
+pattern = '(?:(?<=\s)|^)–|–(?=\s|$)'
+message = "Spaced en dash: never used. Use a full stop, comma, colon (in a heading) or parentheses; write ranges unspaced (6–8)."
+
+[[rule]]
+id = "double-hyphen-dash"
+severity = "rule"
+pattern = '(?<=\S )-{2,3}(?= \S)'
+message = "Two hyphens used as a dash: never used. Use a full stop, comma, colon or parentheses."
+
+# ---- Mechanics --------------------------------------------------------------------------
+
+[[rule]]
+id = "contraction"
+severity = "rule"
+pattern = '''(?i)\b(?:[a-z]+n['’]t|(?:should|would|could|must|might)['’]ve|i['’]m|(?:i|you|we|they|who)['’](?:ve|re|ll|d)|(?:it|that|there|here|what|who|he|she)['’](?:s|ll|d)|let['’]s)\b'''
+message = "Contraction: write the words in full in a formal document ('do not', not 'don't')."
+
+[[rule]]
+id = "latin-abbreviation"
+severity = "rule"
+pattern = '(?i)\b(?:e\.g|i\.e)\.'
+message = "Write 'for example' or 'such as' for e.g., and 'that is' or 'in other words' for i.e."
+
+[[rule]]
+id = "stakeholder"
+severity = "rule"
+pattern = '(?i)\bstakeholders?\b'
+message = "Name the group (the residents, the site managers, the parents' committee) instead of 'stakeholder'."
+
+# ---- Plain English ----------------------------------------------------------------------
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\bfacilitat(?:e|es|ed|ing|ion)\b'
+message = "'Facilitate': write 'help', 'enable' or 'arrange'."
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\butili[sz](?:e|es|ed|ing|ation)\b'
+exclude = '(?i)\b(?:CPU|processor|memory)\s+utili[sz]ation\b'
+message = "'Utilise': write 'use'."
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\b(?:in order to|so as to)\b'
+message = "'In order to' and 'so as to': write 'to'."
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\b(?:prior to|subsequent to)\b'
+message = "'Prior to' and 'subsequent to': write 'before' and 'after'."
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\b(?:commenc(?:e|es|ed|ing|ement)|initiat(?:e|es|ed|ing))\b'
+message = "'Commence' and 'initiate': write 'begin' or 'start'."
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\bgoing forward\b'
+message = "'Going forward': write 'from now on' or 'in future', or omit it."
+
+[[rule]]
+id = "plain-english"
+severity = "warn"
+pattern = '(?i)\bstreamlin(?:e|es|ed|ing)\b'
+message = "'Streamline': say what changes, for example 'simplify' or 'shorten'."
+
+# ---- Register ---------------------------------------------------------------------------
+
+[[rule]]
+id = "marketing"
+severity = "warn"
+pattern = '(?i)\b(?:world-class|cutting-edge|best-in-class|state-of-the-art|game-chang\w*|unlock(?:s|ed|ing)?|empower(?:s|ed|ing|ment)?|synerg(?:y|ies|istic)|holistic(?:ally)?|journey)\b'
+exclude = '(?i)\b(?:train|rail|car|bus|coach|flight|return|outward|homeward|daily|long|short) journey|\bjourneys?\s+(?:time|times|home|to|from|of\s+\d)'
+message = "Marketing or promotional language: state the specific property or result."
+
+[[rule]]
+id = "significance-inflation"
+severity = "warn"
+pattern = '(?i)\b(?:critical(?:ly)?|fundamental(?:ly)?|importantly|it is important to note(?: that)?)\b'
+exclude = '(?i)\bcritical (?:path|care|illness|condition|mass|acclaim)\b|\b(?:safety|life|time)-critical\b'
+message = "Significance inflation: state the consequence that makes it important."
+
+[[rule]]
+id = "evaluative-filler"
+severity = "warn"
+# Only the evaluative constructions: "this settles the question", not "settle the invoice".
+pattern = '(?i)\b(?:(?:this|that|it|which|what|distinction|difference|point|choice|order|timing|detail|context) matters|(?:this|that|it|which) settles (?:it|the (?:question|matter|issue|point|debate))|stands? as)\b'
+message = "'Matters', 'settles' and 'stands as' used evaluatively: say plainly what follows, or who decides."
+
+[[rule]]
+id = "abstraction-as-actor"
+severity = "warn"
+# Only decisions and responsibilities, which belong to a person or body: a model may predict
+# and a process may take ten minutes. Lower case only: a capitalised name ('the Framework'
+# as a document's title) is a document, which may define and state things.
+pattern = '\b(?:[Tt]he|[Tt]his|[Tt]hat|[Ii]ts|[Oo]ur) (?:method|methodology|framework|process|approach|policy|procedure) (?:decides|ensures|approves|agrees|chooses|identifies|prepares|reviews|keeps|maintains|manages|owns|delivers|drives|believes|wants|seeks|aims|recognises|recognizes|guarantees|commits)\b'
+message = "An abstraction acting as a person: a method or framework does not decide or prepare anything. Name the party that acts, or make the thing acted on the subject."
+
+[[rule]]
+id = "all-purpose-verb"
+severity = "warn"
+pattern = '(?i)\b(?:hold|holds|holding|held|carry|carries|carrying|carried|sit|sits|sitting|sat)\b'
+exclude = '(?i)\bon hold\b|\bholding compan(?:y|ies)\b|\b(?:hold|holds|holding|held)\s+(?:a\s+|an\s+|the\s+|regular\s+|weekly\s+|monthly\s+)?(?:meetings?|workshops?|sessions?|reviews?|elections?|interviews?|conferences?)\b|\bcarr(?:y|ies|ied|ying)\s+out\b'
+message = "All-purpose verb: prefer the literal word (stores, contains, includes, is located), unless the term is meaningful here."
+
+[[rule]]
+id = "figurative"
+severity = "warn"
+pattern = '(?i)\b(?:rests? on|resting on|sits? on|sits? between|falls? away|travels? with|pinned to|cuts? across|hand(?:s|ed)? back|turns? on|north star|low-hanging fruit|move the needle|deep dive|boil(?:s|ing)? the ocean|de-risk\w*)\b'
+exclude = '(?i)\bsits? on (?:the |a |an )?(?:board|committee|panel|council|bench|steering group)\b|\bturns? on (?:the |a )?(?:lights?|power|heating|tap|machine|device)\b'
+message = "Figurative or jargon shorthand: use the ordinary literal word ('depends on', 'no longer applies', 'affects', 'return', 'reduce the risk of')."
+
+# ---- Words and phrases that mark machine-written prose ---------------------------------
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bdelv(?:e|es|ed|ing)\b'
+message = "'Delve': write 'examine', 'explore' or 'consider'."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\btapestr(?:y|ies)\b'
+message = "'Tapestry': name the actual mix of things."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bseamless(?:ly)?\b'
+message = "'Seamless': say what is preserved, for example 'without interruption to the service'."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bpivotal\b'
+message = "'Pivotal': write 'central' or 'decisive', or say what depends on it."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bcrucial(?:ly)?\b'
+message = "'Crucial': write 'essential' or 'important', or say why."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\blandscapes?\b'
+exclude = '(?i)\blandscape\s+(?:orientation|format|page|pages|mode|layout|view|architect\w*|design\w*)\b|\bin\s+landscape\b'
+message = "'Landscape' (figurative): name the thing, for example 'the current systems' or 'the market'."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bload-bearing\b'
+message = "'Load-bearing' (figurative): write 'essential', or say what depends on it."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bnavigat(?:e|es|ed|ing)\b'
+exclude = '(?i)\bnavigat(?:e|es|ed|ing)\s+to\b'
+message = "'Navigate' (figurative): write 'manage', 'work through' or 'resolve'."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bleverag(?:e|es|ed|ing)\b'
+# The noun is not flagged: after a determiner or adjective, before "over" or "with", or as
+# what something gives ("gives the buyer leverage").
+exclude = '(?i)\b(?:the|a|an|of|no|any|some|its|their|our|his|her|your|this|that|much|more|less|little|greater|commercial|negotiating|financial|has|have|had)\s+leverage\b|\bleverage\s+(?:over|with)\b|\bgiv(?:e|es|en|ing)\b(?:\s+[\w-]+){0,3}?\s+leverage\b'
+message = "'Leverage' as a verb: write 'use' or 'draw on'."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '''(?i)\b(?:it is|it['’]s) worth noting\b'''
+message = "'It is worth noting': state the point."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '''(?i)\bin today['’]s\b'''
+message = "'In today's': write 'currently', or give the date."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bserves as\b'
+message = "'Serves as': write 'is' or 'acts as'."
+
+[[rule]]
+id = "ai-tell"
+severity = "warn"
+pattern = '(?i)\bboast(?:s|ed|ing)?\b'
+message = "'Boasts': write 'has' or 'includes'."
+
+# ---- Chat-interface leftovers -----------------------------------------------------------
+# Checked with tables, image lines and link destinations kept: a leftover in a table cell
+# or a caption is still a leftover. Code, comments and front matter stay masked.
+
+[[rule]]
+id = "chatbot-artefact"
+severity = "rule"
+pattern = '\b[Aa]s an AI\b(?!-)|(?i:\bI hope this helps\b)|\bCertainly!'
+message = "Chat-interface leftover: remove it."
+
+[[rule]]
+id = "chatbot-artefact"
+severity = "rule"
+pattern = '【|〖|\[cite(?::[^\]]*)?\]|\bturn\d+(?:search|news|view|file|fetch)\d*\b|\boai_?cite\w*|\bcontentReference\['
+message = "Citation marker left by a chat interface: replace it with a real reference or remove it."
+
+[[rule]]
+id = "chatbot-artefact"
+severity = "rule"
+pattern = '(?i:\[insert\b)|\[(?:TBD|TODO)\b|\{\{'
+message = "Unfilled placeholder: supply the text, or record the gap explicitly."
+
+[[rule]]
+id = "chatbot-artefact"
+severity = "rule"
+pattern = '[?&](?:utm_[a-z]+|fbclid|gclid|msclkid|mc_cid|mc_eid|_hsenc|_hsmi|igshid)='
+message = "Tracking parameter in a URL, typically left by a chat interface: remove it."
+
+# ---- Announced counts -------------------------------------------------------------------
+
+[counts]
+severity = "warn"
+pattern = '(?i)\b(?:two|three|four|five|six|seven|eight|nine|ten)\s+(?:[a-z-]+\s+){0,2}?[a-z-]{2,}s\b'
+# Quantities with a unit are measurements, not announced lists.
+units = '(?i)^(?:years?|months?|weeks?|days?|hours?|minutes?|seconds?|times|decades?|centuries|quarters|percent|per cent|pounds|dollars|euros|millions?|billions?|thousands?|hundreds?|metres|meters|kilometres|miles|litres|grams|kilograms|tonnes)$'
+# Numbers that are themselves defined things, for example '(?i)\bseven wonders\b'.
+# Add a project's own in its rules file.
+allow = []
+message = "Announced count: introduce the list without the number, unless the number is itself a defined thing or a requirement ('supply two of the following')."
+
+# ---- En dash between words --------------------------------------------------------------
+# An unspaced en dash between two words that are not identifiers ("the client–supplier
+# interface"). An identifier contains a digit, or is an upper-case code such as R-A, so
+# ranges such as 6–8, 2026–27, R1–R14 and R-A–R-D do not fire. Tables and figure labels
+# are masked, where the form is acceptable.
+
+[en_dash_words]
+severity = "warn"
+identifier = '^(?:.*\d.*|[A-Z][A-Z0-9]*(?:[-./][A-Z0-9]+)*)$'
+message = "En dash between two words: in prose write 'from X to Y', 'between X and Y' or 'the interface between X and Y'. Keep the en dash for ranges of numbers, dates and identifiers, and for tables and figure labels."
+
+# ---- British spelling -------------------------------------------------------------------
+# House spelling: British with -ise (Oxford -ize is also British, so the message names the
+# owner's choice). American forms with their British equivalents. Disable the 'us-spelling'
+# rule where a document follows American convention. "Program" is deliberately absent:
+# it is the British spelling for software.
+
+[spelling]
+severity = "warn"
+# Verbs taking -ise in British spelling, by stem: organ- gives organise, organised,
+# organising, organisation and so on. Size, seize, prize and capsize never match.
+ize_stems = [
+  "organ", "recogn", "real", "priorit", "minim", "maxim", "summar", "emphas",
+  "categor", "optim", "standard", "author", "final", "special", "normal", "visual",
+  "custom", "modern", "central", "decentral", "character", "formal", "general",
+  "industrial", "initial", "legal", "local", "mobil", "monet", "operational",
+  "personal", "rational", "revolution", "sanit", "synchron", "util", "apolog",
+  "critic", "harmon", "jeopard", "memor", "scrutin", "subsid", "symbol",
+  "sympath", "agon", "capital", "commercial", "digit", "fertil",
+  "global", "hospital", "immun", "internal", "item", "patron",
+]
+[spelling.words]
+color = "colour"
+colors = "colours"
+colored = "coloured"
+behavior = "behaviour"
+behaviors = "behaviours"
+behavioral = "behavioural"
+favor = "favour"
+favorable = "favourable"
+favorite = "favourite"
+honor = "honour"
+labor = "labour"
+neighbor = "neighbour"
+endeavor = "endeavour"
+center = "centre"
+centers = "centres"
+centered = "centred"
+theater = "theatre"
+fiber = "fibre"
+defense = "defence"
+offense = "offence"
+catalog = "catalogue"
+catalogs = "catalogues"
+dialog = "dialogue (except a software dialog box)"
+analyze = "analyse"
+analyzed = "analysed"
+analyzing = "analysing"
+paralyze = "paralyse"
+traveled = "travelled"
+traveling = "travelling"
+modeled = "modelled"
+modeling = "modelling"
+labeled = "labelled"
+labeling = "labelling"
+canceled = "cancelled"
+canceling = "cancelling"
+fulfill = "fulfil"
+fulfills = "fulfils"
+enrollment = "enrolment"
+gray = "grey"
+aging = "ageing"
+acknowledgment = "acknowledgement"
+percent = "per cent"
+toward = "towards"
+math = "maths"
+advisor = "adviser"
+advisors = "advisers"

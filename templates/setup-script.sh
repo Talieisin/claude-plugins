@@ -14,6 +14,8 @@ claude plugin install github@talieisin >> "$LOG" 2>&1 || echo "github plugin ins
 # Optional: the humantray plugin, a tray for what sessions need from you. It runs
 # code (a hooks module) in every session; see docs/setup.md before you turn it on.
 # claude plugin install humantray@talieisin >> "$LOG" 2>&1 || echo "humantray plugin install failed" >> "$LOG"
+# Optional: the writing plugin, the professional-writing skill and its linter. No hooks.
+# claude plugin install writing@talieisin >> "$LOG" 2>&1 || echo "writing plugin install failed" >> "$LOG"
 date -u +"SETUP_SCRIPT_RAN %FT%TZ" >> "$LOG"
 
 # The environment caches the result of this script. After a new release of the
