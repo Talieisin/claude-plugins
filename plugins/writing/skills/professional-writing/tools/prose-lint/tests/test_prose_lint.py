@@ -549,3 +549,60 @@ def test_report_average_at_the_boundary_is_not_below(tmp_path):
     f.write_text(' '.join([' '.join(['Word'] * 15) + '.'] * 20 + [' '.join(['Word'] * 14) + '.']) + '\n')
     assert 'averaging 15.0 words' in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
     assert 'below the range' not in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+
+
+# ---- issue 90: nits from the reader report on PR 89 ---------------------------------------
+
+def test_cluster_in_one_sentence_is_reported_once():
+    text = 'Costs were cut because demand fell, because staff left and because the lease ended.\n'
+    assert ids(text).count('justification-cluster') == 1
+
+
+def test_trailing_and_or_is_read_whole():
+    fs = [f for f in pl.check_text('- A passport and/or\n- A driving licence\n', CFG) if f.rule == 'bullet-trailing-conjunction']
+    assert len(fs) == 1 and "'and/or'" in fs[0].message
+
+
+def test_one_sentence_cluster_still_reported_when_only_the_paragraph_threshold_is_met(tmp_path):
+    extra = tmp_path / 'p.toml'
+    extra.write_text('[readability]\njustification_per_sentence = 4\n')
+    text = 'Costs were cut because demand fell, because staff left and because the lease ended.\n'
+    assert ids(text, pl.load_rules([str(extra)])).count('justification-cluster') == 1
+
+
+def test_readme_lists_each_rule_once():
+    readme = (TOOL.parent / 'README.md').read_text(encoding='utf-8')
+    rows = [l for l in readme.split('\n') if l.startswith('| ') and '`' in l and not l.startswith('| Option')]
+    assert sum('`bullet-trailing-conjunction`' in r for r in rows) == 1
+    assert any(r.startswith('| Mechanics') and '`bullet-trailing-conjunction`' in r for r in rows)
+
+
+# ---- Copilot's review of PR 91 -----------------------------------------------------------
+
+def test_report_summary_for_mixed_conjunction_endings(tmp_path):
+    f = tmp_path / 'r.md'
+    f.write_text('- Approve the funding and\n- Sign the contract; or\n- Close the file\n')
+    out = run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+    assert pl.RULE_SUMMARY['bullet-trailing-conjunction'] in out
+    assert 'and/or' in pl.RULE_SUMMARY['bullet-trailing-conjunction']
+    assert 'where that changes the meaning' in pl.RULE_SUMMARY['bullet-trailing-conjunction']
+
+
+FOUR_PASSIVES = 'The cake was baked, the hall was decorated, the room was cleaned and the door was painted.\n'
+
+
+def test_passive_cluster_in_one_sentence_is_reported_once():
+    assert ids(FOUR_PASSIVES).count('passive-cluster') == 1
+
+
+def test_passive_cluster_reported_when_only_the_paragraph_threshold_is_met(tmp_path):
+    extra = tmp_path / 'p.toml'
+    extra.write_text('[readability]\npassives_per_sentence = 5\n')
+    fs = [f for f in pl.check_text(FOUR_PASSIVES, pl.load_rules([str(extra)])) if f.rule == 'passive-cluster']
+    assert len(fs) == 1 and 'paragraph' in fs[0].message
+
+
+def test_passive_cluster_across_sentences_is_a_paragraph_finding():
+    text = 'The cake was baked and the hall was decorated. The room was cleaned and the door was painted.\n'
+    fs = [f for f in pl.check_text(text, CFG) if f.rule == 'passive-cluster']
+    assert len(fs) == 1 and 'paragraph' in fs[0].message

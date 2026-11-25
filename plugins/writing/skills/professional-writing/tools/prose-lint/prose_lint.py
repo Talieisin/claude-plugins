@@ -442,12 +442,12 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             if enabled(cfg, 'bullet-trailing-punctuation') and re.search(r'[;,]$', raw):
                 add(len(t), 'bullet-trailing-punctuation', 'rule', excerpt(t, 50),
                     'Bullet items take no trailing semicolon or comma; only the final item ends with a full stop.')
-            tail = re.search(r'([;,]?)\s*\b(and|or)$', t.rstrip())
+            tail = re.search(r'([;,]?)\s*\b(and/or|and|or)$', t.rstrip())
             if enabled(cfg, 'bullet-trailing-conjunction') and tail and not u.last_item:
                 punct = f" and the {'semicolon' if tail.group(1) == ';' else 'comma'}" if tail.group(1) else ''
                 add(len(t), 'bullet-trailing-conjunction', 'warn', excerpt(t, 50),
-                    f"A list item ending in '{tail.group(2)}': drop it{punct} and say in the lead-in how the items "
-                    "combine ('all of the following', 'one of the following'), unless the conjunction carries a "
+                    f"A list item ending in '{tail.group(2)}': drop it{punct}, and where the way the items combine "
+                    "changes the meaning, say so in the lead-in ('one of the following'). Keep it if it carries a "
                     "condition the lead-in does not.")
         for a, b in ss:
             s = t[a:b]
@@ -470,12 +470,17 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             if enabled(cfg, 'long-paragraph') and len(ss) > rd['paragraph_max_sentences']:
                 add(0, 'long-paragraph', 'warn', excerpt(t[ss[0][0]:ss[0][1]]),
                     f'{len(ss)} sentences: check whether the paragraph develops more than one idea.', True)
+            def spread(ms: list, per_sentence: int) -> bool:
+                """False when every match is in one sentence that has already been
+                reported for them, so the paragraph finding would repeat it."""
+                in_one = len({next((a for a, b in ss if a <= m.start() < b), -1) for m in ms}) == 1
+                return not (in_one and len(ms) >= per_sentence)
             passives = list(pp.finditer(t)) if enabled(cfg, 'passive-cluster') else []
-            if len(passives) >= rd['passives_per_paragraph']:
+            if len(passives) >= rd['passives_per_paragraph'] and spread(passives, rd['passives_per_sentence']):
                 add(passives[0].start(), 'passive-cluster', 'warn', first_hit(passives[0]),
                     f'{len(passives)} passives in this paragraph, the first here: name who acts.', True)
             reasons = list(jp.finditer(t)) if enabled(cfg, 'justification-cluster') else []
-            if len(reasons) >= rd['justification_per_paragraph']:
+            if len(reasons) >= rd['justification_per_paragraph'] and spread(reasons, rd['justification_per_sentence']):
                 add(reasons[0].start(), 'justification-cluster', 'warn', first_hit(reasons[0]),
                     f"{len(reasons)} 'so that' or 'because' clauses in this paragraph, the first here: "
                     "keep only the reasons the reader needs.", True)
@@ -694,7 +699,7 @@ RULE_SUMMARY = {
     'passive-cluster': 'Passives clustered in a sentence or paragraph: name who acts.',
     'justification-cluster': "'So that' and 'because' clauses clustered: keep only the reasons the reader needs.",
     'us-spelling': 'Spellings other than the house style: each finding gives the house form.',
-    'bullet-trailing-conjunction': "List items ending in 'and' or 'or': say in the lead-in how the items combine.",
+    'bullet-trailing-conjunction': "List items ending in 'and', 'or' or 'and/or': drop the conjunction, and say in the lead-in how the items combine where that changes the meaning.",
 }
 
 
