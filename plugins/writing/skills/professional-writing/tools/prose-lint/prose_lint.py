@@ -127,6 +127,7 @@ class Unit:
     starts: list[tuple[int, int]]  # (offset in text, source line) for each source line
     raw: str                       # the Markdown source of the block
     before_list: bool = False      # a list follows directly: the block is a list's lead-in
+    last_item: bool = False        # a bullet that is the last item of its list
 
     def line_at(self, offset: int) -> int:
         line = self.first
@@ -212,6 +213,8 @@ def parse(text: str, plain: bool = False) -> Parsed:
             unit = inline_unit(tok, kind, directives)
             unit.before_list = (i + 2 < len(tokens) and tokens[i + 1].type == 'paragraph_close'
                                 and tokens[i + 2].type in ('bullet_list_open', 'ordered_list_open'))
+            if kind == 'bullet':
+                unit.last_item = last_item(tokens, i - 2)
             units.append(unit)
     # Inline code and inline comments are not checked for leftovers either. Both may span
     # lines (within a paragraph), so they are masked on the joined text, keeping line breaks.
@@ -220,6 +223,15 @@ def parse(text: str, plain: bool = False) -> Parsed:
     joined = re.sub(r'(`+)(?!`)(?:(?!\n[ \t]*\n).)*?(?<!`)\1(?!`)', keep_lines, joined, flags=re.S)
     joined = re.sub(r'<!--.*?-->', keep_lines, joined, flags=re.S)
     return Parsed(units, directives, joined.split('\n'))
+
+
+def last_item(tokens: list, start: int) -> bool:
+    """Whether the list item opened at tokens[start] is the last of its list."""
+    level = tokens[start].level
+    for j in range(start + 1, len(tokens)):
+        if tokens[j].type == 'list_item_close' and tokens[j].level == level:
+            return not (j + 1 < len(tokens) and tokens[j + 1].type == 'list_item_open')
+    return True
 
 
 def inline_unit(tok, kind: str, directives: list) -> Unit:
@@ -409,8 +421,9 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             continue
 
         ss = sentence_spans(t)
-        # An announced count is a number in a list's lead-in: the last sentence, ending in a colon.
-        if enabled(cfg, 'announced-count') and ss and u.before_list and t.rstrip().endswith(':'):
+        # An announced count is a number in a list's lead-in: the last sentence of the block
+        # directly above a list, whether it ends in a colon or a full stop.
+        if enabled(cfg, 'announced-count') and ss and u.before_list:
             a0, b0 = ss[-1]
             for m in re.finditer(counts['pattern'], t[a0:b0]):
                 if any(al.search(t[max(0, a0 + m.start() - 5): a0 + m.end() + 5]) for al in allow):
@@ -427,6 +440,13 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             if enabled(cfg, 'bullet-trailing-punctuation') and re.search(r'[;,]$', raw):
                 add(len(t), 'bullet-trailing-punctuation', 'rule', excerpt(t, 50),
                     'Bullet items take no trailing semicolon or comma; only the final item ends with a full stop.')
+            tail = re.search(r'([;,]?)\s*\b(and|or)$', raw)
+            if enabled(cfg, 'bullet-trailing-conjunction') and tail and not u.last_item:
+                punct = f" and the {'semicolon' if tail.group(1) == ';' else 'comma'}" if tail.group(1) else ''
+                add(len(t), 'bullet-trailing-conjunction', 'warn', excerpt(t, 50),
+                    f"A list item ending in '{tail.group(2)}': drop it{punct} and say in the lead-in how the items "
+                    "combine ('all of the following', 'one of the following'), unless the conjunction carries a "
+                    "condition the lead-in does not.")
         for a, b in ss:
             s = t[a:b]
             if u.kind == 'para' and enabled(cfg, 'semicolon-chain') and s.count(';') >= 2:
@@ -440,15 +460,23 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
                 add(a, 'justification-cluster', 'warn', excerpt(s),
                     "Several 'so that' or 'because' clauses: keep only the reasons the reader needs.")
         if u.kind == 'para' and ss:
-            head = excerpt(t[ss[0][0]:ss[0][1]])
+            def first_hit(pat: re.Pattern) -> tuple[int, str]:
+                """The offset and text of the sentence holding the pattern's first match."""
+                m = pat.search(t)
+                a, b = next(((a, b) for a, b in ss if a <= m.start() < b), ss[0])
+                return a, excerpt(t[a:b])
             if enabled(cfg, 'long-paragraph') and len(ss) > rd['paragraph_max_sentences']:
-                add(0, 'long-paragraph', 'warn', head,
+                add(0, 'long-paragraph', 'warn', excerpt(t[ss[0][0]:ss[0][1]]),
                     f'{len(ss)} sentences: check whether the paragraph develops more than one idea.')
             if enabled(cfg, 'passive-cluster') and len(pp.findall(t)) >= rd['passives_per_paragraph']:
-                add(0, 'passive-cluster', 'warn', head, 'Many passives in this paragraph: name who acts.')
+                a, ex = first_hit(pp)
+                add(a, 'passive-cluster', 'warn', ex,
+                    f'{len(pp.findall(t))} passives in this paragraph, the first here: name who acts.')
             if enabled(cfg, 'justification-cluster') and len(jp.findall(t)) >= rd['justification_per_paragraph']:
-                add(0, 'justification-cluster', 'warn', head,
-                    "Many 'so that' or 'because' clauses in this paragraph.")
+                a, ex = first_hit(jp)
+                add(a, 'justification-cluster', 'warn', ex,
+                    f"{len(jp.findall(t))} 'so that' or 'because' clauses in this paragraph, the first here: "
+                    "keep only the reasons the reader needs.")
 
     off = suppressions(parsed.directives, text.split('\n'))
     found = [f for f in found if not (off.get(f.line) and (ALL in off[f.line] or f.rule in off[f.line]))]
@@ -544,7 +572,8 @@ def deletion_lines(lines: list[str], n: int, gone: list[str]) -> set[int]:
     neighbours changes neither."""
     out: set[int] = set()
     at = lambda k: lines[k - 1] if 1 <= k <= len(lines) else ''
-    if gone[-1].strip() and at(n).strip() and not BLOCK_START.match(at(n)):
+    if (gone[-1].strip() and not re.match(r'\s*#{1,6}(\s|$)', gone[-1])
+            and at(n).strip() and not BLOCK_START.match(at(n))):   # a heading never runs on
         out.add(n)
     if gone[0].strip() and at(n - 1).strip() and not BLOCK_START.match(gone[0]):
         out.add(n - 1)
@@ -639,7 +668,8 @@ def parse_args(argv: list[str]) -> dict:
 
 BUILTIN_STRUCTURAL = [
     ('en-dash-words', 'warn'), ('announced-count', 'warn'), ('us-spelling', 'warn'),
-    ('bullet-lower-case', 'rule'), ('bullet-trailing-punctuation', 'rule'), ('semicolon-chain', 'warn'),
+    ('bullet-lower-case', 'rule'), ('bullet-trailing-punctuation', 'rule'), ('bullet-trailing-conjunction', 'warn'),
+    ('semicolon-chain', 'warn'),
     ('long-sentence', 'warn'), ('long-paragraph', 'warn'), ('passive-cluster', 'warn'), ('justification-cluster', 'warn'),
 ]
 
@@ -655,6 +685,16 @@ def list_rules(cfg: dict) -> None:
         print(f'{rid:30} {state}')
 
 
+RULE_SUMMARY = {
+    'long-sentence': 'Sentences over the length threshold: check whether each is one claim or several.',
+    'long-paragraph': 'Paragraphs over the sentence threshold: check whether each develops more than one idea.',
+    'passive-cluster': 'Passives clustered in a sentence or paragraph: name who acts.',
+    'justification-cluster': "'So that' and 'because' clauses clustered: keep only the reasons the reader needs.",
+    'us-spelling': 'Spellings other than the house style: each finding gives the house form.',
+    'bullet-trailing-conjunction': "List items ending in 'and' or 'or': say in the lead-in how the items combine.",
+}
+
+
 def report(results: list[tuple[str, list[Finding]]], lengths: list[int]) -> None:
     groups: dict[str, list[tuple[str, Finding]]] = {}
     for p, fs in results:
@@ -664,17 +704,22 @@ def report(results: list[tuple[str, list[Finding]]], lengths: list[int]) -> None
     print(f'# Prose lint report\n\n{total} findings in {len(results)} files.\n')
     if lengths:
         mean = sum(lengths) / len(lengths)
+        low = (' That is below the range: look for runs of short sentences to join, and do not split '
+               'more long ones only to clear warnings.') if mean < 15 else ''
         print(f'Sentences: {len(lengths)}, averaging {mean:.1f} words (the skill aims for 15 to 20); '
-              f'longest {max(lengths)}; {sum(n > 25 for n in lengths)} over 25 words.\n')
+              f'longest {max(lengths)}; {sum(n > 25 for n in lengths)} over 25 words.{low}\n')
     print('| Rule | Severity | Findings | Files |\n|---|---|---|---|')
     ordered = sorted(groups.items(), key=lambda kv: -len(kv[1]))
     for rule, items in ordered:
         print(f'| {rule} | {items[0][1].severity} | {len(items)} | {len({p for p, _ in items})} |')
     for rule, items in ordered:
-        print(f'\n## {rule} ({len(items)})\n\n{items[0][1].message}\n')
+        # One message for the rule where its findings share one; otherwise each finding's own.
+        same = len({f.message for _, f in items}) == 1
+        heading = items[0][1].message if same else RULE_SUMMARY.get(rule, 'Each finding says what to check.')
+        print(f'\n## {rule} ({len(items)})\n\n{heading}\n')
         step = max(1, len(items) // 8)
         for p, f in items[::step][:8]:
-            print(f'- `{p}:{f.line}` {f.excerpt}')
+            print(f'- `{p}:{f.line}` {f.excerpt}' + ('' if same else f' ({f.message})'))
 
 
 def main(argv: list[str]) -> int:
