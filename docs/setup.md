@@ -167,8 +167,10 @@ Only if sessions write reports, proposals, policy documents or letters for you.
 The optional [`writing` plugin](../plugins/writing/README.md) carries the
 `professional-writing` skill and its linter. It has no hooks, so installing it
 runs nothing by itself. In a cloud environment, uncomment its line in
-[`templates/setup-script.sh`](../templates/setup-script.sh); on your own
-computer, `claude plugin install writing@talieisin`.
+[`templates/setup-script.sh`](../templates/setup-script.sh), and make sure the
+environment's allowed domains include `pypi.org` and `files.pythonhosted.org`:
+the linter installs its one package from there when it first runs, and cannot
+start without them. On your own computer, `claude plugin install writing@talieisin`.
 
 ### A tray for what sessions need from you: `humantray`
 
