@@ -699,7 +699,7 @@ RULE_SUMMARY = {
     'passive-cluster': 'Passives clustered in a sentence or paragraph: name who acts.',
     'justification-cluster': "'So that' and 'because' clauses clustered: keep only the reasons the reader needs.",
     'us-spelling': 'Spellings other than the house style: each finding gives the house form.',
-    'bullet-trailing-conjunction': "List items ending in 'and' or 'or': say in the lead-in how the items combine.",
+    'bullet-trailing-conjunction': "List items ending in 'and', 'or' or 'and/or': drop the conjunction, and say in the lead-in how the items combine where that changes the meaning.",
 }
 
 

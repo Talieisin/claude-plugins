@@ -45,7 +45,7 @@ From the brief and the source material, identify the substance the text must con
 - The numbers, dates and facts
 - The members of every list, each of which must appear.
 
-Do not supply an actor, a number or a condition that the source leaves unstated: put it to the author as a question. Where the brief asks you to recommend or propose, write the proposal in the text. Mark it as proposed ("we propose", "the recommended option") so that the author can accept or reject it. Questions for the author go in your reply beside the document, never inside it: the document goes to its readers.
+Do not supply an actor, a number or a condition that the source leaves unstated: put it to the author as a question. A figure worked out from figures the source gives is not new. Where the brief asks you to recommend or propose, write the proposal in the text. Mark it as proposed ("we propose", "the recommended option") so that the author can accept or reject it. Questions for the author go in your reply or in comments beside the text, never in the text the readers will read.
 
 ### 3. Draft
 
@@ -53,7 +53,7 @@ Do not supply an actor, a number or a condition that the source leaves unstated:
 - Never add a commitment, a party, a condition, a number or a fact about the matter in hand that the source does not give. The exception is a proposal the brief asks for, marked as proposed. Where the text seems to need one, put it to the author as a question.
 - Keep to a length ceiling where one is set. A first draft usually improves by losing a third of its length. Where the source cannot fill a set length, stop short and tell the author. Reaching it would take padding or invention.
 
-Two drafts of the same brief often find a better structure than one, but only if they are independent. Where both a second writer and a separate comparer are available, give the second writer the same brief and source material but not your draft. Have the comparer judge the two blind (see Review, below), and keep the better one. Otherwise, skip this step.
+Two drafts of the same brief often find a better structure than one, but only if they are independent. Where both a second writer and a separate comparer are available, give the second writer the same brief and source material but not your draft. Have the comparer judge the two blind (see Review, below), and keep the better one. Otherwise, write one draft.
 
 ### 4. Check meaning, then readability
 
@@ -99,7 +99,7 @@ These are the positive rules. Applying them makes most of the prohibitions later
 ## Structure and layout
 
 - **Put the point first.** Open each section with what its subject is, why the reader needs it and who is responsible. Do not open with a list's lead-in, a term not yet defined, a cross-reference, an exclusion, a restatement of the heading or "this section describes".
-- **A document that asks for a decision opens with the decision sought.** Where the request has several parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading.
+- **A document that asks for a decision opens with the decision sought.** Where the request has three or more parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading.
 - **A paragraph develops one idea.** Avoid a one-line paragraph left dangling after a longer one, unless the sentence does a job of its own, such as a closing request. More than five or six sentences usually means two ideas.
 - **Use lists for genuine enumerations**: three or more substantial parallel items, tests, stages or requirements. A short series that reads naturally in the sentence ("cost, time and quality") stays in the sentence. A verbless chain of clauses separated by semicolons is a list in disguise and should be bulleted.
 - **Do not over-fragment.** Structure helps up to a point and then hurts. Too many bullets, headings or very short paragraphs break an argument that needs connected prose. Fragmented text can look easy to scan while reading worse. When in doubt, write the paragraph.
@@ -207,7 +207,7 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 
 ### Numbers and dates
 
-- One to ten in words, 11 and above in figures; figures throughout for money, measurements (durations and effort included: 5 minutes, 3 days) and percentages with a symbol. Commas in numbers above 999.
+- One to ten in words, 11 and above in figures; figures throughout for money, measurements and percentages with a symbol. A precise duration or amount of effort is a measurement (5 minutes, 3 days); a general span such as "three years" stays in words. Commas in numbers above 999.
 - "Per cent" in prose; % beside a figure in tables.
 - Never begin a sentence with a figure.
 - Dates as 24 April 2026; spans written out ("1 April 2026 to 31 March 2027"); the 24-hour clock where precision is needed.
@@ -264,7 +264,7 @@ Before issuing any text, re-read it against this list. Style drifts over a long 
 **Meaning**
 - Every mandatory point present, with its modal verbs and conditions intact
 - No commitment, party, condition, number or fact about the matter in hand that the source did not give, except a requested proposal marked as such
-- Each gap put to the author as a question, beside the document; arithmetic on given figures and general explanation kept as elaboration
+- Each gap put to the author as a question, beside the text; arithmetic on given figures and general explanation kept as elaboration
 - No length reached by padding: short of a set length the source cannot fill, with the author told
 - No contradictions within the text or with the source.
 
