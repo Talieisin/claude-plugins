@@ -35,7 +35,7 @@
       "name": "writing",
       "description": "The professional-writing skill: standards and a working method for formal British professional prose, with prose-lint, a linter for the checks a pattern can find. No hooks; the linter runs when a session or you call it, and a repository may wire it up as its own hook.",
       "source": "./plugins/writing",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }

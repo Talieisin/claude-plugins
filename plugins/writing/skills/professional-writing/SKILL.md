@@ -3,7 +3,7 @@ name: professional-writing
 description: Standards and a working method for formal British professional writing (reports, proposals, technical and policy documents, briefings and correspondence). Covers establishing the substance before drafting, drafting craft, register and diction, structure, punctuation, commercial framing, preserving meaning through revision, and comparative review. Use when drafting, rewriting, editing or reviewing formal documents (reports, proposals, policy documents, briefings, letters), unless a client or house style says otherwise; not for commit messages, pull requests, issue comments or code comments, unless asked.
 ---
 
-<!-- professional-writing-skill-version: 1 -->
+<!-- professional-writing-skill-version: 2 -->
 
 # Professional writing
 

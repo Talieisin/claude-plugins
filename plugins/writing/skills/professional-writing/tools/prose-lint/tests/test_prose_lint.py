@@ -479,3 +479,73 @@ def test_dialog_rule_follows_us_spelling_disable(tmp_path):
     extra = tmp_path / 'p.toml'
     extra.write_text('disable = ["us-spelling"]\n')
     assert ids('The dialog continues.\n', pl.load_rules([str(extra)])) == []
+
+
+# ---- issue 87: found in review and trial ----------------------------------------------------
+
+def test_report_gives_each_finding_its_own_detail(tmp_path):
+    f = tmp_path / 'r.md'
+    f.write_text(' '.join(['word'] * 28) + '.\n\n' + ' '.join(['word'] * 35) + '.\n')
+    out = run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+    assert pl.RULE_SUMMARY['long-sentence'] in out
+    assert '(28 words:' in out and '(35 words:' in out
+
+
+def test_report_flags_an_average_below_the_range(tmp_path):
+    f = tmp_path / 'r.md'
+    f.write_text('We met. We agreed. We left early.\n')
+    assert 'below the range' in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+
+
+def test_paragraph_cluster_quotes_the_sentence_that_holds_it():
+    text = 'We met on Monday.\nWe agreed because it was late. We left because it rained. We stayed because they asked.\n'
+    fs = [f for f in pl.check_text(text, CFG) if f.rule == 'justification-cluster']
+    assert len(fs) == 1 and fs[0].line == 2 and fs[0].excerpt.startswith('We agreed because')
+
+
+def test_lead_in_ending_with_a_full_stop_is_a_lead_in():
+    assert 'announced-count' in ids('Two events this year show the limits.\n\n- The flood\n- The fire\n')
+
+
+def test_trailing_conjunction_on_an_item_other_than_the_last():
+    got = ids('- Approve the funding; and\n- Sign the contract, or\n- Close the file.\n')
+    assert got.count('bullet-trailing-conjunction') == 2
+    assert 'bullet-trailing-conjunction' not in ids('- Approve the funding\n- Sign it and\n')
+    assert 'bullet-trailing-conjunction' not in ids('- A passport\n- A driving licence\n')
+
+
+def test_trailing_conjunction_in_a_nested_list():
+    got = ids('- The first, or\n  - A detail\n  - Another detail\n- The second\n')
+    assert got.count('bullet-trailing-conjunction') == 1
+
+
+def test_deleting_a_heading_above_its_paragraph_does_not_report_it(tmp_path):
+    patch = {'structuredPatch': [{'oldStart': 1, 'oldLines': 2, 'newStart': 1, 'newLines': 1,
+                                  'lines': ['-# Old heading', " We don't agree."]}]}
+    assert hook(tmp_path, "We don't agree.\n", '', patch) == []
+
+
+def test_trailing_conjunction_behind_markup():
+    assert 'bullet-trailing-conjunction' in ids('- Approve the funding; **and**\n- Sign it\n')
+    assert 'bullet-trailing-conjunction' in ids('- Approve the funding and <!-- note -->\n- Sign it\n')
+
+
+def test_suppression_above_a_paragraph_covers_its_paragraph_finding():
+    text = ('<!-- prose-lint-disable-next-line justification-cluster -->\nWe met on Monday and talked.\n'
+            'We agreed because it was late. We left because it rained. We stayed because they asked.\n')
+    assert 'justification-cluster' not in ids(text)
+
+
+def test_paragraph_cluster_points_at_a_late_clause():
+    text = ('We met on Monday. ' + 'The committee then reviewed the long list of outstanding items at some length '
+            'and agreed because it was late.\nWe left because it rained. We stayed because they asked.\n')
+    fs = [f for f in pl.check_text(text, CFG) if f.rule == 'justification-cluster' and 'paragraph' in f.message]
+    assert len(fs) == 1 and 'because' in fs[0].excerpt
+
+
+def test_report_average_at_the_boundary_is_not_below(tmp_path):
+    f = tmp_path / 'r.md'
+    # 20 sentences of 15 words and one of 14: an average of 14.95, shown as 15.0.
+    f.write_text(' '.join([' '.join(['Word'] * 15) + '.'] * 20 + [' '.join(['Word'] * 14) + '.']) + '\n')
+    assert 'averaging 15.0 words' in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+    assert 'below the range' not in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
