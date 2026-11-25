@@ -561,3 +561,17 @@ def test_cluster_in_one_sentence_is_reported_once():
 def test_trailing_and_or_is_read_whole():
     fs = [f for f in pl.check_text('- A passport and/or\n- A driving licence\n', CFG) if f.rule == 'bullet-trailing-conjunction']
     assert len(fs) == 1 and "'and/or'" in fs[0].message
+
+
+def test_one_sentence_cluster_still_reported_when_only_the_paragraph_threshold_is_met(tmp_path):
+    extra = tmp_path / 'p.toml'
+    extra.write_text('[readability]\njustification_per_sentence = 4\n')
+    text = 'Costs were cut because demand fell, because staff left and because the lease ended.\n'
+    assert ids(text, pl.load_rules([str(extra)])).count('justification-cluster') == 1
+
+
+def test_readme_lists_each_rule_once():
+    readme = (TOOL.parent / 'README.md').read_text(encoding='utf-8')
+    rows = [l for l in readme.split('\n') if l.startswith('| ') and '`' in l and not l.startswith('| Option')]
+    assert sum('`bullet-trailing-conjunction`' in r for r in rows) == 1
+    assert any(r.startswith('| Mechanics') and '`bullet-trailing-conjunction`' in r for r in rows)

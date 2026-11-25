@@ -15,6 +15,8 @@ This skill sets out how to write and review formal professional prose for a seni
 2. The author's explicit instructions for the document override both.
 3. This skill applies wherever they are silent.
 
+A required length never licenses adding what the source does not give. Where the source cannot reach it, deliver what the source supports and report the shortfall to the author.
+
 Whatever this skill says, keep direct quotations, official names, the titles of documents and terms the source requires exactly as they are.
 
 The default is British English with -ise spellings (organise, programme, licence as a noun, practise as a verb). Oxford spelling (organize) is also British; follow it, or any other convention, where the document's owner sets one.
@@ -48,10 +50,10 @@ Do not supply an actor, a number or a condition that the source leaves unstated:
 ### 3. Draft
 
 - Elaborate where the reader needs it: explanation, connection and context are welcome. Arithmetic on figures the source gives (a total, an annual cost) and general explanation of how something works are elaboration.
-- Never add a commitment, a party, a condition, a number or a fact about the matter in hand that the source does not give. Where the text seems to need one, put it to the author as a question.
+- Never add a commitment, a party, a condition, a number or a fact about the matter in hand that the source does not give. The exception is a proposal the brief asks for, marked as proposed. Where the text seems to need one, put it to the author as a question.
 - Keep to a length ceiling where one is set. A first draft usually improves by losing a third of its length. Where the source cannot fill a set length, stop short and tell the author. Reaching it would take padding or invention.
 
-Two drafts of the same brief often find a better structure than one, but only if they are independent. Where another writer or agent is available, have it write the second draft from the brief alone and a third compare the two blind (see Review, below). Keep the better one. One writer cannot draft independently of itself, so without that help, skip this step.
+Two drafts of the same brief often find a better structure than one, but only if they are independent. Where both a second writer and a separate comparer are available, give the second writer the same brief and source material but not your draft. Have the comparer judge the two blind (see Review, below), and keep the better one. Otherwise, skip this step.
 
 ### 4. Check meaning, then readability
 
@@ -61,7 +63,7 @@ Every rewrite loses some meaning, and condensing loses most. Whenever you revise
 - **Each point of substance:** kept (meaning, modal and conditions intact), weakened (a qualifier, actor, modal, condition or list member lost or changed) or dropped
 - **Each addition:** an *elaboration* (adds no commitment, party, condition, number or fact about the matter in hand; arithmetic on given figures and general explanation count as elaboration) or a *new claim*.
 
-Fix contradictions, restore anything weakened or dropped unintentionally, and keep elaborations unless they contradict or weaken a point. Put every new claim to the author as a question. Then turn to readability and the checklist at the end of this skill.
+Fix contradictions, restore anything weakened or dropped unintentionally, and keep elaborations unless they contradict or weaken a point. Put every new claim to the author as a question, unless it is a proposal the brief asked for and is marked as proposed. Then turn to readability and the checklist at the end of this skill.
 
 Readability and fidelity are separate tests. The best-reading version in a comparison can be the one that lost the most meaning, so never let a better read stand in for the meaning check.
 
@@ -97,7 +99,7 @@ These are the positive rules. Applying them makes most of the prohibitions later
 ## Structure and layout
 
 - **Put the point first.** Open each section with what its subject is, why the reader needs it and who is responsible. Do not open with a list's lead-in, a term not yet defined, a cross-reference, an exclusion, a restatement of the heading or "this section describes".
-- **A document that asks for a decision opens with the decision sought.** Set out what is requested as a list, with each item's amount where it has one and any totals worked out from the figures given. Put a matter that is still undecided under its own heading, and say that it is open.
+- **A document that asks for a decision opens with the decision sought.** Where the request has several parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading.
 - **A paragraph develops one idea.** Avoid a one-line paragraph left dangling after a longer one, unless the sentence does a job of its own, such as a closing request. More than five or six sentences usually means two ideas.
 - **Use lists for genuine enumerations**: three or more substantial parallel items, tests, stages or requirements. A short series that reads naturally in the sentence ("cost, time and quality") stays in the sentence. A verbless chain of clauses separated by semicolons is a list in disguise and should be bulleted.
 - **Do not over-fragment.** Structure helps up to a point and then hurts. Too many bullets, headings or very short paragraphs break an argument that needs connected prose. Fragmented text can look easy to scan while reading worse. When in doubt, write the paragraph.
@@ -261,7 +263,8 @@ Before issuing any text, re-read it against this list. Style drifts over a long 
 
 **Meaning**
 - Every mandatory point present, with its modal verbs and conditions intact
-- No commitment, party, condition, number or fact the source did not give; each such gap put to the author as a question, beside the document
+- No commitment, party, condition, number or fact about the matter in hand that the source did not give, except a requested proposal marked as such
+- Each gap put to the author as a question, beside the document; arithmetic on given figures and general explanation kept as elaboration
 - No length reached by padding: short of a set length the source cannot fill, with the author told
 - No contradictions within the text or with the source.
 
