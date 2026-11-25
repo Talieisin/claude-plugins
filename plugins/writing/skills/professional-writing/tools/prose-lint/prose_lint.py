@@ -424,7 +424,7 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
 
         ss = sentence_spans(t)
         # An announced count is a number in a list's lead-in: the last sentence of the block
-        # directly above a list, whether it ends in a colon or a full stop.
+        # directly above a list, whatever its final punctuation.
         if enabled(cfg, 'announced-count') and ss and u.before_list:
             a0, b0 = ss[-1]
             for m in re.finditer(counts['pattern'], t[a0:b0]):

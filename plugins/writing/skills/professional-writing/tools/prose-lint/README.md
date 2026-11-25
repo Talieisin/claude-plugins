@@ -39,7 +39,7 @@ Do not rewrite sound text to clear a warning, and do not clear `long-sentence` w
 | Mechanics | `contraction`, `latin-abbreviation`, `stakeholder`, `bullet-lower-case`, `bullet-trailing-punctuation`, `bullet-trailing-conjunction`, `semicolon-chain` |
 | Diction | `plain-english`, `marketing`, `significance-inflation`, `evaluative-filler`, `abstraction-as-actor`, `all-purpose-verb`, `figurative`, `ai-tell` |
 | Readability | `long-sentence` (over 25 words), `long-paragraph` (over five sentences), `passive-cluster`, `justification-cluster` |
-| Lists | `announced-count`: a count in the lead-in directly above a list, ending in a colon or a full stop ("Three factors determine the price:"), with measurements excluded. A count elsewhere is a fact and is not flagged. `bullet-trailing-conjunction`: an item other than the last ending in "and" or "or" |
+| Lists | `announced-count`: a count in the last sentence of the block directly above a list, whatever its final punctuation ("Three factors determine the price:"), with measurements excluded. A count elsewhere is a fact and is not flagged. `bullet-trailing-conjunction`: an item other than the last ending in "and" or "or" |
 | Spelling | `us-spelling`: spellings other than the house style (British, with -ise), with the house form suggested. Oxford -ize is British too: a document that follows it disables the rule |
 | Leftovers | `chatbot-artefact`: chat phrases, citation markers, unfilled placeholders, tracking parameters |
 
