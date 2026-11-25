@@ -53,6 +53,8 @@ class Finding:
     message: str
     # The heading, paragraph or bullet the finding is in, used to scope a hook's findings to an edit.
     span: tuple[int, int] = field(default=(0, 0), compare=False, repr=False)
+    # A further line whose suppressions also apply: a paragraph-level finding's first line.
+    anchor: int = field(default=0, compare=False, repr=False)
 
     def render(self, path: str) -> str:
         where = f'{path}:{self.line}' if self.line else f'{path} (edited text)'
@@ -400,8 +402,8 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
     for u in parsed.units:
         t, span = u.text, (u.first, u.last)
 
-        def add(offset: int, rule: str, sev: str, ex: str, msg: str) -> None:
-            found.append(Finding(u.line_at(offset), rule, sev, ex, msg, span))
+        def add(offset: int, rule: str, sev: str, ex: str, msg: str, whole: bool = False) -> None:
+            found.append(Finding(u.line_at(offset), rule, sev, ex, msg, span, u.first if whole else 0))
 
         for r, pat, excl in rules:
             spans = [(e.start(), e.end()) for e in excl.finditer(t)] if excl else []
@@ -440,7 +442,7 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
             if enabled(cfg, 'bullet-trailing-punctuation') and re.search(r'[;,]$', raw):
                 add(len(t), 'bullet-trailing-punctuation', 'rule', excerpt(t, 50),
                     'Bullet items take no trailing semicolon or comma; only the final item ends with a full stop.')
-            tail = re.search(r'([;,]?)\s*\b(and|or)$', raw)
+            tail = re.search(r'([;,]?)\s*\b(and|or)$', t.rstrip())
             if enabled(cfg, 'bullet-trailing-conjunction') and tail and not u.last_item:
                 punct = f" and the {'semicolon' if tail.group(1) == ';' else 'comma'}" if tail.group(1) else ''
                 add(len(t), 'bullet-trailing-conjunction', 'warn', excerpt(t, 50),
@@ -460,26 +462,27 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
                 add(a, 'justification-cluster', 'warn', excerpt(s),
                     "Several 'so that' or 'because' clauses: keep only the reasons the reader needs.")
         if u.kind == 'para' and ss:
-            def first_hit(pat: re.Pattern) -> tuple[int, str]:
-                """The offset and text of the sentence holding the pattern's first match."""
-                m = pat.search(t)
+            def first_hit(m: re.Match) -> str:
+                """The sentence holding the match, or the text around the match if the
+                sentence's excerpt would cut it off."""
                 a, b = next(((a, b) for a, b in ss if a <= m.start() < b), ss[0])
-                return a, excerpt(t[a:b])
+                return excerpt(t[a:b]) if m.end() - a <= 70 else around(t, m.start(), m.end())
             if enabled(cfg, 'long-paragraph') and len(ss) > rd['paragraph_max_sentences']:
                 add(0, 'long-paragraph', 'warn', excerpt(t[ss[0][0]:ss[0][1]]),
-                    f'{len(ss)} sentences: check whether the paragraph develops more than one idea.')
-            if enabled(cfg, 'passive-cluster') and len(pp.findall(t)) >= rd['passives_per_paragraph']:
-                a, ex = first_hit(pp)
-                add(a, 'passive-cluster', 'warn', ex,
-                    f'{len(pp.findall(t))} passives in this paragraph, the first here: name who acts.')
-            if enabled(cfg, 'justification-cluster') and len(jp.findall(t)) >= rd['justification_per_paragraph']:
-                a, ex = first_hit(jp)
-                add(a, 'justification-cluster', 'warn', ex,
-                    f"{len(jp.findall(t))} 'so that' or 'because' clauses in this paragraph, the first here: "
-                    "keep only the reasons the reader needs.")
+                    f'{len(ss)} sentences: check whether the paragraph develops more than one idea.', True)
+            passives = list(pp.finditer(t)) if enabled(cfg, 'passive-cluster') else []
+            if len(passives) >= rd['passives_per_paragraph']:
+                add(passives[0].start(), 'passive-cluster', 'warn', first_hit(passives[0]),
+                    f'{len(passives)} passives in this paragraph, the first here: name who acts.', True)
+            reasons = list(jp.finditer(t)) if enabled(cfg, 'justification-cluster') else []
+            if len(reasons) >= rd['justification_per_paragraph']:
+                add(reasons[0].start(), 'justification-cluster', 'warn', first_hit(reasons[0]),
+                    f"{len(reasons)} 'so that' or 'because' clauses in this paragraph, the first here: "
+                    "keep only the reasons the reader needs.", True)
 
     off = suppressions(parsed.directives, text.split('\n'))
-    found = [f for f in found if not (off.get(f.line) and (ALL in off[f.line] or f.rule in off[f.line]))]
+    hit = lambda n, rule: bool(off.get(n)) and (ALL in off[n] or rule in off[n])
+    found = [f for f in found if not (hit(f.line, f.rule) or (f.anchor and hit(f.anchor, f.rule)))]
     found.sort(key=lambda f: (f.line, f.rule))
     return found
 
@@ -705,7 +708,7 @@ def report(results: list[tuple[str, list[Finding]]], lengths: list[int]) -> None
     if lengths:
         mean = sum(lengths) / len(lengths)
         low = (' That is below the range: look for runs of short sentences to join, and do not split '
-               'more long ones only to clear warnings.') if mean < 15 else ''
+               'more long ones only to clear warnings.') if round(mean, 1) < 15 else ''
         print(f'Sentences: {len(lengths)}, averaging {mean:.1f} words (the skill aims for 15 to 20); '
               f'longest {max(lengths)}; {sum(n > 25 for n in lengths)} over 25 words.{low}\n')
     print('| Rule | Severity | Findings | Files |\n|---|---|---|---|')

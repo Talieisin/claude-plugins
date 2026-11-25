@@ -523,3 +523,29 @@ def test_deleting_a_heading_above_its_paragraph_does_not_report_it(tmp_path):
     patch = {'structuredPatch': [{'oldStart': 1, 'oldLines': 2, 'newStart': 1, 'newLines': 1,
                                   'lines': ['-# Old heading', " We don't agree."]}]}
     assert hook(tmp_path, "We don't agree.\n", '', patch) == []
+
+
+def test_trailing_conjunction_behind_markup():
+    assert 'bullet-trailing-conjunction' in ids('- Approve the funding; **and**\n- Sign it\n')
+    assert 'bullet-trailing-conjunction' in ids('- Approve the funding and <!-- note -->\n- Sign it\n')
+
+
+def test_suppression_above_a_paragraph_covers_its_paragraph_finding():
+    text = ('<!-- prose-lint-disable-next-line justification-cluster -->\nWe met on Monday and talked.\n'
+            'We agreed because it was late. We left because it rained. We stayed because they asked.\n')
+    assert 'justification-cluster' not in ids(text)
+
+
+def test_paragraph_cluster_points_at_a_late_clause():
+    text = ('We met on Monday. ' + 'The committee then reviewed the long list of outstanding items at some length '
+            'and agreed because it was late.\nWe left because it rained. We stayed because they asked.\n')
+    fs = [f for f in pl.check_text(text, CFG) if f.rule == 'justification-cluster' and 'paragraph' in f.message]
+    assert len(fs) == 1 and 'because' in fs[0].excerpt
+
+
+def test_report_average_at_the_boundary_is_not_below(tmp_path):
+    f = tmp_path / 'r.md'
+    # 20 sentences of 15 words and one of 14: an average of 14.95, shown as 15.0.
+    f.write_text(' '.join([' '.join(['Word'] * 15) + '.'] * 20 + [' '.join(['Word'] * 14) + '.']) + '\n')
+    assert 'averaging 15.0 words' in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+    assert 'below the range' not in run('--format', 'report', '--fail-on', 'never', str(f)).stdout
