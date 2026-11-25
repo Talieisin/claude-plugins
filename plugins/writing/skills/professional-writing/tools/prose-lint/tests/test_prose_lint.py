@@ -575,3 +575,34 @@ def test_readme_lists_each_rule_once():
     rows = [l for l in readme.split('\n') if l.startswith('| ') and '`' in l and not l.startswith('| Option')]
     assert sum('`bullet-trailing-conjunction`' in r for r in rows) == 1
     assert any(r.startswith('| Mechanics') and '`bullet-trailing-conjunction`' in r for r in rows)
+
+
+# ---- Copilot's review of PR 91 -----------------------------------------------------------
+
+def test_report_summary_for_mixed_conjunction_endings(tmp_path):
+    f = tmp_path / 'r.md'
+    f.write_text('- Approve the funding and\n- Sign the contract; or\n- Close the file\n')
+    out = run('--format', 'report', '--fail-on', 'never', str(f)).stdout
+    assert pl.RULE_SUMMARY['bullet-trailing-conjunction'] in out
+    assert 'and/or' in pl.RULE_SUMMARY['bullet-trailing-conjunction']
+    assert 'where that changes the meaning' in pl.RULE_SUMMARY['bullet-trailing-conjunction']
+
+
+FOUR_PASSIVES = 'The cake was baked, the hall was decorated, the room was cleaned and the door was painted.\n'
+
+
+def test_passive_cluster_in_one_sentence_is_reported_once():
+    assert ids(FOUR_PASSIVES).count('passive-cluster') == 1
+
+
+def test_passive_cluster_reported_when_only_the_paragraph_threshold_is_met(tmp_path):
+    extra = tmp_path / 'p.toml'
+    extra.write_text('[readability]\npassives_per_sentence = 5\n')
+    fs = [f for f in pl.check_text(FOUR_PASSIVES, pl.load_rules([str(extra)])) if f.rule == 'passive-cluster']
+    assert len(fs) == 1 and 'paragraph' in fs[0].message
+
+
+def test_passive_cluster_across_sentences_is_a_paragraph_finding():
+    text = 'The cake was baked and the hall was decorated. The room was cleaned and the door was painted.\n'
+    fs = [f for f in pl.check_text(text, CFG) if f.rule == 'passive-cluster']
+    assert len(fs) == 1 and 'paragraph' in fs[0].message
