@@ -509,31 +509,46 @@ def read_hook_input(stream=None) -> dict:
             continue
 
 
-def patch_lines(response: dict) -> tuple[set[int], set[int]] | None:
+BLOCK_START = re.compile(r'^\s*$|^\s*(?:[-*+]|\d+[.)])\s|^\s*(?:#|>|```|~~~)')
+
+
+def patch_lines(response: dict) -> tuple[set[int], list[tuple[int, list[str]]]] | None:
     """What an Edit changed, from the structured patch in the tool's response: the lines it
-    added, and the points of pure deletions (n: lines n-1 and n are now adjacent). None if
-    there is no patch."""
+    added, and each pure deletion as (n, the deleted lines), where lines n-1 and n now meet.
+    None if there is no patch."""
     hunks = response.get('structuredPatch') if isinstance(response, dict) else None
     if not isinstance(hunks, list):
         return None
     changed: set[int] = set()
-    joins: set[int] = set()
+    joins: list[tuple[int, list[str]]] = []
     for h in hunks:
         n = h.get('newStart', 1)
-        lines = [l for l in h.get('lines', []) if not l.startswith('\\')]
-        for k, line in enumerate(lines):
+        run: list[str] = []
+        for line in [l for l in h.get('lines', []) if not l.startswith('\\')] + [' ']:
+            if line.startswith('-'):
+                run.append(line[1:])
+                continue
+            if run and not line.startswith('+'):   # deleted with nothing added in its place
+                joins.append((n, run))
+            run = []
             if line.startswith('+'):
                 changed.add(n)
-                n += 1
-            elif line.startswith('-'):
-                # Deleted with nothing added in its place: the lines either side now meet.
-                rest = lines[k + 1:]
-                nxt = next((l for l in rest if not l.startswith('-')), '')
-                if not nxt.startswith('+'):
-                    joins.add(n)
-            else:
-                n += 1
+            n += 1
     return changed, joins
+
+
+def deletion_lines(lines: list[str], n: int, gone: list[str]) -> set[int]:
+    """The surviving lines whose heading, paragraph or bullet a pure deletion at n changed:
+    the line after it, if the last deleted line ran on into it; the line before it, if the
+    first deleted line continued it. A deleted bullet or paragraph that only sat beside its
+    neighbours changes neither."""
+    out: set[int] = set()
+    at = lambda k: lines[k - 1] if 1 <= k <= len(lines) else ''
+    if gone[-1].strip() and at(n).strip() and not BLOCK_START.match(at(n)):
+        out.add(n)
+    if gone[0].strip() and at(n - 1).strip() and not BLOCK_START.match(gone[0]):
+        out.add(n - 1)
+    return out
 
 
 def hook_findings(payload: dict, cfg: dict) -> tuple[str, list[Finding]]:
@@ -550,7 +565,7 @@ def hook_findings(payload: dict, cfg: dict) -> tuple[str, list[Finding]]:
     if tool == 'Write':
         return path, findings
     patch = patch_lines(payload.get('tool_response') or {})
-    changed, joins = patch if patch else (None, set())
+    changed, joins = patch if patch else (None, [])
     loose: list[Finding] = []
     if changed is None:
         news = [ti.get('new_string', '')] if tool == 'Edit' else [e.get('new_string', '') for e in ti.get('edits', [])]
@@ -562,10 +577,13 @@ def hook_findings(payload: dict, cfg: dict) -> tuple[str, list[Finding]]:
                 changed |= set(range(first, text.count('\n', 0, pos + len(new) - 1) + 2))
             else:   # changed by another hook, or ambiguous: check the new text on its own
                 loose += [Finding(0, f.rule, f.severity, f.excerpt, f.message) for f in check_text(new, cfg, plain)]
-    # A deletion changed a unit only if the unit runs across it (a line removed from a
-    # paragraph, or a blank line removed between two), not one that merely sits beside it.
+    # A deletion changed a unit that now runs across it (a line removed from inside a
+    # paragraph, or a blank line removed between two), or one it was the edge of.
+    lines = text.split('\n')
+    for n, gone in joins:
+        changed |= deletion_lines(lines, n, gone)
     kept = [f for f in findings if any(f.span[0] <= n <= f.span[1] for n in changed)
-            or any(f.span[0] <= n - 1 and n <= f.span[1] for n in joins)]
+            or any(f.span[0] <= n - 1 and n <= f.span[1] for n, _ in joins)]
     return path, kept + loose
 
 

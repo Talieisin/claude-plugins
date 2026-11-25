@@ -244,6 +244,14 @@ severity = "warn"
 pattern = '(?i)\bboast(?:s|ed|ing)?\b'
 message = "'Boasts': write 'has' or 'includes'."
 
+[[rule]]
+id = "us-spelling"
+severity = "warn"
+# A software dialog box keeps the American spelling, so this one is a rule with an exclusion.
+pattern = '(?i)\bdialogs?\b'
+exclude = '(?i)\b(?:dialogs?\s+(?:box|boxes|window|windows)|(?:modal|file|print|save|open|settings|confirmation|software)\s+dialogs?)\b'
+message = "American spelling: write 'dialogue', unless it names a software dialog box, unless the document's owner has chosen American spelling."
+
 # ---- Chat-interface leftovers -----------------------------------------------------------
 # Checked with tables, image lines and link destinations kept: a leftover in a table cell
 # or a caption is still a leftover. Code, comments and front matter stay masked.
@@ -338,7 +346,6 @@ defense = "defence"
 offense = "offence"
 catalog = "catalogue"
 catalogs = "catalogues"
-dialog = "dialogue (except a software dialog box)"
 analyze = "analyse"
 analyzed = "analysed"
 analyzing = "analysing"

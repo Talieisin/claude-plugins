@@ -455,3 +455,27 @@ def test_deleting_a_line_inside_a_paragraph_reports_it(tmp_path):
     patch = {'structuredPatch': [{'oldStart': 1, 'oldLines': 3, 'newStart': 1, 'newLines': 2,
                                   'lines': [' We agree.', '-Something else.', " We don't know."]}]}
     assert hook(tmp_path, text, '', patch) == [(2, 'contraction')]
+
+
+# ---- findings from Copilot's review -------------------------------------------------------
+
+def test_deleting_the_first_or_last_line_of_a_paragraph_reports_it(tmp_path):
+    body = [f'Sentence {i} is here.' for i in range(1, 7)]
+    patch = {'structuredPatch': [{'oldStart': 1, 'oldLines': 4, 'newStart': 1, 'newLines': 3,
+                                  'lines': [' Intro.', ' ', '-Sentence 0 is here.', ' ' + body[0]]}]}
+    assert (3, 'long-paragraph') in hook(tmp_path, 'Intro.\n\n' + '\n'.join(body) + '\n', '', patch)
+    patch = {'structuredPatch': [{'oldStart': 6, 'oldLines': 3, 'newStart': 6, 'newLines': 2,
+                                  'lines': [' ' + body[5], '-Sentence 7 is here.', ' ']}]}
+    assert (1, 'long-paragraph') in hook(tmp_path, '\n'.join(body) + '\n\nNext.\n', '', patch)
+
+
+def test_software_dialog_box_keeps_its_spelling():
+    assert ids('The software dialog box opens, and the print dialog closes.\n') == []
+    fs = [f for f in pl.check_text('The dialog between the parties continues.\n', CFG) if f.rule == 'us-spelling']
+    assert len(fs) == 1 and "'dialogue'" in fs[0].message
+
+
+def test_dialog_rule_follows_us_spelling_disable(tmp_path):
+    extra = tmp_path / 'p.toml'
+    extra.write_text('disable = ["us-spelling"]\n')
+    assert ids('The dialog continues.\n', pl.load_rules([str(extra)])) == []
