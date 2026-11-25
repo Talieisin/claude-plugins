@@ -207,7 +207,7 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 
 ### Numbers and dates
 
-- One to ten in words, 11 and above in figures; figures throughout for money, measurements and percentages with a symbol. A precise duration or amount of effort is a measurement (5 minutes, 3 days); a general span such as "three years" stays in words. Commas in numbers above 999.
+- One to ten in words, 11 and above in figures; figures throughout for money, measurements and percentages with a symbol. A precise duration or amount of effort is a measurement (5 minutes, 3 days); a general span follows the one-to-ten rule (three years, 15 years). Commas in numbers above 999.
 - "Per cent" in prose; % beside a figure in tables.
 - Never begin a sentence with a figure.
 - Dates as 24 April 2026; spans written out ("1 April 2026 to 31 March 2027"); the 24-hour clock where precision is needed.
