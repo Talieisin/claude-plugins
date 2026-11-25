@@ -1,6 +1,6 @@
 ---
 name: professional-writing
-description: Standards and a working method for formal British professional writing (reports, proposals, technical and policy documents, briefings and correspondence). Covers establishing the substance before drafting, drafting craft, register and diction, structure, punctuation, commercial framing, preserving meaning through revision, and comparative review. Use when drafting, rewriting, editing or reviewing any professional prose, unless a client or house style says otherwise.
+description: Standards and a working method for formal British professional writing (reports, proposals, technical and policy documents, briefings and correspondence). Covers establishing the substance before drafting, drafting craft, register and diction, structure, punctuation, commercial framing, preserving meaning through revision, and comparative review. Use when drafting, rewriting, editing or reviewing formal documents (reports, proposals, policy documents, briefings, letters), unless a client or house style says otherwise; not for commit messages, pull requests, issue comments or code comments, unless asked.
 ---
 
 <!-- professional-writing-skill-version: 1 -->
@@ -163,7 +163,7 @@ Avoid these unless the literal sense is meant:
 | dialogue (for discussion) | discussion, talks |
 | e.g., i.e. | for example, such as; that is, in other words |
 
-Keep justification clauses ("so that", "because", "in order to") to those the reader needs. Two in a sentence, or a cluster in a paragraph, usually signals over-explanation.
+Keep justification clauses ("so that", "because") to those the reader needs. Two in a sentence, or a cluster in a paragraph, usually signals over-explanation.
 
 ## Commercial writing (proposals, quotations, letters)
 
@@ -182,8 +182,8 @@ Keep justification clauses ("so that", "because", "in order to") to those the re
 ### Dashes
 
 - **Never use an em dash (—).** Prefer a full stop: when the actor, condition or stage changes, start a new sentence. Commas, colons, semicolons and parentheses are for genuine subordination, not for keeping an overloaded sentence going.
-- **The en dash (–)** is used unspaced for ranges of numbers, dates and identifiers in tables, lists, figure labels, references and citations ("pages 6–8", "2026–27", "R1–R14").
-- **In running prose, write ranges in words**: "from 1 to 30 April", "between 10 and 20 days", with the unit at both ends where it helps. Give financial years with an oblique stroke (2026/27).
+- **The en dash (–)** is used unspaced for ranges of numbers, dates and identifiers in tables, lists, figure labels, references and citations ("pages 6–8", "1990–95", "R1–R14"). A financial year takes the oblique stroke everywhere (2026/27).
+- **In running prose, write ranges in words**: "from 1 to 30 April", "between 10 and 20 days", with the unit at both ends where it helps.
 - **Never use a spaced en dash** ( – ) for any purpose: not for an aside, not to join clauses and not as a heading separator (use a colon).
 - **Never use an en dash to relate two parties in prose.** Write "the interface between the client and the supplier", not "the client–supplier interface" (the short form is acceptable in a table or figure label).
 - **Never use two hyphens** ( -- ) as a dash.

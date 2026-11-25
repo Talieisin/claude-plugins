@@ -25,7 +25,7 @@ passives_per_sentence = 3      # the skill allows two in a sentence
 passives_per_paragraph = 4
 justification_per_sentence = 2
 justification_per_paragraph = 3
-justification_pattern = '\b(?:so that|because|in order to)\b'
+justification_pattern = '\b(?:so that|because)\b'   # "in order to" is the plain-english rule's
 passive_pattern = '\b(?:is|are|was|were|be|been|being)\s+(?:\w+ly\s+)?\w+(?:ed|en)\b'
 
 # ---- Dashes -----------------------------------------------------------------------------

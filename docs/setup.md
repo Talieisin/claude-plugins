@@ -441,8 +441,8 @@ script and save. Then check: the next lead's first comment names the versions
 it holds.
 
 **How to tell what a session got.** In the session, `claude plugin list` shows
-`cloud@talieisin` and `github@talieisin` (and `humantray@talieisin`, if you added
-it) with their versions, and `cat /tmp/cloud-setup.log` shows what the
+`cloud@talieisin` and `github@talieisin` (and `humantray@talieisin` or
+`writing@talieisin`, if you added them) with their versions, and `cat /tmp/cloud-setup.log` shows what the
 setup script did. If the plugin is missing, the log says why.
 
 **If a lead says it does not hold the skill,** the environment's setup script
@@ -453,7 +453,7 @@ the environment you edited, and check that nothing blocks `github.com`.
 
 | What | Where |
 |---|---|
-| The skills | This repository, `plugins/cloud/skills/`, `plugins/github/skills/` and `plugins/humantray/skills/` |
+| The skills | This repository, `plugins/cloud/skills/`, `plugins/github/skills/`, `plugins/humantray/skills/` and `plugins/writing/skills/` |
 | A repository's humantray page, if you use one | Your claude.ai account, as a private page titled `humantray: <owner>/<repo>` |
 | What sessions may do, and a repository's facts | That repository's `AGENTS.md` |
 | The setup script | The cloud environment, on claude.ai (not in any repository) |

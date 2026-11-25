@@ -438,7 +438,7 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
                 add(a, 'passive-cluster', 'warn', excerpt(s), 'Several passives in one sentence: name who acts.')
             if enabled(cfg, 'justification-cluster') and len(jp.findall(s)) >= rd['justification_per_sentence']:
                 add(a, 'justification-cluster', 'warn', excerpt(s),
-                    "Several 'so that', 'because' or 'in order to' clauses: keep only the reasons the reader needs.")
+                    "Several 'so that' or 'because' clauses: keep only the reasons the reader needs.")
         if u.kind == 'para' and ss:
             head = excerpt(t[ss[0][0]:ss[0][1]])
             if enabled(cfg, 'long-paragraph') and len(ss) > rd['paragraph_max_sentences']:
@@ -448,7 +448,7 @@ def check_text(text: str, cfg: dict, plain: bool = False) -> list[Finding]:
                 add(0, 'passive-cluster', 'warn', head, 'Many passives in this paragraph: name who acts.')
             if enabled(cfg, 'justification-cluster') and len(jp.findall(t)) >= rd['justification_per_paragraph']:
                 add(0, 'justification-cluster', 'warn', head,
-                    "Many 'so that', 'because' or 'in order to' clauses in this paragraph.")
+                    "Many 'so that' or 'because' clauses in this paragraph.")
 
     off = suppressions(parsed.directives, text.split('\n'))
     found = [f for f in found if not (off.get(f.line) and (ALL in off[f.line] or f.rule in off[f.line]))]
