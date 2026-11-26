@@ -13,7 +13,7 @@ export const ROW_SCHEMA = 1
  * the version in plugin.json. Only stamped: readers take any string here, so
  * rows an older version wrote stay readable.
  */
-export const WRITER_VERSION = '0.2.10'
+export const WRITER_VERSION = '0.3.0'
 
 /**
  * The response envelope version this mod's receiver takes (#32): a row
@@ -54,6 +54,12 @@ export const ITEM_ROW_KEYS = [
   'lead_session_id',
   'writer_version',
   'envelope',
+  'after',
+  'holding',
+  'withdrawn',
+  'waiting_on',
+  'blocked',
+  'blocks',
 ] as const
 
 /**
@@ -96,6 +102,13 @@ export function itemToRow(item: Item & Required<Pick<Item, 'remote'>>, base: Rec
     lead_session_id: item.remote.lead_session_id,
     writer_version: WRITER_VERSION,
     envelope: ENVELOPE_VERSION,
+    after: item.after,
+    holding: item.holding,
+    withdrawn: item.withdrawn,
+    // Mirrored for the page and viewer, which draw them (#82): refreshed from the file before a push.
+    waiting_on: item.waiting_on,
+    blocked: item.blocked,
+    blocks: item.blocks,
   }
   for (const [key, value] of Object.entries(known)) if (value !== undefined) row[key] = value
   return row as ItemRow

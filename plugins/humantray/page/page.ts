@@ -140,7 +140,7 @@ details.card[open] summary { margin-bottom: 10px; }
    * harmless keys.
    */
   var state = {
-    tab: "open", kind: "all", asker: "", open: [], responses: new Map(), history: [], newer: 0, bad: 0,
+    tab: "open", kind: "all", asker: "", open: [], responses: new Map(), history: [], withdrawn: [], newer: 0, bad: 0,
     loaded: false, failed: "", busy: new Map(), results: new Map(),
     /* What the person has typed or picked on each open card, kept across every redraw until it is saved. */
     drafts: new Map(),
@@ -200,6 +200,24 @@ details.card[open] summary { margin-bottom: 10px; }
     if (!answer) return null;
     var refused = rec(item.response_refused) && str(item.response_refused.answer_id) ? item.response_refused.answer_id : null;
     return answer.answer_id === refused ? null : answer;
+  }
+
+  /*
+   * Why a row cannot be answered now, from what its session mirrored to it
+   * (#82), or "": withdrawn, coming after an item still open, or blocked. The
+   * page draws this and never works it out.
+   */
+  function shortOf(id) { return "HT-" + String(id).slice(-5); }
+  function lockOf(item) {
+    if (rec(item.withdrawn)) return item.short + " was withdrawn by its session.";
+    if (rec(item.blocked) && str(item.blocked.by)) {
+      var by = shortOf(item.blocked.by);
+      var why = item.blocked.reason === "not_done" ? by + " was answered Not done" : item.blocked.reason === "withdrawn" ? by + " was withdrawn" : item.blocked.reason === "missing" ? by + " is no longer in the tray" : by + " cannot go ahead";
+      return "Blocked: " + why + ". The session that asked will raise this again or withdraw it.";
+    }
+    var waiting = Array.isArray(item.waiting_on) ? item.waiting_on.filter(str) : [];
+    if (waiting.length > 0) return item.short + " comes after " + waiting.map(shortOf).join(", ") + ": answer " + (waiting.length === 1 ? "that" : "those") + " first.";
+    return "";
   }
 
   function ago(at) {
@@ -902,6 +920,12 @@ details.card[open] summary { margin-bottom: 10px; }
     if (rec(item.response_refused) && str(item.response_refused.reason)) {
       card.appendChild(el("div", { className: "note bad", text: "Your last answer was not taken: " + item.response_refused.reason }));
     }
+    var lock = lockOf(item);
+    if (lock !== "") {
+      card.appendChild(el("div", { className: "note", text: lock }));
+      card.appendChild(metaLine(item));
+      return card;
+    }
     var press = function (action) { return function () { submit(item, action); }; };
     var actions = el("div", { className: "actions" });
     if (item.type === "ack") actions.appendChild(button("Acknowledge", true, press("ack"), busy));
@@ -992,6 +1016,12 @@ details.card[open] summary { margin-bottom: 10px; }
     var summary = el("summary", null, [chips(item), el("strong", { text: item.question })]);
     card.appendChild(summary);
     if (item.body_md !== "") card.appendChild(el("div", { className: "body" }, [markdown(item.body_md, "h-" + item.id + "-body")]));
+    if (rec(item.withdrawn)) {
+      var reason = str(item.withdrawn.reason) ? item.withdrawn.reason : "";
+      card.appendChild(el("div", { className: "ans" }, [el("p", { text: "Withdrawn by its session " + ago(item.withdrawn.at) + (reason !== "" ? ": " + reason : "") })]));
+      card.appendChild(metaLine(item, ""));
+      return card;
+    }
     card.appendChild(answerNode(item.response, "Answered " + ago(item.response_at), "h-" + item.id));
     var owesLine = !(item.type === "ack" && item.notify_on_done !== true);
     card.appendChild(metaLine(item, !owesLine ? "" : item.delivered ? "delivered" : "not picked up yet"));
@@ -1095,7 +1125,7 @@ details.card[open] summary { margin-bottom: 10px; }
       return (state.kind === "all" || KIND_OF[item.type] === state.kind) && (!state.asker || item.session_id === state.asker);
     };
     document.getElementById("count").textContent = String(open.length);
-    document.getElementById("history-count").textContent = String(state.history.length);
+    document.getElementById("history-count").textContent = String(state.history.length + state.withdrawn.length);
     document.getElementById("tab-open").setAttribute("aria-pressed", String(state.tab === "open"));
     document.getElementById("tab-history").setAttribute("aria-pressed", String(state.tab === "history"));
     var chipRow = document.getElementById("chips");
@@ -1157,7 +1187,9 @@ details.card[open] summary { margin-bottom: 10px; }
         list.appendChild(section);
       }
     } else {
-      var past = state.history.filter(keep);
+      // Withdrawn items (#82) are finished, though still "open" in the database.
+      var when = function (item) { return rec(item.withdrawn) && num(item.withdrawn.at) ? item.withdrawn.at : num(item.response_at) ? item.response_at : item.updated; };
+      var past = state.withdrawn.concat(state.history).filter(keep).sort(function (a, b) { return when(b) - when(a); });
       if (past.length === 0) list.appendChild(el("div", { className: "empty", text: "No answered items yet." }));
       past.forEach(function (item) { list.appendChild(historyCard(item)); });
     }
@@ -1209,7 +1241,8 @@ details.card[open] summary { margin-bottom: 10px; }
     db.collection("items").where("status", "==", "open").onSnapshot(function (snap) {
       var into = {};
       readAll(snap, into);
-      state.open = into.good.sort(function (a, b) { return b.updated - a.updated; });
+      state.open = into.good.filter(function (item) { return !rec(item.withdrawn); }).sort(function (a, b) { return b.updated - a.updated; });
+      state.withdrawn = into.good.filter(function (item) { return rec(item.withdrawn); });
       counts.open = { newer: into.newer, bad: into.bad };
       recount();
       if (!snap.metadata.fromCache) { clearTimeout(slow); state.loaded = true; if (state.failed.indexOf("cannot be reached") === 0) state.failed = ""; }

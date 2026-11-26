@@ -1,10 +1,11 @@
 # claude-plugins
 
-Claude Code plugins from Talieisin. Four so far: `cloud`, for running batches of
+Claude Code plugins from Talieisin. Five so far: `cloud`, for running batches of
 GitHub issues in cloud sessions; `github`, the pull-request skill it relies on,
 which is also useful on its own; `mise`, an optional hook that installs a
-repository's pinned tools; and `humantray`, an optional tray for what sessions
-need from you.
+repository's pinned tools; `humantray`, an optional tray for what sessions
+need from you; and `writing`, an optional skill for formal British professional
+prose.
 
 ## `cloud`: batches of GitHub issues, done by cloud sessions
 
@@ -32,6 +33,14 @@ read-only scripts that its skill calls on your own machine.
 | `cloud:tester` | A session the lead starts to write a lane's tests before its code, at the deepest review depth |
 | `cloud:retro` | A session you start to review past batches |
 | `github:pull-request` | All of them, and you: a pull request from open to merged. One set of rules and two routes, `gh` and GraphQL on your own machine, REST in a cloud session where those do not work |
+
+## `writing`: formal British professional prose
+
+Optional. The `writing:professional-writing` skill sets out how to draft,
+rewrite and review reports, proposals, policy documents and letters for an
+expert reader, and carries `prose-lint`, a linter for the conventions a pattern
+can find. No hooks: the linter runs only when called. See
+[`plugins/writing/README.md`](plugins/writing/README.md).
 
 ## `humantray`: what sessions need from you, in one place
 
@@ -83,6 +92,7 @@ The full walk-through, with what is optional and how to keep it working, is in
 | `templates/` | Files to copy: `AGENTS.md` (your authorisation and the repository's facts), labels, setup script, tracking issue, the optional start-from-a-label workflow |
 | `plugins/mise/` | Optional `mise` plugin: installs a repository's pinned tools when a session starts. Runs a SessionStart hook |
 | `plugins/humantray/` | Optional `humantray` plugin: the tray, its skill, the source of its page, and its tests. Runs a hooks module |
+| `plugins/writing/` | Optional `writing` plugin: the professional-writing skill, its linter and the linter's tests. No hooks |
 | `AGENTS.md` | For anyone, human or agent, changing this repository |
 
 ## Status
@@ -91,7 +101,7 @@ These skills were worked out over a series of test batches on toy repositories
 and are still changing. They are versioned: every `cloud` skill file carries a
 `shared-skill-version` marker and the pull-request skill a
 `pull-request-skill-version` marker, and a lead names both versions in its first
-comment. The humantray skill carries its own `humantray-skill-version` marker. Expect rough edges, and read
+comment. The humantray skill carries its own `humantray-skill-version` marker, and the professional-writing skill its `professional-writing-skill-version` marker. Expect rough edges, and read
 [the limits in `docs/setup.md`](docs/setup.md#part-2-optional) before relying on
 the less-used routes.
 

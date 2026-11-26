@@ -53,7 +53,7 @@ import {
   withDeadline,
 } from './artifact-store'
 import { ARTIFACT_URL, makeEnvelope } from './envelope'
-import { type Action, buildResponse, cleanTitle, historyOf, isLineDue, shortOf } from './items'
+import { type Action, buildResponse, cleanTitle, historyOf, isLineDue, mirroredLock, shortOf } from './items'
 import { type RowRead, SESSION_ID, countsAsAnswer, isTitleFor, pickArtifact, rowToItem } from './rows'
 import { isCloud } from './store-pass'
 
@@ -321,6 +321,8 @@ export function settleEntry(
     }
     return { keep: false, toast: `${entry.short}: another answer was taken first` }
   }
+  // Withdrawn by its session (#82): our answer will never be taken.
+  if (row.withdrawn !== undefined) return { keep: false, toast: `${entry.short}: withdrawn by its session` }
   if (row.response_refused?.answer_id === entry.answer_id) return { keep: false }
   const response = read.response
   if (response !== undefined && countsAsAnswer(response, row)) {
@@ -684,6 +686,11 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
       if (row.session_id === row.lead_session_id && title !== null) lead.title = title
     }
     for (const { row, version } of read?.open ?? []) {
+      // A withdrawn row is finished (#82), though still `open`: it goes to History.
+      if (row.withdrawn !== undefined) {
+        finished.push(row)
+        continue
+      }
       const key = outboxKey(url, row.id)
       const entry = outbox[key]
       let state: CardState
@@ -701,7 +708,8 @@ async function rebuild($: EngineInterface, outbox: Record<string, OutboxEntry>, 
           if (row.response_refused !== undefined) reason = row.response_refused.reason
         }
       }
-      if (state === 'answerable') answerable += 1
+      // One that comes after an item still open, or is blocked, cannot be answered yet (#82).
+      if (state === 'answerable' && mirroredLock(row) === undefined) answerable += 1
       place(cardOf(row, version, state, reason))
     }
     // Our answers applied but not yet delivered, while we keep sending.
@@ -861,6 +869,9 @@ export async function viewerAnswer(
   const row = current.row
   const response = read.responses.get(row.id)
   if (response !== undefined && countsAsAnswer(response, row)) return { error: 'This item was answered on the page.' }
+  // Withdrawn, coming after an item still open, or blocked (#82), as its asker mirrored it.
+  const lock = mirroredLock(row)
+  if (lock !== undefined) return { error: lock }
   if (row.envelope !== 1) return { error: "This session's humantray cannot take answers from the viewer: answer on the page." }
   if (!SESSION_ID.test(row.session_id)) return { error: 'This item has no session to send the answer to.' }
   const key = outboxKey(card.url, row.id)
