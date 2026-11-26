@@ -617,6 +617,7 @@ def test_passive_cluster_across_sentences_is_a_paragraph_finding():
     ('Pack the box(es) by Friday.', 'optional-plural'),
     ('A newly-appointed board met.', 'hyphen-after-ly'),
     ('The plan is fully-funded.', 'hyphen-after-ly'),
+    ('A deeply-rooted habit and a simply-worded note.', 'hyphen-after-ly'),
 ])
 def test_small_forms_and_hyphens(text, rule):
     assert rule in ids(text + '\n')
@@ -625,6 +626,7 @@ def test_small_forms_and_hyphens(text, rule):
 @pytest.mark.parametrize('text', [
     "The plan covers 2026's results and the 1980s.",
     'An early-stage, family-run, supply-side firm keeps a user-friendly, friendly-looking shop.',
+    'The reply-to address and the apply-now button are on the form.',
     'The daily-rate and monthly-paid staff joined the elderly-care team.',
     'The firm was founded by Kelly-Smith.',
     'Run `fully-qualified(s)` in the shell.',
