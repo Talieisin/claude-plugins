@@ -70,7 +70,40 @@ export type Item = {
   answer_id?: string
   /** The last store answer this session refused, and why; cleared once an answer is applied. */
   response_refused?: ResponseRefusal
+  /**
+   * The items this one comes after (#82): full ids, in this item's owner
+   * chain. It cannot be answered until each is answered (a `do`: Done).
+   */
+  after?: string[]
+  /** The session has parked a piece of work until this is answered (#82). */
+  holding?: boolean
+  /**
+   * Withdrawn by its session (#82): finished, though `status` stays `open` so
+   * that a version older than 0.3.0 still reads the shared file. Use `isLive`.
+   */
+  withdrawn?: Withdrawal
+  /**
+   * What `after` comes to now (#82), as last mirrored to the item's row:
+   * refreshed from the file before every push (`refreshDependencies`). Never
+   * read locally: the pane and the answer checks compute it afresh
+   * (`dependencyState`).
+   */
+  waiting_on?: string[]
+  blocked?: Blocked
+  blocks?: number
 }
+
+/** Why an item was withdrawn, and when (the asker's clock). */
+export type Withdrawal = { at: number; reason: string }
+
+/**
+ * Why an item can never be answered as it stands (#82): one item it comes
+ * after was answered Not done, was withdrawn, or is no longer in the file.
+ */
+export type Blocked = { by: string; reason: 'not_done' | 'withdrawn' | 'missing' }
+
+/** What an item's `after` comes to: the items still open, and what blocks it. */
+export type DependencyState = { waiting_on: string[]; blocked?: Blocked; blocks: number }
 
 /** A session's routable lineage, from `get_session`. */
 export type RemoteLineage = {
@@ -153,6 +186,14 @@ export type ItemRow = {
    * local viewer answers by envelope only an item whose row carries it.
    */
   envelope?: number
+  /** As on the item (#82): what it comes after, held, withdrawn. */
+  after?: string[]
+  holding?: boolean
+  withdrawn?: Withdrawal
+  /** Derived by the asker (#82): the page and viewer draw these, never work them out. */
+  waiting_on?: string[]
+  blocked?: Blocked
+  blocks?: number
 }
 
 /**
@@ -311,7 +352,16 @@ export type HistoryFull = {
  * asked each open item, by its id (#75, `originOf`); the answered items for
  * History, the current repository's first; and that repository's `repo` value.
  */
-export type Tray = { items: Item[]; me: string; mine: string[]; origins: Record<string, string>; history: HistoryEntry[]; repo: string }
+export type Tray = {
+  items: Item[]
+  me: string
+  mine: string[]
+  origins: Record<string, string>
+  /** Why each open item that cannot be answered now cannot (#82, `answerLock`), by its id. */
+  locks: Record<string, string>
+  history: HistoryEntry[]
+  repo: string
+}
 
 /**
  * The local viewer's setting (#32), in the plugin's `$.store` under

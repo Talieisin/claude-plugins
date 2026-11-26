@@ -17,7 +17,7 @@
 
 import type { EngineInterface } from 'claude-code'
 
-import type { Item, ResponseEnvelope, ResponseRow } from '../types'
+import type { Item, ResponseEnvelope, ResponseRow, StoreFile } from '../types'
 import { writeResponse } from './artifact-store'
 import { artifactId, rowOf } from './envelope'
 import { isLineDue, resolveOwner, shortOf } from './items'
@@ -77,13 +77,14 @@ async function take($: EngineInterface, envelope: ResponseEnvelope, short: strin
     return { kind: 'notMine', short, reason: "read from another artifact than this session's page" }
   }
   const me = await $.session.id()
-  let item = await mine($, envelope.id, me)
-  if (item === undefined) {
+  let found = await mine($, envelope.id, me)
+  if (found === undefined) {
     // A replaced container: adopt this session's rows first.
     await requestPass($, 'relink')
-    item = await mine($, envelope.id, me)
+    found = await mine($, envelope.id, me)
   }
-  if (item === undefined) return { kind: 'notMine', short, reason: 'not an item of this session' }
+  if (found === undefined) return { kind: 'notMine', short, reason: 'not an item of this session' }
+  const { item, file } = found
   const row = rowOf(envelope) as unknown as ResponseRow
 
   // 3. Check before writing.
@@ -96,7 +97,7 @@ async function take($: EngineInterface, envelope: ResponseEnvelope, short: strin
     }
     return { kind: 'taken', short }
   }
-  const verdict = refusalOf(item, row)
+  const verdict = refusalOf(item, row, file)
   if ('refuse' in verdict) {
     const now = await $.clock.now()
     await mutate<boolean>($, file => {
@@ -124,11 +125,11 @@ async function take($: EngineInterface, envelope: ResponseEnvelope, short: strin
   return { kind: 'taken', short }
 }
 
-/** The item with this id when this session's chain owns it, as the file holds it now. */
-async function mine($: EngineInterface, id: string, me: string): Promise<Item | undefined> {
+/** The item with this id when this session's chain owns it, and the file as it holds it now. */
+async function mine($: EngineInterface, id: string, me: string): Promise<{ item: Item; file: StoreFile } | undefined> {
   const seen = await peek($)
   if (seen.error !== undefined) return undefined
   const item = seen.ok.file.items.find(one => one.id === id)
   if (item === undefined || resolveOwner(seen.ok.file.sessions, item.session_id) !== me) return undefined
-  return item
+  return { item, file: seen.ok.file }
 }

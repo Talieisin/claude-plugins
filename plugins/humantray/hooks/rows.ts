@@ -15,13 +15,26 @@ import type {
   ResponseRow,
   StoreFile,
 } from '../types'
-import { type Action, EMPTY_DRAFT, KEEP_PER_REPO, TYPES, buildResponse, isLineDue, resolveOwner, shortOf } from './items'
+import {
+  type Action,
+  EMPTY_DRAFT,
+  KEEP_PER_REPO,
+  TYPES,
+  answerLock,
+  buildResponse,
+  dependencyProblem,
+  isLineDue,
+  mirroredProblem,
+  isLive,
+  resolveOwner,
+  shortOf,
+} from './items'
 import { ROW_SCHEMA, fingerprint, itemToRow } from './row-shape'
 
 export { ROW_SCHEMA, fingerprint, itemToRow }
 
 /** The page this version publishes; rises with every change to page/page.ts. */
-export const PAGE_VERSION = 2
+export const PAGE_VERSION = 3
 
 /** A routable session id, as `get_session` gives it. */
 export const SESSION_ID = /^session_[A-Za-z0-9]{20,64}$/
@@ -110,6 +123,8 @@ export function checkItemRow(data: unknown): RowRead<ItemRow> {
   ) {
     return { bad: 'response_refused is malformed' }
   }
+  const dependency = dependencyProblem(data) ?? mirroredProblem(data)
+  if (dependency !== undefined) return { bad: dependency }
   return { ok: data as unknown as ItemRow }
 }
 
@@ -208,8 +223,15 @@ export type Verdict = { apply: { response: ItemResponse; status: ItemStatus } } 
  * have kept (`buildResponse`), so the page cannot store what the pane would
  * not, with each kept free-text field exactly as the answerer typed it.
  */
-export function refusalOf(item: Item, row: ResponseRow): Verdict {
+export function refusalOf(item: Item, row: ResponseRow, file?: StoreFile): Verdict {
   if (row.id !== item.id) return { refuse: 'The answer is for another item.' }
+  // Withdrawn, or coming after an item still open, or blocked (#82): an older
+  // page or viewer may still offer it.
+  if (item.withdrawn !== undefined) return { refuse: `${item.short} was withdrawn by its session.` }
+  if (file !== undefined) {
+    const lock = answerLock(file, item)
+    if (lock !== undefined) return { refuse: lock }
+  }
   if (!isResponseShape(item.type, row.response) || row.status !== ANSWER_STATUS[item.type]) {
     return { refuse: `The answer does not fit a ${item.type} item.` }
   }
@@ -295,16 +317,27 @@ export function rowToItem(row: ItemRow, me: string, artifact: string, version: n
   if (row.answer_id !== undefined) item.answer_id = row.answer_id
   if (row.response_refused !== undefined) item.response_refused = row.response_refused
   if (row.delivered_at !== undefined) item.delivered_at = row.delivered_at
+  if (row.after !== undefined) item.after = row.after
+  if (row.holding !== undefined) item.holding = row.holding
+  if (row.withdrawn !== undefined) item.withdrawn = row.withdrawn
+  // The mirrored state is kept as written, so the row stays in step; the next pass refreshes it.
+  if (row.waiting_on !== undefined) item.waiting_on = row.waiting_on
+  if (row.blocked !== undefined) item.blocked = row.blocked
+  if (row.blocks !== undefined) item.blocks = row.blocks
   const remote = item as Item & Required<Pick<Item, 'remote'>>
   item.row = { artifact, version, sent: fingerprint(remote) }
   return item
 }
 
-/** Whether an adopted row is worth taking: still open, or answered with a line not yet delivered. */
+/** Whether an adopted row is worth taking: still open (not withdrawn), or answered with a line not yet delivered. */
 export const isAdoptable = (row: ItemRow): boolean =>
-  row.status === 'open' || (!row.delivered && !(row.type === 'ack' && row.notify_on_done !== true))
+  isLive(row) || (row.status !== 'open' && !row.delivered && !(row.type === 'ack' && row.notify_on_done !== true))
 
-/** Adds the adoptable rows the file lacks; returns the ids adopted. */
+/**
+ * Adds the adoptable rows the file lacks, and every row one of them comes
+ * after (#82), answered or not, so an adopted item still knows what it waits
+ * on; returns the ids adopted.
+ */
 export function adoptRows(
   file: StoreFile,
   rows: Array<{ row: ItemRow; version: number }>,
@@ -314,11 +347,21 @@ export function adoptRows(
 ): string[] {
   const have = new Set(file.items.map(item => item.id))
   const adopted: string[] = []
-  for (const { row, version } of rows) {
-    if (row.session_id !== routable || have.has(row.id) || !isAdoptable(row)) continue
+  const own = rows.filter(({ row }) => row.session_id === routable)
+  const take = ({ row, version }: { row: ItemRow; version: number }) => {
     file.items.push(rowToItem(row, me, artifact, version))
     have.add(row.id)
     adopted.push(row.id)
+  }
+  for (const each of own) if (!have.has(each.row.id) && isAdoptable(each.row)) take(each)
+  // Prerequisites, through every chain of `after` the adopted rows start.
+  for (let i = 0; i < adopted.length; i++) {
+    const item = file.items.find(one => one.id === adopted[i])
+    for (const id of item?.after ?? []) {
+      if (have.has(id)) continue
+      const before = own.find(each => each.row.id === id)
+      if (before !== undefined) take(before)
+    }
   }
   return adopted
 }
@@ -364,24 +407,29 @@ export function pickArtifact(candidates: Array<{ url: string; meta: MetaPage }>)
   )[0]
 }
 
-/** Whether a finished row may be pruned: delivered or owing no line, and with no refusal standing. */
+/** Whether a finished (or withdrawn) row may be pruned: delivered or owing no line, and with no refusal standing. */
 export const isPrunableRow = (row: ItemRow): boolean =>
-  row.status !== 'open' &&
-  row.response_refused === undefined &&
+  !isLive(row) &&
+  // A refusal on a withdrawn row stands for nothing: no answer will be taken (#82).
+  (row.withdrawn !== undefined || row.response_refused === undefined) &&
   (row.delivered || !isLineDue({ status: row.status, type: row.type, notify_on_done: row.notify_on_done } as Item))
 
 /**
  * The finished rows to delete, oldest first: past the newest `keep` finished
  * rows (by `response_at`, then `updated`, then id), each prunable one.
  * Rows that are not prunable count towards the kept rows but are never deleted.
+ * `rows` holds the open rows too (#82): a row an unprunable row comes after
+ * is kept, and a withdrawn row (status `open`) counts as finished.
  */
 export function prunableRows(
   rows: Array<{ row: ItemRow; version: number }>,
   keep: number = KEEP_PER_REPO,
 ): Array<{ id: string; version: number }> {
-  const key = (row: ItemRow) => row.response_at ?? row.updated
+  const key = (row: ItemRow) => row.response_at ?? row.withdrawn?.at ?? row.updated
+  const needed = new Set<string>()
+  for (const { row } of rows) if (!isPrunableRow(row)) for (const id of row.after ?? []) needed.add(id)
   const finished = rows
-    .filter(({ row }) => row.status !== 'open')
+    .filter(({ row }) => !isLive(row))
     .sort((a, b) => {
       const ka = key(a.row)
       const kb = key(b.row)
@@ -390,7 +438,7 @@ export function prunableRows(
     })
   return finished
     .slice(keep)
-    .filter(({ row }) => isPrunableRow(row))
+    .filter(({ row }) => isPrunableRow(row) && !needed.has(row.id))
     .reverse()
     .map(({ row, version }) => ({ id: row.id, version }))
 }

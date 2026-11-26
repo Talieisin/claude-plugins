@@ -3,7 +3,9 @@
 // Nothing here calls `$`, so every rule is the same in a hook and a test.
 
 import type {
+  Blocked,
   DeliveryMark,
+  DependencyState,
   Draft,
   HistoryEntry,
   HistoryFull,
@@ -67,7 +69,15 @@ export type AddInput = {
   notes?: boolean
   key: string
   notify_on_done?: boolean
+  /** The items this one comes after (#82), as the caller named them (`HT-xxxxx` or a full id); `[]` clears on a bump. */
+  after?: string[]
+  holding?: boolean
 }
+
+/** The most items one item may come after (#82). */
+export const MAX_AFTER = 6
+/** The most characters of a withdrawal's reason (#82). */
+export const REASON_MAX = 300
 
 export type Checked<T> = { ok: T; error?: undefined } | { error: string; ok?: undefined }
 
@@ -83,7 +93,7 @@ export const normaliseKey = (question: string): string =>
  * refused here writes nothing.
  */
 export const validateAdd = (raw: Record<string, unknown>): Checked<AddInput> => {
-  const { type, header, question, body_md, options, multiSelect, notes, key, notify_on_done } = raw
+  const { type, header, question, body_md, options, multiSelect, notes, key, notify_on_done, after, holding } = raw
 
   if (typeof type !== 'string' || !(TYPES as readonly string[]).includes(type)) {
     return { error: `type must be one of ${TYPES.join(', ')}` }
@@ -124,6 +134,16 @@ export const validateAdd = (raw: Record<string, unknown>): Checked<AddInput> => 
   }
   if (notify_on_done !== undefined && kind !== 'ack') {
     return { error: 'notify_on_done is for ack items only' }
+  }
+  if (holding !== undefined && typeof holding !== 'boolean') return { error: 'holding must be true or false' }
+  if (holding !== undefined && kind === 'ack') {
+    return { error: 'holding is not for ack items: an FYI parks no work' }
+  }
+  if (after !== undefined) {
+    if (!Array.isArray(after) || after.some(ref => typeof ref !== 'string' || ref.trim() === '')) {
+      return { error: 'after must be a list of item ids (HT-xxxxx or the full id)' }
+    }
+    if (after.length > MAX_AFTER) return { error: `after may name at most ${MAX_AFTER} items` }
   }
 
   let checkedOptions: ItemOption[] | undefined
@@ -173,6 +193,8 @@ export const validateAdd = (raw: Record<string, unknown>): Checked<AddInput> => 
   if (typeof multiSelect === 'boolean') input.multiSelect = multiSelect
   if (typeof notes === 'boolean') input.notes = notes
   if (typeof notify_on_done === 'boolean') input.notify_on_done = notify_on_done
+  if (typeof holding === 'boolean') input.holding = holding
+  if (Array.isArray(after)) input.after = (after as string[]).map(ref => ref.trim())
   return { ok: input }
 }
 
@@ -359,9 +381,159 @@ export const when = (at: number): string => {
   return Number.isFinite(date.getTime()) ? `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'at an unknown time'
 }
 
+/**
+ * Whether an item is still waiting on the person (#82): open, and not
+ * withdrawn. A withdrawn item keeps `status: 'open'` so that a version older
+ * than 0.3.0, which refuses the whole file on a status it does not know,
+ * still reads it; everywhere else it counts as finished.
+ */
+export const isLive = (item: Pick<Item, 'status' | 'withdrawn'>): boolean => item.status === 'open' && item.withdrawn === undefined
+
 /** Open items, the most recently added or bumped first. */
 export const openItems = (file: StoreFile): Item[] =>
-  file.items.filter(item => item.status === 'open').sort((a, b) => b.updated - a.updated)
+  file.items.filter(isLive).sort((a, b) => b.updated - a.updated)
+
+/**
+ * Whether a finished prerequisite lets the items after it go ahead (#82): a
+ * `do` answered Done; any other type answered at all.
+ */
+const satisfies = (item: Item): boolean =>
+  item.type === 'do' ? (item.response as { outcome?: string } | undefined)?.outcome === 'done' : true
+
+/**
+ * What an item's `after` comes to in this file (#82): the items it still
+ * waits on (open), what blocks it for good (a prerequisite answered Not done,
+ * withdrawn, or gone from the file), and how many live items come after it.
+ * Worked out afresh from the file whenever it decides anything, so an answer
+ * any process wrote (an older pane in another worktree too) counts at once.
+ */
+export const dependencyState = (file: StoreFile, item: Item): DependencyState => {
+  const waiting_on: string[] = []
+  let blocked: Blocked | undefined
+  for (const id of item.after ?? []) {
+    const before = file.items.find(one => one.id === id)
+    if (before === undefined) blocked ??= { by: id, reason: 'missing' }
+    else if (before.withdrawn !== undefined) blocked ??= { by: id, reason: 'withdrawn' }
+    else if (before.status === 'open') waiting_on.push(id)
+    else if (!satisfies(before)) blocked ??= { by: id, reason: 'not_done' }
+  }
+  const blocks = file.items.filter(one => isLive(one) && (one.after ?? []).includes(item.id)).length
+  const state: DependencyState = { waiting_on, blocks }
+  if (blocked !== undefined) state.blocked = blocked
+  return state
+}
+
+/** The short id of an item in the file, or of a full id the file no longer holds. */
+const shortIn = (id: string): string => shortOf(id)
+
+/**
+ * Why a live item cannot be answered now (#82), in words for the card and the
+ * refusal, or undefined when it can. Withdrawn, waiting on an open item, or
+ * blocked by one answered Not done, withdrawn or gone.
+ */
+export const answerLock = (file: StoreFile, item: Item): string | undefined => {
+  if (item.withdrawn !== undefined) return `${item.short} was withdrawn by its session.`
+  const state = dependencyState(file, item)
+  if (state.blocked !== undefined) return blockedText(state.blocked)
+  if (state.waiting_on.length > 0) {
+    return `${item.short} comes after ${state.waiting_on.map(shortIn).join(', ')}: answer ${state.waiting_on.length === 1 ? 'that' : 'those'} first.`
+  }
+  return undefined
+}
+
+/**
+ * Why a row cannot be answered now, from what its asker mirrored to it (#82),
+ * or undefined: the viewer and the page draw this and never walk `after`.
+ */
+export const mirroredLock = (row: { short: string; waiting_on?: string[]; blocked?: Blocked; withdrawn?: unknown }): string | undefined => {
+  if (row.withdrawn !== undefined) return `${row.short} was withdrawn by its session.`
+  if (row.blocked !== undefined) return blockedText(row.blocked)
+  const waiting = row.waiting_on ?? []
+  if (waiting.length > 0) {
+    return `${row.short} comes after ${waiting.map(shortIn).join(', ')}: answer ${waiting.length === 1 ? 'that' : 'those'} first.`
+  }
+  return undefined
+}
+
+/** A block, in words (#82): the session must raise the item again or withdraw it. */
+export const blockedText = (blocked: Blocked): string => {
+  const by = shortIn(blocked.by)
+  const why =
+    blocked.reason === 'not_done'
+      ? `${by} was answered Not done`
+      : blocked.reason === 'withdrawn'
+        ? `${by} was withdrawn`
+        : blocked.reason === 'missing'
+          ? `${by} is no longer in the tray`
+          : `${by} cannot go ahead`
+  return `Blocked: ${why}. The session that asked will raise this again or withdraw it.`
+}
+
+/**
+ * Sets every item's mirrored `waiting_on`, `blocked` and `blocks` (#82) from
+ * the file as it is, so the row pushed next says what the file says. Finished
+ * items carry none. True when anything changed.
+ */
+export const refreshDependencies = (file: StoreFile): boolean => {
+  let changed = false
+  for (const item of file.items) {
+    const live = isLive(item)
+    const state = live ? dependencyState(file, item) : undefined
+    const want = {
+      waiting_on: state !== undefined && state.waiting_on.length > 0 ? state.waiting_on : undefined,
+      blocked: state?.blocked,
+      blocks: state !== undefined && state.blocks > 0 ? state.blocks : undefined,
+    }
+    for (const field of ['waiting_on', 'blocked', 'blocks'] as const) {
+      if (JSON.stringify(item[field]) === JSON.stringify(want[field])) continue
+      if (want[field] === undefined) delete item[field]
+      else (item as Record<string, unknown>)[field] = want[field]
+      changed = true
+    }
+  }
+  return changed
+}
+
+/**
+ * The items one item may come after (#82): `refs` resolved to full ids among
+ * the items whose owner chain ends at this session, in this repository. A
+ * reference is `HT-xxxxx` or the full id; one that matches none, or more than
+ * one, or a withdrawn item, is refused.
+ */
+export const resolveAfter = (
+  file: StoreFile,
+  refs: string[],
+  context: { repo: string; session_id: string; self?: string },
+): Checked<string[]> => {
+  const own = file.items.filter(
+    item => item.repo === context.repo && resolveOwner(file.sessions, item.session_id) === context.session_id,
+  )
+  const ids: string[] = []
+  for (const ref of refs) {
+    const found = own.filter(item => item.id === ref || item.short.toLowerCase() === ref.toLowerCase())
+    if (found.length === 0) return { error: `after: ${ref} is not an item this session raised in this repository` }
+    if (found.length > 1) return { error: `after: ${ref} matches more than one item; give the full id` }
+    const [item] = found as [Item]
+    if (item.id === context.self) return { error: `after: an item cannot come after itself (${item.short})` }
+    if (item.withdrawn !== undefined) return { error: `after: ${item.short} was withdrawn` }
+    if (!ids.includes(item.id)) ids.push(item.id)
+  }
+  return { ok: ids }
+}
+
+/** Whether giving `id` these prerequisites would make it come after itself, through any chain of `after`. */
+const makesCycle = (file: StoreFile, id: string, after: string[]): boolean => {
+  const seen = new Set<string>()
+  const stack = [...after]
+  while (stack.length > 0) {
+    const next = stack.pop() as string
+    if (next === id) return true
+    if (seen.has(next)) continue
+    seen.add(next)
+    for (const before of file.items.find(one => one.id === next)?.after ?? []) stack.push(before)
+  }
+  return false
+}
 
 export type AddOutcome = { item: Item; bumped: boolean }
 
@@ -379,7 +551,7 @@ export const addOrBump = (
 ): Checked<AddOutcome> => {
   const matches = file.items.filter(
     item =>
-      item.status === 'open' &&
+      isLive(item) &&
       item.repo === context.repo &&
       item.key === input.key &&
       resolveOwner(file.sessions, item.session_id) === context.session_id,
@@ -401,7 +573,24 @@ export const addOrBump = (
         : newest,
     undefined,
   )
+  let after: string[] | undefined
+  if (input.after !== undefined) {
+    const resolved = resolveAfter(file, input.after, { repo: context.repo, session_id: context.session_id, self: existing?.id })
+    if (resolved.error !== undefined) return { error: resolved.error }
+    after = resolved.ok
+    if (existing !== undefined && makesCycle(file, existing.id, after)) {
+      return { error: `after: ${existing.short} would come after itself through the items it names` }
+    }
+  }
   if (existing !== undefined) {
+    if (input.holding !== undefined) {
+      if (input.holding) existing.holding = true
+      else delete existing.holding
+    }
+    if (after !== undefined) {
+      if (after.length > 0) existing.after = after
+      else delete existing.after
+    }
     existing.body_md = input.body_md
     if (input.options !== undefined) existing.options = input.options
     else delete existing.options
@@ -435,8 +624,93 @@ export const addOrBump = (
   // Set here, where it is raised, so every view and version draws and keeps them.
   if (input.type === 'approve') item.notes = true
   if (input.notify_on_done !== undefined) item.notify_on_done = input.notify_on_done
+  if (input.holding === true) item.holding = true
+  if (after !== undefined && after.length > 0) item.after = after
   file.items.push(item)
   return { ok: { item, bumped: false } }
+}
+
+/**
+ * Withdraws items of this session's chain (#82), all or none: each must be
+ * live, and no live item outside `refs` may come after one of them (raise it
+ * again with another `after`, or withdraw it in the same call). A withdrawn
+ * item is finished: it owes no line, so it is marked delivered.
+ */
+export const withdrawItems = (
+  file: StoreFile,
+  refs: string[],
+  reason: string,
+  context: { repo: string; session_id: string; now: number },
+): Checked<Item[]> => {
+  const own = file.items.filter(
+    item => item.repo === context.repo && resolveOwner(file.sessions, item.session_id) === context.session_id,
+  )
+  const chosen: Item[] = []
+  for (const ref of refs) {
+    const found = own.filter(item => item.id === ref || item.short.toLowerCase() === ref.toLowerCase())
+    if (found.length === 0) return { error: `${ref} is not an item this session raised in this repository` }
+    if (found.length > 1) return { error: `${ref} matches more than one item; give the full id` }
+    const [item] = found as [Item]
+    if (item.withdrawn !== undefined) return { error: `${item.short} is already withdrawn` }
+    if (item.status !== 'open') return { error: `${item.short} is already answered: its answer comes to you (or has)` }
+    if (!chosen.includes(item)) chosen.push(item)
+  }
+  const ids = new Set(chosen.map(item => item.id))
+  const after = file.items.find(item => isLive(item) && !ids.has(item.id) && (item.after ?? []).some(id => ids.has(id)))
+  if (after !== undefined) {
+    const before = (after.after ?? []).filter(id => ids.has(id)).map(shortOf).join(', ')
+    return {
+      error: `${after.short} comes after ${before}: withdraw it in the same call, or raise it again with another after`,
+    }
+  }
+  for (const item of chosen) {
+    item.withdrawn = { at: context.now, reason }
+    item.delivered = true
+    delete item.holding
+  }
+  return { ok: chosen }
+}
+
+/**
+ * Opens again an answered item this version would have refused (#82): one
+ * that comes after an item still open, or is blocked. Only an older pane
+ * writes such an answer (it does not know `after`); the asker checks every
+ * answer before it delivers it, so the session never acts on one. The
+ * refusal keeps the answer's own `answer_id` where it has one, so that its
+ * response row no longer counts, and is otherwise `answerId`: every reader,
+ * 0.2.10 included, needs one there. True when it reopened the item.
+ */
+export const reopenRefused = (file: StoreFile, item: Item, now: number, answerId: string): boolean => {
+  if (item.status === 'open' || item.delivered) return false
+  // Withdrawn, then answered on an older pane (it still draws the card as
+  // open): never delivered, whatever it comes after. Back to withdrawn as it
+  // was, finished and owing nothing.
+  if (item.withdrawn !== undefined) {
+    clearAnswer(item, now, answerId, `${item.short} was withdrawn by its session.`)
+    item.delivered = true
+    return true
+  }
+  // Only an answer that owes a line, and so is not prunable until delivered:
+  // a silent ack's answer tells the session nothing, and is left as it is.
+  if (!isLineDue(item)) return false
+  const state = dependencyState(file, item)
+  let reason: string
+  if (state.blocked !== undefined) reason = blockedText(state.blocked)
+  else if (state.waiting_on.length > 0) {
+    reason = `This was answered before ${state.waiting_on.map(shortOf).join(', ')}, which it comes after: answer ${state.waiting_on.length === 1 ? 'that' : 'those'} first, then this again.`
+  } else return false
+  clearAnswer(item, now, answerId, reason)
+  item.delivered = false
+  return true
+}
+
+/** Takes an answer back off an item, leaving it open with the refusal recorded (`reopenRefused`). */
+const clearAnswer = (item: Item, now: number, answerId: string, reason: string): void => {
+  item.response_refused = { answer_id: item.answer_id ?? answerId, reason, at: now }
+  item.status = 'open'
+  for (const field of ['response', 'response_at', 'response_by', 'answer_id', 'delivering_at', 'delivering_by', 'delivered_at'] as const) {
+    delete item[field]
+  }
 }
 
 /** What a card's control asks for. */
@@ -508,6 +782,10 @@ export const buildResponse = (
   }
 }
 
+/** How History names a withdrawn item (#82): `withdrawn: <reason>`, on one line. */
+export const withdrawnText = (withdrawal: { reason: string }): string =>
+  withdrawal.reason.trim() === '' ? 'withdrawn' : `withdrawn: ${oneLine(withdrawal.reason)}`
+
 /** One line: every line break and the space around it becomes ` / `. */
 const oneLine = (text: string): string => text.replace(/\s*[\r\n]+\s*/g, ' / ').trim()
 
@@ -521,6 +799,7 @@ const isText = (v: unknown): v is string => typeof v === 'string'
  * field (an adopted row may carry one) changes nothing.
  */
 export const choiceOf = (item: Item): string => {
+  if (item.withdrawn !== undefined) return 'withdrawn'
   const r = item.response as Record<string, unknown> | undefined
   if (r === undefined) return ''
   switch (item.type) {
@@ -597,13 +876,16 @@ export const isLineDue = (item: Item): boolean =>
  * The one test of whether an item may be pruned. It may when it is finished:
  * answered, carrying no claim, either delivered or owing no line, and owing
  * the store no push. Such an
- * item stays prunable and its order key never moves: no code path makes it
- * open, owed or claimed again. One write still reaches it: the owner's pass
+ * item stays prunable, and its order key moves only when `reopenRefused`
+ * takes an answer back off a withdrawn item (to `withdrawn.at`): no code
+ * path makes it open, owed or claimed again (`reopenRefused` reopens an answer still owed
+ * its line, which is not prunable, or takes one back off a withdrawn item,
+ * which leaves it finished and prunable). One write still reaches it: the owner's pass
  * flags an acknowledged `ack` that owes no line as `delivered`, which leaves
  * it prunable. So a prune decided on any read is still right when written.
  */
 export const isPrunable = (item: Item): boolean =>
-  item.status !== 'open' &&
+  !isLive(item) &&
   item.delivering_at === undefined &&
   item.delivering_by === undefined &&
   (item.delivered || !isLineDue(item)) &&
@@ -612,7 +894,7 @@ export const isPrunable = (item: Item): boolean =>
   !owesPush(item)
 
 /** When an item last changed for good: its answer, or else its last add or bump. */
-export const orderKey = (item: Item): number => item.response_at ?? item.updated
+export const orderKey = (item: Item): number => item.response_at ?? item.withdrawn?.at ?? item.updated
 
 /** Older first: by order key, then by id. Always a total order (never NaN). */
 export const compareAge = (a: Item, b: Item): number => {
@@ -628,9 +910,14 @@ export const compareAge = (a: Item, b: Item): number => {
  * Session records are never touched. Returns the ids removed.
  */
 export const prune = (file: StoreFile, keep: number = KEEP_PER_REPO): string[] => {
+  // An item that others still need is kept (#82): one that an unprunable item
+  // comes after (open, or answered and not yet delivered, whose delivery
+  // check reads it again).
+  const needed = new Set<string>()
+  for (const item of file.items) if (!isPrunable(item)) for (const id of item.after ?? []) needed.add(id)
   const groups = new Map<string, Item[]>()
   for (const item of file.items) {
-    if (!isPrunable(item)) continue
+    if (!isPrunable(item) || needed.has(item.id)) continue
     const group = groups.get(item.repo)
     if (group === undefined) groups.set(item.repo, [item])
     else group.push(item)
@@ -996,7 +1283,7 @@ const fenced = (code: string, lang: string): string => {
  */
 export const historyOf = (file: StoreFile, repo: string, me: string, now: number): HistoryEntry[] =>
   file.items
-    .filter(item => item.status !== 'open')
+    .filter(item => !isLive(item))
     .sort((a, b) => {
       if (a.repo !== b.repo) {
         if (a.repo === repo) return -1
@@ -1020,7 +1307,7 @@ export const historyOf = (file: StoreFile, repo: string, me: string, now: number
         header: item.header,
         question,
         status: item.status,
-        answer: item.type === 'question' ? '' : choiceOf(item),
+        answer: item.withdrawn !== undefined ? withdrawnText(item.withdrawn) : item.type === 'question' ? '' : choiceOf(item),
         parts,
         clipped: question !== item.question || parts.some(part => part.clipped),
         bumps: item.bumps,
@@ -1060,7 +1347,7 @@ export const fullOf = (item: Item): HistoryFull => {
     header: item.header,
     question: item.question,
     body,
-    answer: item.type === 'question' ? '' : choiceOf(item),
+    answer: item.withdrawn !== undefined ? withdrawnText(item.withdrawn) : item.type === 'question' ? '' : choiceOf(item),
     parts: partsOf(item).map(part => ({ label: part.label, ...cut(part.text, false) })),
     copy: codeBlocksOf(item.body_md),
   }
@@ -1106,6 +1393,41 @@ const isResponseOf = (type: string, r: unknown): boolean => {
 }
 
 const isNullableString = (v: unknown): boolean => v === null || typeof v === 'string'
+
+const isIdList = (v: unknown): boolean => Array.isArray(v) && v.every(id => typeof id === 'string')
+
+/**
+ * Why an item's #82 fields are malformed, or undefined when they are fine or
+ * absent: `after`, `holding` and `withdrawn`, which this version acts on. The
+ * mirrored `waiting_on`, `blocked` and `blocks` are not checked here: nothing
+ * local reads them, and holding the shared file to their shape would let a
+ * later version's new value (another block reason, say) make this one refuse
+ * the whole file. A reader older than 0.3.0 keeps all of them as unknown fields.
+ */
+export const dependencyProblem = (data: Record<string, unknown>): string | undefined => {
+  const { after, holding, withdrawn } = data
+  if (after !== undefined && !isIdList(after)) return 'after is not a list of ids'
+  if (holding !== undefined && typeof holding !== 'boolean') return 'holding is not true or false'
+  if (withdrawn !== undefined && (!isRecord(withdrawn) || typeof withdrawn.at !== 'number' || typeof withdrawn.reason !== 'string')) {
+    return 'withdrawn is malformed'
+  }
+  return undefined
+}
+
+/**
+ * Why a row's mirrored #82 fields are unusable to the page and viewer, or
+ * undefined. Loose on purpose: a block reason this version does not know
+ * still reads, drawn as a block (`blockedText`).
+ */
+export const mirroredProblem = (data: Record<string, unknown>): string | undefined => {
+  const { waiting_on, blocked, blocks } = data
+  if (waiting_on !== undefined && !isIdList(waiting_on)) return 'waiting_on is not a list of ids'
+  if (blocked !== undefined && (!isRecord(blocked) || typeof blocked.by !== 'string' || typeof blocked.reason !== 'string')) {
+    return 'blocked is malformed'
+  }
+  if (blocks !== undefined && (typeof blocks !== 'number' || !Number.isFinite(blocks))) return 'blocks is not a number'
+  return undefined
+}
 
 /** Why an item's store fields (#33) are malformed, or undefined when they are fine or absent. */
 const storeFieldsProblem = (item: Record<string, unknown>, name: string): string | undefined => {
@@ -1180,6 +1502,8 @@ const itemProblem = (item: unknown): string | undefined => {
   if (item.status !== 'open' && !isResponseOf(item.type, item.response)) {
     return `item ${name}: the response is missing or malformed`
   }
+  const dependency = dependencyProblem(item)
+  if (dependency !== undefined) return `item ${name}: ${dependency}`
   return storeFieldsProblem(item, name)
 }
 

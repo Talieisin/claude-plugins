@@ -636,6 +636,7 @@ try {
     console.log(`ok: ${name}`)
   }
   await copyChecks(browser)
+  await dependencyChecks(browser)
 } finally {
   await browser.close()
   rmSync(dir, { recursive: true, force: true })
@@ -666,6 +667,54 @@ function seedCopy({ cases, runbook }) {
     schema: 1, id: '01TESTCOPY0000000000000WAIT', answer_id: 'copyanswer0000000001', response: { text: 'Ran:\n\n```sh\ncat <<-EOF\n\tx\n\tEOF\n```' },
     status: 'answered', answered_at: now, seen: { bumps: 0, updated: now - 3600e3 }, by: 'page',
   })
+}
+
+/** Items that come after others, and withdrawn items (#82), as their session mirrored them. */
+function seedDependencies() {
+  const now = Date.now()
+  const S = 'session_FAKEFAKEFAKEFAKEFAKEW001'
+  const base = (id, f) => ({
+    schema: 1, id, short: `HT-${id.slice(-5)}`, repo: 'example.com/example/repo', header: 'Step', question: 'Question?',
+    body_md: '', key: `k${id}`, created: now - 3600e3, updated: now - 3600e3, bumps: 0, status: 'open', delivered: false,
+    session_id: S, session_title: 'worker', parent_session_id: null, lead_session_id: S, writer_version: '0.3.0', envelope: 1, ...f,
+  })
+  const put = (p, d) => window.__store.set(p, d)
+  put('meta/page', { schema: 1, kind: 'humantray', repo: 'example.com/example/repo', created_at: now, page_version: 3, plugin_version: '0.3.0' })
+  put('items/01TESTDEPS0000000000000FIRS', base('01TESTDEPS0000000000000FIRS', { type: 'do', question: 'Make the directory', blocks: 1 }))
+  put('items/01TESTDEPS0000000000000NEXT', base('01TESTDEPS0000000000000NEXT', {
+    type: 'do', question: 'Run the build in it', after: ['01TESTDEPS0000000000000FIRS'], waiting_on: ['01TESTDEPS0000000000000FIRS'],
+  }))
+  put('items/01TESTDEPS0000000000000BLKD', base('01TESTDEPS0000000000000BLKD', {
+    type: 'question', question: 'Which flag?', after: ['01TESTDEPS0000000000000NOPE'], blocked: { by: '01TESTDEPS0000000000000NOPE', reason: 'not_done' },
+  }))
+  put('items/01TESTDEPS0000000000000GONE', base('01TESTDEPS0000000000000GONE', {
+    type: 'ack', question: 'Old plan', delivered: true, withdrawn: { at: now - 60e3, reason: 'the plan changed' },
+  }))
+}
+
+async function dependencyChecks(browser) {
+  const page = await browser.newPage({ viewport: { width: 1100, height: 1400 } })
+  const errors = []
+  page.on('pageerror', e => errors.push(String(e)))
+  await page.addInitScript(stub)
+  await page.addInitScript(seedDependencies)
+  await page.goto(`file://${file}`)
+  await page.waitForTimeout(200)
+  const card = id => `#card-01TESTDEPS0000000000000${id}`
+  assert.equal(await page.$$eval(`${card('FIRS')} button`, x => x.length) > 0, true, 'deps: the first step can be answered')
+  assert.equal(await page.$$eval(`${card('NEXT')} button`, x => x.length), 0, 'deps: a waiting step has no controls')
+  assert.match(await page.$eval(card('NEXT'), x => x.textContent), /comes after HT-0FIRS: answer that first\./, 'deps: why it waits')
+  assert.equal(await page.$$eval(`${card('BLKD')} button, ${card('BLKD')} textarea`, x => x.length), 0, 'deps: a blocked item has no controls')
+  assert.match(await page.$eval(card('BLKD'), x => x.textContent), /Blocked: HT-0NOPE was answered Not done\./, 'deps: why it is blocked')
+  assert.equal(await page.$(card('GONE')), null, 'deps: a withdrawn item is not open')
+  assert.equal(await page.$eval('#count', x => x.textContent), '3', 'deps: three open')
+  assert.equal(await page.$eval('#history-count', x => x.textContent), '1', 'deps: the withdrawn item is in History')
+  await page.click('#tab-history')
+  await page.waitForTimeout(100)
+  assert.match(await page.$eval('#history-01TESTDEPS0000000000000GONE', x => x.textContent), /Withdrawn by its session .*: the plan changed/, 'deps: why it went')
+  assert.deepEqual(errors, [], 'deps: no errors')
+  await page.close()
+  console.log('ok: dependencies')
 }
 
 async function copyChecks(browser) {
