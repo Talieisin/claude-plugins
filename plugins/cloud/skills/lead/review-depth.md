@@ -1,4 +1,4 @@
-<!-- shared-skill-version: 35 (delivered by the `cloud` plugin) -->
+<!-- shared-skill-version: 36 (delivered by the `cloud` plugin) -->
 
 # Review depth
 
