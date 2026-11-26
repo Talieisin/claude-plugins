@@ -175,6 +175,7 @@ Derived at dfd6897, 2026-11-20. Facts marked (checked) are re-verified by the le
 - Loading a plugin from a checkout (`--plugin-dir`) makes the engine write its types into that plugin's `.claude-plugin/types/`. They are generated, and the repository's `.gitignore` keeps them out of git: never commit them.
 - Computer use cannot control the Claude desktop app's own window, so no session can check how a mod draws on the desktop app: that check is the owner's (#81).
 - The trusted-device approval (`confirm_repository_trust` for the owner's sessions or computers) cannot be undone. Once a lead has given it, its cloud workers' `send_message` to it is refused, and it can no longer change its pull-request subscriptions (#81).
+- A scheduled check-in (`send_later` or a trigger) into a session that has given that approval fails with access denied, so such a session can be woken only by the owner (#81).
 
 ### Checks that run on a pull request
 
