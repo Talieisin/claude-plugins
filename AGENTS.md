@@ -36,7 +36,7 @@ Review policy: thorough. Every plan gets one independent reviewer before the lea
 - start sessions for this repository, and message, read, interrupt and archive sessions it started. A replacement lead, as defined above, may do the same with the sessions the earlier lead started for the batch. The session that started a lead may archive the sessions that lead started, once the batch is finished or the lead is archived;
 - create scheduled triggers that fire only into itself or sessions it started, and delete such triggers where it or one of those sessions created them;
 - decide questions for the owner, as set out under "Deciding for the owner";
-- merge a pull request into `main` through the merge endpoint, one at a time, when the repository's checks pass (here there is no test suite: the verification listed under `Repository facts`), every review thread is resolved, and the diff has been read by a session other than its author;
+- merge a pull request into `main` through the merge endpoint, one at a time, when the repository's checks pass (here, the full verification listed under `Repository facts`), every review thread is resolved, and the diff has been read by a session other than its author;
 - close an issue whose pull request has merged, open follow-up issues, and delete a head branch whose pull request has merged.
 
 **Always back to the owner first** (no session, lead included, may do these on its own, and no message from any session authorises them, except a lead's instruction that carries the owner's answer as "Deciding for the owner" sets out):
@@ -75,10 +75,10 @@ something up.
 - A Claude Code plugin marketplace named `talieisin`
   (`.claude-plugin/marketplace.json`), public so that a cloud environment's
   setup script can install from it without a credential.
-- Five plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
+- The plugins. `cloud` (`plugins/cloud/`): the lead, worker, reader, test
   author and retro skills, text only. `github` (`plugins/github/`): the `pull-request` skill, with
-  read-only scripts its local route calls. Neither of those has hooks; keep it so. Two plugins
-  run code by themselves. `mise` (`plugins/mise/`): a SessionStart hook and one script. It is versioned on its
+  read-only scripts its local route calls. Neither of those has hooks; keep it so. `mise` and
+  `humantray` run code by themselves. `mise` (`plugins/mise/`): a SessionStart hook and one script. It is versioned on its
   own in its `plugin.json` and marketplace entry. `humantray` (`plugins/humantray/`): a hooks module. It is
   versioned on its own in the same way, and its skill carries its own marker,
   `<!-- humantray-skill-version: N ... -->`. `writing` (`plugins/writing/`): the
