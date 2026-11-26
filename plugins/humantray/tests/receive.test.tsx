@@ -273,6 +273,29 @@ describe('checked before anything is written', () => {
     expect(a.doc(URL_A, `items/${ID1}`)?.data).toMatchObject({ response_refused: { answer_id: envelopeFor(ID1).answer_id } })
   })
 
+  test('an envelope answer to an item that comes after one still open is refused before writing, with the reason (#82)', async ($, on) => {
+    const { w, a } = await asker($, on, [
+      mirrored({ id: ID2, type: 'do' }),
+      mirrored({ id: ID1, type: 'approve', after: [ID2] }),
+    ])
+    await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    await settle(w)
+    expect(responseWrites(a)).toEqual([])
+    expect(w.submits).toEqual([])
+    const item = w.store().items.find(one => one.id === ID1)
+    expect(item?.status).toBe('open')
+    expect(item?.response_refused).toMatchObject({ answer_id: envelopeFor(ID1).answer_id, reason: expect.stringMatching(/comes after HT-/) })
+  })
+
+  test('an envelope answer to a withdrawn item is refused before writing, with the reason (#82)', async ($, on) => {
+    const { w, a } = await asker($, on, [mirrored({ id: ID1, type: 'approve', withdrawn: { at: START - 5, reason: 'gone' }, delivered: true })])
+    await $.session.receive(warmReceive(wrapped(textOf(envelopeFor(ID1)))))
+    await settle(w)
+    expect(responseWrites(a)).toEqual([])
+    expect(w.submits).toEqual([])
+    expect(w.store().items[0]?.response_refused?.reason).toMatch(/withdrawn by its session/)
+  })
+
   test('an item answered and not yet delivered is delivered once, and nothing is written', async ($, on) => {
     const applied = mirrored({
       id: ID1,

@@ -353,7 +353,7 @@ describe('registration', () => {
     const { w } = linked(on)
     w.refuseTool = name => name === 'humantray_config'
     await $.session.start(START_EVENT)
-    expect(w.tools).toEqual(['humantray_add', 'humantray_list'])
+    expect(w.tools).toEqual(['humantray_add', 'humantray_list', 'humantray_withdraw'])
     // The rest of the start still runs: the commands register after it.
     expect(w.commands).toEqual(['humantray-open', 'humantray-viewer', 'humantray-gallery', 'humantray-page'])
     await add($, 'one')

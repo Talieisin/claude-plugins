@@ -150,6 +150,7 @@ describe('the pure rules', () => {
     ['open, our own response row: kept, stored', { kind: 'row', row: open, response: { ok: response(ID1, { answer_id: entry.answer_id, by: 'viewer' }) as never } }, { keep: true, state: 'stored' }],
     ['open, another answer counting: settled', { kind: 'row', row: open, response: { ok: response(ID1) as never } }, { keep: false }],
     ['open, nothing yet: kept, sent', { kind: 'row', row: open }, { keep: true, state: 'sent' }],
+    ['withdrawn by its session (#82): settled, with a toast', { kind: 'row', row: rowOf({ id: ID1, type: 'approve', withdrawn: { at: START, reason: 'gone' }, delivered: true }) }, { keep: false, toast: 'HT-IEW01: withdrawn by its session' }],
     ['the store says no such document: settled', { kind: 'missing' }, { keep: false }],
     ['a read that failed or a row unreadable: unchanged', { kind: 'unknown' }, { keep: true, state: 'sent' }],
   ]
@@ -307,9 +308,15 @@ describe('the lease: one viewer per computer', () => {
     a.session = { id: ME, title: null, parent: null }
     const text = await turnOn($, w)
     expect(text).toContain('only in a local session')
-    const reads = a.calls.filter(c => c.tool === 'ArtifactData' && c.input.collection === 'items' && c.input.action === 'query' && JSON.stringify(c.input.query).includes('"open"'))
+    // The session's own start pass reads the open rows once, to prune its
+    // finished ones around them (#82); the viewer reads none, then or later.
+    const openReads = () =>
+      a.calls.filter(c => c.tool === 'ArtifactData' && c.input.collection === 'items' && c.input.action === 'query' && JSON.stringify(c.input.query).includes('"open"')).length
+    expect(openReads()).toBeLessThanOrEqual(1)
+    const before = openReads()
     await tickOnce(w)
-    expect(reads).toEqual([])
+    await tickOnce(w)
+    expect(openReads()).toBe(before)
   })
 
   vtest('off stops it', async ($, on) => {
@@ -404,6 +411,23 @@ describe('reading and drawing', () => {
     expect(hrefs.some(h => h === `https://claude.ai/code/${ME}`)).toBe(true)
     expect(hrefs.some(h => h.includes('evil.example'))).toBe(false)
     expect(text).toContain('last active')
+  })
+
+  vtest('a row that comes after one still open is drawn without controls; a withdrawn row goes to History (#82)', async ($, on) => {
+    const { w, a } = viewerWorld(on)
+    put(a, URL_A, rowOf({ id: ID1, type: 'approve', after: [ID3], waiting_on: [ID3] }))
+    put(a, URL_A, rowOf({ id: ID2, type: 'approve', withdrawn: { at: START - 5, reason: 'plan changed' }, delivered: true }))
+    put(a, URL_A, rowOf({ id: ID3, type: 'do', blocks: 1 }))
+    await turnOn($, w)
+    const ui = await mount($, { ...PANE, surface: 'desktop' })
+    const text = await shownText(ui)
+    expect(text).toContain(`HT-${ID1.slice(-5)} comes after HT-${ID3.slice(-5)}: answer that first.`)
+    expect(await ui.find({ key: `v:${ID1}:approve` })).toBeUndefined()
+    expect(await ui.find({ key: `v:${ID3}:done` })).toBeDefined()
+    expect(text).not.toContain(`Question ${ID2.slice(-2)}`)
+    await ui.press({ key: 'humantray:tab:history' })
+    expect(await shownText(ui)).toContain('withdrawn: plan changed')
+    await ui.unmount()
   })
 
   vtest('a failed read keeps the last data, marked stale', async ($, on) => {
