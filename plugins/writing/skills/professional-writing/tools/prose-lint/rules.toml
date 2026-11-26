@@ -88,7 +88,7 @@ message = "An '(s)' alternative: write the plural ('the documents'), which cover
 id = "hyphen-after-ly"
 severity = "warn"
 # An adverb in -ly needs no hyphen before the word it modifies ("a newly appointed board").
-# Lower case only, so names do not fire; the exclusions are adjectives and nouns ending in
+# Lower case only, so names do not fire; the exclusions are adjectives, nouns and verbs ending in
 # -ly, which are hyphenated in the ordinary way ("early-stage", "a friendly-looking dog").
 pattern = '\b[a-z]+ly-[a-z]'
 exclude = '\b(?:early|family|only|daily|weekly|fortnightly|monthly|quarterly|yearly|hourly|nightly|friendly|unfriendly|elderly|likely|unlikely|costly|timely|untimely|orderly|disorderly|holy|ugly|lonely|lovely|lively|deadly|curly|woolly|silly|jolly|belly|jelly|rally|ally|bully|lily|oily|hilly|chilly|wily|gully|fly|sly|assembly|anomaly|monopoly|melancholy|willy|roly|hurly|scholarly|worldly|leisurely|stately|homely|motherly|fatherly|neighbourly|seemly|unruly|burly|surly|bubbly|wobbly|prickly|sickly|ghostly|ghastly|supply|apply|reply|comply|imply|multiply|ply)-'

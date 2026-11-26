@@ -261,7 +261,7 @@ A reviewer, human or model, judges reliably which of two versions of the same te
 2. Check sentence-level clarity: length, voice, visible actors, stacked sub-clauses, one claim per sentence.
 3. Sweep for the word-level problems in this skill.
 4. Check mechanics: abbreviations at first use, capitals, numbers, dates, bullets, captions, headings.
-5. Apply the precedence rules before reporting a "defect" that the client's style has already decided differently.
+5. Apply the precedence rules before reporting a "defect" that local style has already decided differently.
 6. Report each finding with its location, a short quotation, the rule breached and a proposed rewording in the same register.
 
 ## Final checklist

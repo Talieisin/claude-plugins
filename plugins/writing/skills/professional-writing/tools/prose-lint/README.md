@@ -36,7 +36,7 @@ Do not rewrite sound text to clear a warning, and do not clear `long-sentence` w
 | Area | Rule ids |
 |---|---|
 | Dashes | `em-dash`, `en-dash-spaced`, `double-hyphen-dash`, `en-dash-words` |
-| Mechanics | `contraction`, `latin-abbreviation`, `stakeholder`, `bullet-lower-case`, `bullet-trailing-punctuation`, `bullet-trailing-conjunction` (an item other than the last ending in "and", "or" or "and/or"), `semicolon-chain`, `decade-apostrophe` ("1980's"), `optional-plural` ("document(s)"), `hyphen-after-ly` ("newly-appointed"; lower case only, with adjectives and nouns in -ly such as *early*, *friendly* and *supply* excluded) |
+| Mechanics | `contraction`, `latin-abbreviation`, `stakeholder`, `bullet-lower-case`, `bullet-trailing-punctuation`, `bullet-trailing-conjunction` (an item other than the last ending in "and", "or" or "and/or"), `semicolon-chain`, `decade-apostrophe` ("1980's"), `optional-plural` ("document(s)"), `hyphen-after-ly` ("newly-appointed"; lower case only, with adjectives, nouns and verbs in -ly such as *early*, *friendly* and *supply* excluded) |
 | Diction | `plain-english`, `marketing`, `significance-inflation`, `evaluative-filler`, `abstraction-as-actor`, `all-purpose-verb`, `figurative`, `ai-tell` |
 | Readability | `long-sentence` (over 25 words), `long-paragraph` (over five sentences), `passive-cluster`, `justification-cluster` |
 | Lists | `announced-count`: a count in the last sentence of the block directly above a list, whatever its final punctuation ("Three factors determine the price:"), with measurements excluded. A count elsewhere is a fact and is not flagged |
