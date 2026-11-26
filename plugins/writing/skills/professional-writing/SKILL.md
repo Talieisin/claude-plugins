@@ -3,7 +3,7 @@ name: professional-writing
 description: Standards and a working method for formal British professional writing (reports, proposals, technical and policy documents, briefings and correspondence). Covers establishing the substance before drafting, drafting craft, register and diction, structure, punctuation, commercial framing, preserving meaning through revision, and comparative review. Use when drafting, rewriting, editing or reviewing formal documents (reports, proposals, policy documents, briefings, letters), unless a client or house style says otherwise; not for commit messages, pull requests, issue comments or code comments, unless asked.
 ---
 
-<!-- professional-writing-skill-version: 3 -->
+<!-- professional-writing-skill-version: 4 -->
 
 # Professional writing
 
@@ -11,9 +11,9 @@ This skill sets out how to write and review formal professional prose for a seni
 
 ## Precedence
 
-1. A client's or organisation's own style guide overrides this skill wherever they conflict.
-2. The author's explicit instructions for the document override both.
-3. This skill applies wherever they are silent.
+1. A client's or organisation's own style guide, and the owner's house conventions, override any rule in this skill wherever they conflict, mechanics included.
+2. The author's explicit instructions and stated preferences for the document override both.
+3. This skill applies wherever they are silent. Where the linter checks a rule that local style sets aside, a project rules file turns the check off (see the linter's README).
 
 A required length never licenses adding what the source does not give. Where the source cannot reach it, deliver what the source supports and report the shortfall to the author.
 
@@ -99,7 +99,7 @@ These are the positive rules. Applying them makes most of the prohibitions later
 ## Structure and layout
 
 - **Put the point first.** Open each section with what its subject is, why the reader needs it and who is responsible. Do not open with a list's lead-in, a term not yet defined, a cross-reference, an exclusion, a restatement of the heading or "this section describes".
-- **A document that asks for a decision opens with the decision sought.** Where the request has three or more parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading.
+- **A document that asks for a decision opens with the decision sought.** Where the request has three or more parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading. Among the options it sets out, include doing nothing.
 - **A paragraph develops one idea.** Avoid a one-line paragraph left dangling after a longer one, unless the sentence does a job of its own, such as a closing request. More than five or six sentences usually means two ideas.
 - **Use lists for genuine enumerations**: three or more substantial parallel items, tests, stages or requirements. A short series that reads naturally in the sentence ("cost, time and quality") stays in the sentence. A verbless chain of clauses separated by semicolons is a list in disguise and should be bulleted.
 - **Do not over-fragment.** Structure helps up to a point and then hurts. Too many bullets, headings or very short paragraphs break an argument that needs connected prose. Fragmented text can look easy to scan while reading worse. When in doubt, write the paragraph.
@@ -108,6 +108,7 @@ These are the positive rules. Applying them makes most of the prohibitions later
 - **Tables** suit comparisons and attribute lists; prose suits reasoning. Give tables and figures numbered captions and refer to each in the text. A comparison table may repeat figures the text gives, so that the reader can set them side by side; the reasoning stays in the text.
 - **Figures illustrate what the text explains.** A figure has labels and short annotations only; it never restates the body text, and the text never relies on the figure alone to make a point.
 - **Cross-references** are built into the sentence that makes the point ("The appendix gives each recipe"), not appended as pointers ("…, as described in Section 4").
+- **References:** cite the sources a point depends on in the text, and put minor points in footnotes.
 
 ## Register and diction
 
@@ -175,12 +176,15 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 - **An operative qualification** (revision rounds, a feedback window, an effort bound, a dependency on another party) belongs beside the commitment it limits, where the reader can apply it.
 - **State a boundary as the positive allocation** where it defines who does what: "The client's own staff supply the photographs" rather than "we will not take the photographs".
 - **Do not commit to an outcome another party controls.** Commit to the work and state the aim: "We will prepare and submit the planning application and answer the council's queries", not "we will obtain planning permission".
+- **State a constraint outside your control as a fact about the timetable**, not as a disclaimer: "approval is the client's decision, on the client's timetable", not "we cannot control when approval comes".
 - **Bound anything open-ended**: attendance, ad hoc support and further revision need a limit, such as a stated count or "within the agreed effort". Take the limit from the source; where it gives none, ask the author for one rather than asserting an agreement.
 - **Distinguish what the client formally accepts from what is shared for information.** Give each item for acceptance a description the client could test and an indicative date, taking the date from the source or asking the author for one. Say plainly which items are for information only.
 - **List as an output only what reaches someone who needs it.** A working document of your own process is not an output, however much effort it takes. Every stage of the work produces something; a stage that produces nothing belongs to the stage its activities serve.
 - **Do not recite the specification.** A proposal describes the shape and extent of the work and refers to the specification; it does not reproduce every required component as an activity.
 
 ## Punctuation and mechanics
+
+Each convention in this section is a default. A style guide, a house convention or the author's stated preference overrides it (see Precedence).
 
 ### Dashes
 
@@ -203,6 +207,8 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 
 - Spell out an abbreviation at first use, with the short form in brackets, then use the short form. If a term appears only once, do not abbreviate it. Widely understood forms (UK, EU, BBC, CEO) need no expansion.
 - Do not capitalise a term merely to justify its abbreviation, and never invent an abbreviation.
+- No apostrophe in a plural initialism (URLs, MPs).
+- In a long document, spell out each abbreviation again at its first use in each chapter. Give each figure a legend for the abbreviations it uses, so that the figure can be read on its own.
 - Capitals for proper nouns and formally defined terms only. Sentence case for titles and headings. No block capitals for emphasis.
 
 ### Numbers and dates
@@ -210,12 +216,17 @@ Keep justification clauses ("so that", "because") to those the reader needs. Two
 - One to ten in words, 11 and above in figures; figures throughout for money, measurements and percentages with a symbol. A precise duration or amount of effort is a measurement (5 minutes, 3 days); a general span follows the one-to-ten rule (three years, 15 years). Commas in numbers above 999.
 - "Per cent" in prose; % beside a figure in tables.
 - Never begin a sentence with a figure.
-- Dates as 24 April 2026; spans written out ("1 April 2026 to 31 March 2027"); the 24-hour clock where precision is needed.
+- Dates as 24 April 2026; spans written out ("1 April 2026 to 31 March 2027"); the 24-hour clock where precision is needed. Decades take no apostrophe (the 1980s).
 
 ### Other conventions
 
 - No Oxford comma unless its absence would change the meaning.
-- *Fewer* for numbers, *less* for quantity.
+- A semicolon joins two clauses that could each be a sentence; a colon introduces an explanation, a list or a quotation.
+- Hyphenate a compound adjective before its noun (a user-focused service, a 30-year rule, a short-term gain), but not after an adverb ending in -ly (a totally enclosed system).
+- Double quotation marks for direct quotation, single for a term used in an unusual sense, applied consistently. Many British publishers use the reverse, so follow the document's style where it sets one.
+- Place a footnote marker after the punctuation, ideally at the end of the sentence.
+- No "(s)" alternatives: write the plural, which covers one as well as several. An ampersand only in a formal name.
+- *Fewer* for numbers, *less* for quantity; *more than* for quantities, *over* for position and age.
 - Prefer *that* for a clause that restricts and *which*, with a comma, for one that adds. Decide which the writer means before changing the punctuation, because a comma turns a condition into a statement about every case.
 - *Affect* is usually the verb and *effect* the noun, but *effect* is also a verb meaning to bring about ("the supplier must effect the transfer"). Check which is meant before changing it.
 - *Different from*; *because of* over *due to*; *while* for simultaneity; *adviser*, not *advisor*.
@@ -231,7 +242,10 @@ A reviewer, human or model, judges reliably which of two versions of the same te
 
 - Review a revision by comparing it with its previous version, passage by passage, and say which reads better and why. Allow a tie where the reader would notice no difference.
 - Do not grade a passage in isolation.
-- Check meaning separately from readability, every time (see step 4 of the working method).
+- Check meaning separately from readability, every time (see step 4 of the working method). Before calling a change a loss of meaning, check what the author said it was for, in the instructions or the change notes. A loss the author intended is not a defect.
+- After fixing review findings, compare the fixed text with the version before the fixes. A fix can make a sentence worse, and only that comparison shows it.
+- If the text changes after a review, review it again rather than reconciling the old findings with the new text.
+- Never drop a reviewer's finding silently. Where you disagree with one, put both views to the author.
 
 ### When asking another reviewer or model to compare drafts
 
@@ -252,9 +266,9 @@ A reviewer, human or model, judges reliably which of two versions of the same te
 
 ## Final checklist
 
-Before issuing any text, re-read it against this list. Style drifts over a long editing session, so re-read at the end, not only while drafting.
+Before issuing any text, re-read it against this list. Style drifts over a long editing session, so re-read at the end, not only while drafting. Then read the finished text aloud and, where possible, give it to a reader who does not know the subject.
 
-**Absolute rules**
+**Rules (unless the document's style guide or owner sets otherwise)**
 - No em dashes; no spaced en dashes; no double hyphens as dashes; en dashes only in ranges of numbers, dates and identifiers, and between words only in tables and figure labels
 - No contractions, no *e.g.* or *i.e.*, no *stakeholder*
 - No chat-interface leftovers: "Certainly!", "I hope this helps", "As an AI", citation markers such as 【1】 or [cite], unfilled placeholders such as [insert…], [TBD], [TODO] or {{…}}, and tracking parameters in links (utm_, fbclid, gclid)

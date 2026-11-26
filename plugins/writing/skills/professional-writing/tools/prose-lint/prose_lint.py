@@ -6,7 +6,8 @@
 """prose-lint: a linter for formal British professional prose in Markdown and plain text.
 
 It reports problems and never rewrites the text. Each finding has a severity: 'rule' for
-a convention that is absolute, 'warn' for a pattern that is usually, but not always, wrong.
+a convention without exceptions unless local style sets another, 'warn' for a pattern that
+is usually, but not always, wrong.
 
 Usage:
   prose_lint.py [options] PATH...   lint files and directories ('-' reads standard input)
@@ -76,7 +77,7 @@ def load_rules(extra: list[str] | None = None) -> dict:
       - add rules:                        [[rule]] id, severity, pattern, message, exclude (optional)
       - change thresholds:                [readability] sentence_max_words = 30
       - allow counts that are defined:    [counts] allow = ['(?i)\\bfour quarters\\b']
-      - add or override spellings:        [spelling.words] colour = "color" (for the reverse)
+      - add or override spellings:        `[spelling.words] colour = "color"` (for the reverse)
       - set the file extensions linted:   [files] extensions = [".md"]
     """
     cfg = tomllib.loads(BUILTIN_RULES.read_text(encoding='utf-8'))

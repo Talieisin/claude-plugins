@@ -1,8 +1,9 @@
 # Built-in rules for prose-lint.
 #
-# Every rule reports; none rewrites. "rule" severity marks a convention that is absolute
-# in formal British professional writing; "warn" marks a pattern that is usually, but not
-# always, wrong. Judge each warning in context.
+# Every rule reports; none rewrites. "rule" severity marks a convention that holds without
+# exception in formal British professional writing, unless the document's style guide or
+# owner sets another; "warn" marks a pattern that is usually, but not always, wrong. Judge
+# each warning in context. A project rules file can disable any rule id, structural or not.
 #
 # A project can change any of this with its own rules file (prose_lint.py --rules FILE):
 # see README.md. Patterns are Python regular expressions, case-sensitive unless they
@@ -67,6 +68,29 @@ id = "stakeholder"
 severity = "rule"
 pattern = '(?i)\bstakeholders?\b'
 message = "Name the group (the residents, the site managers, the parents' committee) instead of 'stakeholder'."
+
+[[rule]]
+id = "decade-apostrophe"
+severity = "warn"
+# A decade only (a year ending in 0), so a year's possessive ("2026's results") does not fire.
+pattern = '''\b(?:1[0-9]|20)[0-9]0['’]s\b'''
+message = "A decade takes no apostrophe: write '1980s'."
+
+[[rule]]
+id = "optional-plural"
+severity = "warn"
+pattern = '\b[A-Za-z]+\((?:s|es)\)'
+message = "An '(s)' alternative: write the plural ('the documents'), which covers one as well as several."
+
+[[rule]]
+id = "hyphen-after-ly"
+severity = "warn"
+# An adverb in -ly needs no hyphen before the word it modifies ("a newly appointed board").
+# Lower case only, so names do not fire; the exclusions are adjectives and nouns ending in
+# -ly, which are hyphenated in the ordinary way ("early-stage", "a friendly-looking dog").
+pattern = '\b[a-z]+ly-[a-z]'
+exclude = '\b(?:early|family|only|daily|weekly|fortnightly|monthly|quarterly|yearly|hourly|nightly|friendly|unfriendly|elderly|likely|unlikely|costly|timely|untimely|orderly|disorderly|holy|ugly|lonely|lovely|lively|deadly|curly|woolly|silly|jolly|belly|jelly|rally|ally|bully|lily|oily|hilly|chilly|wily|gully|fly|sly|assembly|anomaly|monopoly|melancholy|willy|roly|hurly|scholarly|worldly|leisurely|stately|homely|motherly|fatherly|neighbourly|seemly|unruly|burly|surly|bubbly|wobbly|prickly|sickly|ghostly|ghastly|[a-z]*ply)-'
+message = "Hyphen after an adverb in -ly: an adverb needs no hyphen ('a newly appointed board'). Keep it where the -ly word is an adjective ('a friendly-looking dog')."
 
 # ---- Plain English ----------------------------------------------------------------------
 

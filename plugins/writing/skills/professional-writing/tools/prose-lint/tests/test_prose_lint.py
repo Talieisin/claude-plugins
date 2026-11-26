@@ -606,3 +606,41 @@ def test_passive_cluster_across_sentences_is_a_paragraph_finding():
     text = 'The cake was baked and the hall was decorated. The room was cleaned and the door was painted.\n'
     fs = [f for f in pl.check_text(text, CFG) if f.rule == 'passive-cluster']
     assert len(fs) == 1 and 'paragraph' in fs[0].message
+
+
+# ---- small forms and hyphens (writing 0.4.0) ---------------------------------------------
+
+@pytest.mark.parametrize('text, rule', [
+    ("The policy dates from the 1980's.", 'decade-apostrophe'),
+    ('The scheme began in the 1990’s.', 'decade-apostrophe'),
+    ('Send the document(s) by Friday.', 'optional-plural'),
+    ('Pack the box(es) by Friday.', 'optional-plural'),
+    ('A newly-appointed board met.', 'hyphen-after-ly'),
+    ('The plan is fully-funded.', 'hyphen-after-ly'),
+])
+def test_small_forms_and_hyphens(text, rule):
+    assert rule in ids(text + '\n')
+
+
+@pytest.mark.parametrize('text', [
+    "The plan covers 2026's results and the 1980s.",
+    'An early-stage, family-run, supply-side firm keeps a user-friendly, friendly-looking shop.',
+    'The daily-rate and monthly-paid staff joined the elderly-care team.',
+    'The firm was founded by Kelly-Smith.',
+    'Run `fully-qualified(s)` in the shell.',
+])
+def test_small_forms_and_hyphens_exceptions(text):
+    assert ids(text + '\n') == [], ids(text + '\n')
+
+
+def test_every_rule_can_be_disabled(tmp_path):
+    every = sorted({r['id'] for r in CFG['rule']} | {rid for rid, _ in pl.BUILTIN_STRUCTURAL})
+    extra = tmp_path / 'off.toml'
+    extra.write_text('disable = [' + ', '.join(f'"{r}"' for r in every) + ']\n')
+    text = ("# Test\n\nWe don't leverage stakeholders — e.g. the color is organized -- really – yes. Certainly!\n\n"
+            'The following three items are listed below:\n\n- first item;\n- second and\n- third\n\n'
+            'It was done because it was needed and it was decided because it was required so that it was done. '
+            'It was checked. It was reviewed. It was signed. It was sent. It was filed; then read; then lost. '
+            "A newly-appointed board read the document(s) from the 1980's.\n")
+    assert ids(text) != []
+    assert ids(text, pl.load_rules([str(extra)])) == []
