@@ -26,7 +26,7 @@ Exit codes: 0 for no findings at the `--fail-on` level, 1 for findings, 2 for a 
 
 ## Severities
 
-- **Rule:** a convention that is absolute, such as an em dash, a contraction, "e.g." or a chat-interface leftover. Fix it.
+- **Rule:** a convention the skill applies throughout, such as no em dash, no contraction, no "e.g." and no chat-interface leftover. Fix it, unless local style (a style guide, house conventions or the author's stated preferences) sets it aside; then disable the rule (see Project rules).
 - **Warn:** a pattern that is usually wrong but sometimes right, such as a long sentence, a passive cluster, an all-purpose verb or an American spelling. Judge it in context.
 
 Do not rewrite sound text to clear a warning, and do not clear `long-sentence` warnings only by splitting: the skill's 15 to 20 word average has a lower bound too, and a run of short sentences reads as abrupt. Restructure instead, and keep a long sentence that has one subject and one claim. The warnings indicate where to look; they do not measure quality. Direct quotations, official names and terms the source requires stay as they are, whatever the finding.
@@ -36,7 +36,7 @@ Do not rewrite sound text to clear a warning, and do not clear `long-sentence` w
 | Area | Rule ids |
 |---|---|
 | Dashes | `em-dash`, `en-dash-spaced`, `double-hyphen-dash`, `en-dash-words` |
-| Mechanics | `contraction`, `latin-abbreviation`, `stakeholder`, `bullet-lower-case`, `bullet-trailing-punctuation`, `bullet-trailing-conjunction` (an item other than the last ending in "and", "or" or "and/or"), `semicolon-chain` |
+| Mechanics | `contraction`, `latin-abbreviation`, `stakeholder`, `bullet-lower-case`, `bullet-trailing-punctuation`, `bullet-trailing-conjunction` (an item other than the last ending in "and", "or" or "and/or"), `semicolon-chain`, `decade-apostrophe` ("1980's"), `optional-plural` ("document(s)"), `hyphen-after-ly` ("newly-appointed"; lower case only, with adjectives, nouns and verbs in -ly such as *early*, *friendly* and *supply* excluded) |
 | Diction | `plain-english`, `marketing`, `significance-inflation`, `evaluative-filler`, `abstraction-as-actor`, `all-purpose-verb`, `figurative`, `ai-tell` |
 | Readability | `long-sentence` (over 25 words), `long-paragraph` (over five sentences), `passive-cluster`, `justification-cluster` |
 | Lists | `announced-count`: a count in the last sentence of the block directly above a list, whatever its final punctuation ("Three factors determine the price:"), with measurements excluded. A count elsewhere is a fact and is not flagged |
@@ -66,7 +66,7 @@ With no rule ids named, every rule is suppressed.
 
 ## Project rules
 
-Put a project's own conventions in a TOML file and pass it with `--rules`. It is merged over `rules.toml`:
+Put a project's own conventions in a TOML file and pass it with `--rules`. It is merged over `rules.toml`. `disable` turns off any rule id that `--list-rules` shows, the structural checks (bullets, sentence and paragraph length, clusters, counts, spelling) included:
 
 ```toml
 # Rules this project does not want, and rules off by default that it does.
@@ -122,7 +122,7 @@ None is required. Each catches something prose-lint does not.
 
 | Tool | Use | Notes |
 |---|---|---|
-| [britfix](https://github.com/Talieisin/britfix) | Rewrites American spellings to British, with a dictionary far larger than `us-spelling`'s, in prose and in code comments | It turns *program* into *programme*: a repository that follows this skill lists `program` and `programs` in its `.britfixignore`. Where both run as hooks, chain them in one command (britfix, then prose-lint), since Claude Code runs separate hooks in parallel, and disable `us-spelling` |
+| [britfix](https://github.com/Talieisin/britfix) | Rewrites American spellings to British, with a dictionary far larger than `us-spelling`'s, in prose and in code comments | It turns `program` into `programme`: a repository that follows this skill lists `program` and `programs` in its `.britfixignore`. Where both run as hooks, chain them in one command (britfix, then prose-lint), since Claude Code runs separate hooks in parallel, and disable `us-spelling` |
 | [Vale](https://vale.sh) | A repository's own terminology and consistency checks, in the editor and in CI | Worth it where a repository already uses Vale. It does not replace prose-lint's hook mode |
 | [LanguageTool](https://languagetool.org) (en-GB) | A final grammar proofread: agreement, articles, wrong words | Needs Java 17 or later and a local server. Never send client documents to the public API, whose terms also forbid automated use. Not suited to a hook |
 
