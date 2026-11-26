@@ -11,8 +11,8 @@ This skill sets out how to write and review formal professional prose for a seni
 
 ## Precedence
 
-1. A client's or organisation's own style guide, and the owner's house conventions, override any rule in this skill wherever they conflict, mechanics included.
-2. The author's explicit instructions and stated preferences for the document override both.
+1. A client's or organisation's own style guide, and the document owner's house conventions, override any rule in this skill wherever they conflict, mechanics included.
+2. The author's explicit instructions and stated preferences for the document override all of these.
 3. This skill applies wherever they are silent. Where the linter checks a rule that local style sets aside, a project rules file turns the check off (see the linter's README).
 
 A required length never licenses adding what the source does not give. Where the source cannot reach it, deliver what the source supports and report the shortfall to the author.
@@ -99,14 +99,14 @@ These are the positive rules. Applying them makes most of the prohibitions later
 ## Structure and layout
 
 - **Put the point first.** Open each section with what its subject is, why the reader needs it and who is responsible. Do not open with a list's lead-in, a term not yet defined, a cross-reference, an exclusion, a restatement of the heading or "this section describes".
-- **A document that asks for a decision opens with the decision sought.** Where the request has three or more parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading. Among the options it sets out, include doing nothing.
+- **A document that asks for a decision opens with the decision sought.** Where the request has three or more parts, set them out as a list, with each item's amount where it has one and any totals worked out from the figures given. Say plainly that a matter still undecided is open; in a longer document, give it its own heading. Among the options it sets out, include doing nothing, with the consequences the source gives; where it gives none, ask the author.
 - **A paragraph develops one idea.** Avoid a one-line paragraph left dangling after a longer one, unless the sentence does a job of its own, such as a closing request. More than five or six sentences usually means two ideas.
 - **Use lists for genuine enumerations**: three or more substantial parallel items, tests, stages or requirements. A short series that reads naturally in the sentence ("cost, time and quality") stays in the sentence. A verbless chain of clauses separated by semicolons is a list in disguise and should be bulleted.
 - **Do not over-fragment.** Structure helps up to a point and then hurts. Too many bullets, headings or very short paragraphs break an argument that needs connected prose. Fragmented text can look easy to scan while reading worse. When in doubt, write the paragraph.
 - **Introduce a list without counting it**, unless the number is itself a defined thing (the four seasons, the two halves of a match). "The price depends on:" rather than "Three factors determine the price:".
 - **Headings** are in sentence case, short and descriptive. Do not add subheadings for a few paragraphs, and never use an abbreviation in a heading.
 - **Tables** suit comparisons and attribute lists; prose suits reasoning. Give tables and figures numbered captions and refer to each in the text. A comparison table may repeat figures the text gives, so that the reader can set them side by side; the reasoning stays in the text.
-- **Figures illustrate what the text explains.** A figure has labels and short annotations only; it never restates the body text, and the text never relies on the figure alone to make a point.
+- **Figures illustrate what the text explains.** A figure has only labels, short annotations and a legend for its abbreviations. It never restates the body text, and the text never relies on the figure alone to make a point.
 - **Cross-references** are built into the sentence that makes the point ("The appendix gives each recipe"), not appended as pointers ("…, as described in Section 4").
 - **References:** cite the sources a point depends on in the text, and put minor points in footnotes.
 
@@ -226,7 +226,7 @@ Each convention in this section is a default. A style guide, a house convention 
 - Double quotation marks for direct quotation, single for a term used in an unusual sense, applied consistently. Many British publishers use the reverse, so follow the document's style where it sets one.
 - Place a footnote marker after the punctuation, ideally at the end of the sentence.
 - No "(s)" alternatives: write the plural, which covers one as well as several. An ampersand only in a formal name.
-- *Fewer* for numbers, *less* for quantity; *more than* for quantities, *over* for position and age.
+- *Fewer* for numbers and *less* for quantity. *More than* for quantities and *over* for position and age.
 - Prefer *that* for a clause that restricts and *which*, with a comma, for one that adds. Decide which the writer means before changing the punctuation, because a comma turns a condition into a statement about every case.
 - *Affect* is usually the verb and *effect* the noun, but *effect* is also a verb meaning to bring about ("the supplier must effect the transfer"). Check which is meant before changing it.
 - *Different from*; *because of* over *due to*; *while* for simultaneity; *adviser*, not *advisor*.
@@ -242,7 +242,7 @@ A reviewer, human or model, judges reliably which of two versions of the same te
 
 - Review a revision by comparing it with its previous version, passage by passage, and say which reads better and why. Allow a tie where the reader would notice no difference.
 - Do not grade a passage in isolation.
-- Check meaning separately from readability, every time (see step 4 of the working method). Before calling a change a loss of meaning, check what the author said it was for, in the instructions or the change notes. A loss the author intended is not a defect.
+- Check meaning separately from readability, every time (see step 4 of the working method). Before calling a change a loss of meaning, check what the author said it was for, in the instructions or the change notes. A loss the author intended is not a defect. This is part of the meaning check: keep the notes from a blind comparer.
 - After fixing review findings, compare the fixed text with the version before the fixes. A fix can make a sentence worse, and only that comparison shows it.
 - If the text changes after a review, review it again rather than reconciling the old findings with the new text.
 - Never drop a reviewer's finding silently. Where you disagree with one, put both views to the author.
@@ -266,14 +266,14 @@ A reviewer, human or model, judges reliably which of two versions of the same te
 
 ## Final checklist
 
-Before issuing any text, re-read it against this list. Style drifts over a long editing session, so re-read at the end, not only while drafting. Then read the finished text aloud and, where possible, give it to a reader who does not know the subject.
+Before issuing any text, re-read it against this list. Style drifts over a long editing session, so re-read at the end, not only while drafting. Then read the finished text through, sentence by sentence, as its reader would (a person writing reads it aloud). Where possible, also give it to a reader who has not seen the brief or the drafts, and judge their comments against what the intended reader knows.
 
-**Rules (unless the document's style guide or owner sets otherwise)**
+**Rules (unless local style sets otherwise: see Precedence)**
 - No em dashes; no spaced en dashes; no double hyphens as dashes; en dashes only in ranges of numbers, dates and identifiers, and between words only in tables and figure labels
 - No contractions, no *e.g.* or *i.e.*, no *stakeholder*
 - No chat-interface leftovers: "Certainly!", "I hope this helps", "As an AI", citation markers such as 【1】 or [cite], unfilled placeholders such as [insert…], [TBD], [TODO] or {{…}}, and tracking parameters in links (utm_, fbclid, gclid)
 - British spelling, unless the document's owner sets another convention
-- Where the text is saved as a Markdown or text file and `uv` is available, the linter run over it (`uv run -q --script <this skill's folder>/tools/prose-lint/prose_lint.py <file>`), each "rule" finding fixed and each warning judged in context, as its README says.
+- Where the text is saved as a Markdown or text file and `uv` is available, the linter run over it (`uv run -q --script <this skill's folder>/tools/prose-lint/prose_lint.py <file>`), each "rule" finding fixed unless local style sets it aside, and each warning judged in context, as its README says. Where local style sets a rule aside, pass `--rules` with a file that disables it; a scratch file serves for one document.
 
 **Meaning**
 - Every mandatory point present, with its modal verbs and conditions intact

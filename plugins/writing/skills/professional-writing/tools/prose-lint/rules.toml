@@ -1,9 +1,10 @@
 # Built-in rules for prose-lint.
 #
-# Every rule reports; none rewrites. "rule" severity marks a convention that holds without
-# exception in formal British professional writing, unless the document's style guide or
-# owner sets another; "warn" marks a pattern that is usually, but not always, wrong. Judge
-# each warning in context. A project rules file can disable any rule id, structural or not.
+# Every rule reports; none rewrites. "rule" severity marks a convention the skill applies
+# throughout formal British professional writing, unless local style (a style guide, house
+# conventions or the author's stated preferences) sets it aside; "warn" marks a pattern that
+# is usually, but not always, wrong. Judge each warning in context. A project rules file can
+# disable any rule id, structural or not.
 #
 # A project can change any of this with its own rules file (prose_lint.py --rules FILE):
 # see README.md. Patterns are Python regular expressions, case-sensitive unless they
@@ -72,14 +73,15 @@ message = "Name the group (the residents, the site managers, the parents' commit
 [[rule]]
 id = "decade-apostrophe"
 severity = "warn"
-# A decade only (a year ending in 0), so a year's possessive ("2026's results") does not fire.
+# A decade only (a year ending in 0), so the possessive of any other year ("2026's results")
+# does not fire. The possessive of a year ending in 0 ("2020's budget") does: judge it.
 pattern = '''\b(?:1[0-9]|20)[0-9]0['’]s\b'''
-message = "A decade takes no apostrophe: write '1980s'."
+message = "A decade takes no apostrophe: write '1980s'. A year's possessive ('2020's budget') is correct."
 
 [[rule]]
 id = "optional-plural"
 severity = "warn"
-pattern = '\b[A-Za-z]+\((?:s|es)\)'
+pattern = '\b[A-Za-z]+\((?:s|es|ies)\)'
 message = "An '(s)' alternative: write the plural ('the documents'), which covers one as well as several."
 
 [[rule]]

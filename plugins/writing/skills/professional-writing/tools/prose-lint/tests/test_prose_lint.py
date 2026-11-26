@@ -615,6 +615,7 @@ def test_passive_cluster_across_sentences_is_a_paragraph_finding():
     ('The scheme began in the 1990’s.', 'decade-apostrophe'),
     ('Send the document(s) by Friday.', 'optional-plural'),
     ('Pack the box(es) by Friday.', 'optional-plural'),
+    ('Name the compan(ies) involved.', 'optional-plural'),
     ('A newly-appointed board met.', 'hyphen-after-ly'),
     ('The plan is fully-funded.', 'hyphen-after-ly'),
     ('A deeply-rooted habit and a simply-worded note.', 'hyphen-after-ly'),

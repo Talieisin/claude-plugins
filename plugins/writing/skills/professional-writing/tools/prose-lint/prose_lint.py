@@ -6,7 +6,7 @@
 """prose-lint: a linter for formal British professional prose in Markdown and plain text.
 
 It reports problems and never rewrites the text. Each finding has a severity: 'rule' for
-a convention without exceptions unless local style sets another, 'warn' for a pattern that
+a convention applied throughout unless local style sets it aside, 'warn' for a pattern that
 is usually, but not always, wrong.
 
 Usage:
